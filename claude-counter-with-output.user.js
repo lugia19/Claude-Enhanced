@@ -1,11 +1,10 @@
 // ==UserScript==
-// @name         Claude Usage Tracker
-// @namespace    lugia19.com
+// @name         Claude Counter
+// @namespace    Violentmonkey Scripts
 // @match        https://claude.ai/*
 // @version      1.0
 // @author       lugia19
-// @license      GPLv3
-// @description  Helps you track your claude.ai usage caps.
+// @description  Counts tokens in chat messages
 // @grant        GM_setValue
 // @grant        GM_getValue
 // ==/UserScript==
@@ -14,7 +13,8 @@
 	'use strict';
 
 	//#region Constants and Configuration
-	const STORAGE_KEY = 'claudeUsageTracker';
+	const STORAGE_KEY = 'chatTokenCounter_v1';
+	const MODEL_SELECTOR = '[data-testid="model-selector-dropdown"]';
 	const POLL_INTERVAL_MS = 1000;
 	const DELAY_MS = 100;
 	const OUTPUT_TOKEN_MULTIPLIER = 10;	//How much to weigh output tokens.
@@ -49,8 +49,7 @@
 		BACK_BUTTON: 'button:has(svg path[d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z"])',
 		SIDEBAR_CONTENT: '.bg-bg-100.border-0\\.5.border-border-300.flex-1',
 		FILE_VIEW_CONTAINER: '.flex.h-full.flex-col.pb-1.pl-5.pt-3',
-		FILE_CONTENT: '.whitespace-pre-wrap.break-all.text-xs',
-		MODEL_PICKER: '[data-testid="model-selector-dropdown"]'
+		FILE_CONTENT: '.whitespace-pre-wrap.break-all.text-xs'
 	};
 	//#endregion
 
@@ -70,7 +69,7 @@
 	}
 
 	function getCurrentModel() {
-		const modelSelector = document.querySelector(SELECTORS.MODEL_PICKER);
+		const modelSelector = document.querySelector(MODEL_SELECTOR);
 		if (!modelSelector) return 'default';
 
 		const modelText = modelSelector.querySelector('.whitespace-nowrap')?.textContent?.trim() || 'default';
@@ -191,10 +190,7 @@
 			let sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
 			if (sidebar) {
 				const style = window.getComputedStyle(sidebar);
-				const matrixMatch = style.transform.match(/matrix\(([\d.-]+,\s*){5}[\d.-]+\)/);
-				const isHidden = matrixMatch && style.transform.includes('428');
-
-				if (!isHidden && style.opacity !== '0') {
+				if (style.opacity !== '0' && !style.transform.includes('translateX(100%)')) {
 					console.log("Sidebar is visible, wait 1 sec.")
 					sidebar.setAttribute('data-files-processed', 'true');
 					await sleep(1000);
@@ -232,8 +228,8 @@
 			const storageKey = getFileStorageKey(filename, true);
 			const stored = GM_getValue(storageKey);
 			if (stored !== undefined) {
-				console.log(`Using cached tokens for project file: ${filename}`);
-				return stored;
+				//console.log(`Using cached tokens for project file: ${filename}`);
+				//return stored;
 			}
 
 			console.log(`Calculating tokens for project file: ${filename}`);
@@ -315,8 +311,8 @@
 			const storageKey = getFileStorageKey(filename, false);
 			const stored = GM_getValue(storageKey);
 			if (stored !== undefined) {
-				console.log(`Using cached tokens for content file: ${filename}`);
-				return stored;
+				//console.log(`Using cached tokens for content file: ${filename}`);
+				//return stored;
 			}
 
 			console.log(`Calculating tokens for content file: ${filename}`);
@@ -525,7 +521,7 @@
 		`;
 
 		header.appendChild(arrow);
-		header.appendChild(document.createTextNode('Claude Usage Tracker'));
+		header.appendChild(document.createTextNode('Claude Token Counter'));
 
 		// Last message counter (always visible)
 		const lastMessageCounter = document.createElement('div');
@@ -774,15 +770,10 @@
 		const sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
 		if (sidebar) {
 			const style = window.getComputedStyle(sidebar);
-			console.log(style.transform)
 			// If sidebar is visible (not transformed away)
-			const matrixMatch = style.transform.match(/matrix\(([\d.-]+,\s*){5}[\d.-]+\)/);
-			const isHidden = matrixMatch && style.transform.includes('428');
-
-			if (!isHidden && style.opacity !== '0') {
+			if (!style.transform.includes('translateX(100%)')) {
 				const closeButton = document.querySelector(SELECTORS.SIDEBAR_BUTTON);
 				if (closeButton && closeButton.offsetParent !== null) { // Check if button is visible
-					console.log("Closing...")
 					closeButton.click();
 				}
 			}
@@ -794,10 +785,10 @@
 			AI_output = await getOutputMessage();
 		}
 
-		// Process the AI output if we have it (with multiplication)
+		// Process the AI output if we have it (with 5x multiplication)
 		if (AI_output) {
 			const text = AI_output.textContent || '';
-			const tokens = calculateTokens(text) * OUTPUT_TOKEN_MULTIPLIER;
+			const tokens = calculateTokens(text) * OUTPUT_TOKEN_MULTIPLIER; // Only multiply the final response by 5
 			console.log("Processing final AI output:");
 			console.log(`Text: "${text}"`);
 			console.log(`Tokens: ${tokens}`);

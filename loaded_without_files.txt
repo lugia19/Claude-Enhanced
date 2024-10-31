@@ -1,0 +1,178 @@
+<div class="bg-bg-100 border-0.5 border-border-300 flex-1 overflow-hidden rounded-xl shadow-lg" tabindex="0"
+	style="opacity: 1; transform: translateX(0%) scaleX(1) translateZ(0px);">
+	<div class="flex h-full flex-col" style="opacity: 1;">
+		<div class="absolute opacity-0 w-0 h-0 overflow-hidden pointer-events-none">
+			<div class="border-border-400  sticky  flex  items-center  gap-1  border-b  px-2  py-2">
+				<div class="flex flex-auto items-center overflow-hidden"><button class="inline-flex
+  items-center
+  justify-center
+  relative
+  shrink-0
+  ring-offset-2
+  ring-offset-bg-300
+  ring-accent-main-100
+  focus-visible:outline-none
+  focus-visible:ring-1
+  disabled:pointer-events-none
+  disabled:opacity-50
+  disabled:shadow-none
+  disabled:drop-shadow-none text-text-200
+          border-transparent
+          transition-colors
+          font-styrene
+          active:bg-bg-400
+          hover:bg-bg-500/40
+          hover:text-text-100 h-8 w-8 rounded-md active:scale-95"><svg xmlns="http://www.w3.org/2000/svg" width="16"
+							height="16" fill="currentColor" viewBox="0 0 256 256">
+							<path
+								d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z">
+							</path>
+						</svg></button>
+					<h3 class="text-text-100 font-tiempos truncate pl-1 text-sm"></h3>
+				</div>
+				<div class="flex shrink-0 flex-grow items-center justify-end gap-1">
+					<div role="group" dir="ltr" class="bg-bg-300 border-bg-300 inline-flex rounded-full border"
+						tabindex="0" style="outline: none;"><button type="button" data-state="on" role="radio"
+							aria-checked="true"
+							class="text-text-500 data-[state=&quot;on&quot;]:text-text-100 border-0.5 data-[state=&quot;on&quot;]:bg-bg-100 data-[state=&quot;on&quot;]:border-border-300 flex items-center rounded-full border-transparent font-medium gap-1 py-1 pl-2.5 pr-2.5 text-xs"
+							data-testid="undefined-normal" tabindex="-1"
+							data-radix-collection-item="">Preview</button><button type="button" data-state="off"
+							role="radio" aria-checked="false"
+							class="text-text-500 data-[state=&quot;on&quot;]:text-text-100 border-0.5 data-[state=&quot;on&quot;]:bg-bg-100 data-[state=&quot;on&quot;]:border-border-300 flex items-center rounded-full border-transparent font-medium gap-1 py-1 pl-2.5 pr-2.5 text-xs"
+							data-testid="undefined-code" tabindex="-1" data-radix-collection-item="">Code</button></div>
+					<button class="inline-flex
+  items-center
+  justify-center
+  relative
+  shrink-0
+  ring-offset-2
+  ring-offset-bg-300
+  ring-accent-main-100
+  focus-visible:outline-none
+  focus-visible:ring-1
+  disabled:pointer-events-none
+  disabled:opacity-50
+  disabled:shadow-none
+  disabled:drop-shadow-none text-text-200
+          border-transparent
+          transition-colors
+          font-styrene
+          active:bg-bg-400
+          hover:bg-bg-500/40
+          hover:text-text-100 h-8 w-8 rounded-md active:scale-95"><svg xmlns="http://www.w3.org/2000/svg" width="16"
+							height="16" fill="currentColor" viewBox="0 0 256 256">
+							<path
+								d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z">
+							</path>
+						</svg></button>
+				</div>
+			</div>
+			<div class="absolute opacity-0 w-0 h-0 overflow-hidden pointer-events-none">
+				<div class="relative absolute opacity-0 w-0 h-0 overflow-hidden pointer-events-none"><iframe
+						class="h-full w-full" sandbox="allow-scripts allow-same-origin" title="Claude content"
+						loading="lazy" src="https://www.claudeusercontent.com?errorReportingMode=parent"
+						allow="fullscreen"></iframe>
+					<div class="bg-bg-100 absolute inset-0 z-10" style="opacity: 1;"></div>
+				</div>
+			</div>
+		</div>
+		<div
+			class="overflow-x-visible overflow-y-auto scroll-pb-6 min-h-[0px] [scrollbar-color:hsl(var(--text-500))] scroll-smooth overscroll-contain [-webkit-overflow-scrolling:touch] [&amp;::-webkit-scrollbar]:mt-4 [&amp;::-webkit-scrollbar]:w-[0.5rem] [&amp;::-webkit-scrollbar-track]:bg-transparent [&amp;::-webkit-scrollbar-track]:my-1 [&amp;::-webkit-scrollbar-thumb]:rounded-[1em] [&amp;::-webkit-scrollbar-thumb]:border-[0.25rem] [&amp;::-webkit-scrollbar-thumb]:border-transparent [&amp;::-webkit-scrollbar-thumb]:bg-clip-padding [&amp;::-webkit-scrollbar-thumb]:bg-text-500/80 [&amp;::-webkit-scrollbar-thumb:hover]:bg-text-500 [&amp;.has-bottom-scroll]:[mask-image:linear-gradient(to_top,rgba(0,0,0,0)_0%,_rgba(0,0,0,1)_3%)]">
+			<div class="px-5 pb-4 pt-3">
+				<div class="flex items-center">
+					<h2 class="font-styrene-display flex-1 text-lg font-medium">Chat controls</h2><button class="inline-flex
+  items-center
+  justify-center
+  relative
+  shrink-0
+  ring-offset-2
+  ring-offset-bg-300
+  ring-accent-main-100
+  focus-visible:outline-none
+  focus-visible:ring-1
+  disabled:pointer-events-none
+  disabled:opacity-50
+  disabled:shadow-none
+  disabled:drop-shadow-none text-text-200
+          border-transparent
+          transition-colors
+          font-styrene
+          active:bg-bg-400
+          hover:bg-bg-500/40
+          hover:text-text-100 h-9 w-9 rounded-md active:scale-95 shrink-0 -mr-2"><svg
+							xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor"
+							viewBox="0 0 256 256">
+							<path
+								d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z">
+							</path>
+						</svg></button>
+				</div>
+				<div class="my-2">
+					<div class="text-text-200 text-lg">
+						<div class="font-tiempos inline-flex gap-[4px] text-[14px] leading-none"><svg
+								xmlns="http://www.w3.org/2000/svg" viewBox="0 0 139 34"
+								class="claude-logo-model-selector block translate-y-[1.5px]" height="11.5"
+								fill="currentColor" aria-label="Claude">
+								<path
+									d="M18.07 30.79c-5.02 0-8.46-2.8-10.08-7.11a19.2 19.2 0 0 1-1.22-7.04C6.77 9.41 10 4.4 17.16 4.4c4.82 0 7.78 2.1 9.48 7.1h2.06l-.28-6.9c-2.88-1.86-6.48-2.81-10.87-2.81-6.16 0-11.41 2.77-14.34 7.74A16.77 16.77 0 0 0 1 18.2c0 5.53 2.6 10.42 7.5 13.15a17.51 17.51 0 0 0 8.74 2.06c4.78 0 8.57-.91 11.93-2.5l.87-7.62h-2.1c-1.26 3.48-2.76 5.57-5.25 6.68-1.22.55-2.76.83-4.62.83Zm21.65-26.4.2-3.39H38.5l-6.33 1.9v1.02l2.8 1.3v23.79c0 1.62-.82 1.98-3 2.25V33h10.75v-1.74c-2.17-.27-3-.63-3-2.25V4.4Zm42.75 29h.83l7.27-1.38v-1.78l-1.03-.07c-1.7-.16-2.13-.52-2.13-1.9V15.58l.2-4.07h-1.15l-6.87.99v1.73l.67.12c1.85.28 2.4.8 2.4 2.1v11.3C80.9 29.13 79.2 30 77.19 30c-2.26 0-3.64-1.15-3.64-3.8V15.58l.2-4.07h-1.19l-6.87.99v1.73l.71.12c1.86.28 2.41.8 2.41 2.1v10.43c0 4.42 2.49 6.52 6.48 6.52 3.04 0 5.53-1.62 7.39-3.88l-.2 3.88Zm-20-14.06c0-5.65-3-7.82-8.4-7.82-4.79 0-8.27 1.97-8.27 5.25 0 1 .36 1.74 1.07 2.25l3.64-.47c-.16-1.1-.24-1.78-.24-2.05 0-1.86.99-2.8 3-2.8 2.97 0 4.47 2.09 4.47 5.44v1.11l-7.51 2.25c-2.49.67-3.91 1.27-4.86 2.65a5 5 0 0 0-.71 2.8c0 3.2 2.21 5.46 5.97 5.46 2.72 0 5.13-1.23 7.23-3.56.75 2.33 1.9 3.56 3.95 3.56 1.66 0 3.16-.68 4.5-1.98l-.4-1.38c-.59.16-1.14.23-1.73.23-1.15 0-1.7-.9-1.7-2.68v-8.26Zm-9.6 10.87c-2.05 0-3.31-1.19-3.31-3.28 0-1.43.67-2.26 2.1-2.73l6.08-1.94v5.85c-1.94 1.46-3.08 2.1-4.86 2.1Zm63.3 1.81v-1.78l-1.02-.07c-1.7-.16-2.14-.52-2.14-1.9V4.4l.2-3.4h-1.42l-6.32 1.9v1.02l2.8 1.3v7.83a8.84 8.84 0 0 0-5.37-1.54c-6.28 0-11.18 4.78-11.18 11.93 0 5.89 3.51 9.96 9.32 9.96 3 0 5.61-1.47 7.23-3.72l-.2 3.72h.83l7.27-1.39Zm-13.15-18.13c3 0 5.25 1.74 5.25 4.94v9a7.2 7.2 0 0 1-5.21 2.1c-4.31 0-6.48-3.4-6.48-7.94 0-5.1 2.48-8.1 6.44-8.1Zm28.52 4.5c-.55-2.64-2.17-4.15-4.42-4.15-3.36 0-5.7 2.53-5.7 6.17 0 5.37 2.85 8.85 7.44 8.85a8.6 8.6 0 0 0 7.38-4.35l1.35.36c-.6 4.66-4.82 8.14-10 8.14-6.08 0-10.27-4.5-10.27-10.9 0-6.45 4.54-11 10.63-11 4.54 0 7.74 2.73 8.77 7.48l-15.84 4.85V21.7l10.66-3.32Z">
+								</path>
+							</svg>
+							<div class="whitespace-nowrap tracking-tight"> 3 Haiku</div>
+						</div>
+					</div>
+					<p class="text-text-300 text-sm">Fastest model for daily tasks <a
+							class="hover:text-text-000 underline" href="https://www.anthropic.com/product"
+							target="_blank" rel="noopener">Learn more</a></p>
+				</div>
+				<div class="mt-4">
+					<h3 class="text-text-300 mb-2 mt-4 text-sm font-medium">Project content</h3>
+					<div class="border-border-400 rounded-lg border px-3 py-4"><a
+							class="hover:text-text-000 flex items-center gap-1.5 hover:underline"
+							href="/project/8b3c7aa0-e449-4335-b235-5a6ffd73386f"><svg xmlns="http://www.w3.org/2000/svg"
+								width="16" height="16" fill="currentColor" viewBox="0 0 256 256"
+								class="text-text-300 shrink-0">
+								<path
+									d="M71.59,61.47a8,8,0,0,0-15.18,0l-40,120A8,8,0,0,0,24,192h80a8,8,0,0,0,7.59-10.53ZM35.1,176,64,89.3,92.9,176ZM208,76a52,52,0,1,0-52,52A52.06,52.06,0,0,0,208,76Zm-88,0a36,36,0,1,1,36,36A36,36,0,0,1,120,76Zm104,68H136a8,8,0,0,0-8,8v56a8,8,0,0,0,8,8h88a8,8,0,0,0,8-8V152A8,8,0,0,0,224,144Zm-8,56H144V160h72Z">
+								</path>
+							</svg>
+							<div class="font-tiempos text-text-200 leading-tight tracking-tight">NoFileProject</div>
+						</a>
+						<div><span class="text-text-400 text-xs">Created by lugia19</span></div>
+						<ul class="mt-2 flex flex-col gap-2"></ul>
+					</div>
+				</div>
+				<h3 class="text-text-300 mb-2 mt-4 text-sm font-medium">Content</h3>
+				<ul class="mt-2 flex flex-col gap-2">
+					<div class="border-border-400 rounded-lg border px-3 py-5 text-center">
+						<div class="font-tiempos mb-1">No content added yet</div>
+						<div class="text-text-300 mb-1 text-xs">Add images, PDFs, docs, spreadsheets, and more to
+							summarize, analyze, and query content with Claude.</div>
+					</div>
+				</ul>
+				<div>
+					<h3 class="text-text-300 mb-2 mt-5 text-sm font-medium">Chat styles</h3><label
+						class="mb-2 flex items-center">
+						<div class="bg-bg-300 mr-1.5 grid h-6 w-6 place-items-center rounded"><svg
+								xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+								viewBox="0 0 256 256" class="text-text-500">
+								<path
+									d="M87.24,52.59a8,8,0,0,0-14.48,0l-64,136a8,8,0,1,0,14.48,6.81L39.9,160h80.2l16.66,35.4a8,8,0,1,0,14.48-6.81ZM47.43,144,80,74.79,112.57,144ZM200,96c-12.76,0-22.73,3.47-29.63,10.32a8,8,0,0,0,11.26,11.36c3.8-3.77,10-5.68,18.37-5.68,13.23,0,24,9,24,20v3.22A42.76,42.76,0,0,0,200,128c-22.06,0-40,16.15-40,36s17.94,36,40,36a42.73,42.73,0,0,0,24-7.25,8,8,0,0,0,16-.75V132C240,112.15,222.06,96,200,96Zm0,88c-13.23,0-24-9-24-20s10.77-20,24-20,24,9,24,20S213.23,184,200,184Z">
+								</path>
+							</svg></div>
+						<div class="text-text-200 flex-1 text-sm">Font</div><select
+							class="block
+  text-text-200
+  py-0
+  transition-colors
+  focus:ring-accent-main-200
+  focus:border-accent-main-200 h-8 pl-3 pr-8 text-sm tracking-tight rounded-md bg-bg-000 border border-border-200 hover:border-border-100 shadow bg-bg-000 font-user-message w-44">
+							<option value="default">Default</option>
+							<option value="system">Match system</option>
+							<option value="dyslexia">Dyslexic friendly</option>
+						</select>
+					</label>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
