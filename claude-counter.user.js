@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         Claude Counter
+// @name         Claude Usage Tracker
 // @namespace    Violentmonkey Scripts
 // @match        https://claude.ai/*
 // @version      1.0
 // @author       lugia19
-// @description  Counts tokens in chat messages
+// @description  Helps you track your claude.ai usage caps.
 // @grant        GM_setValue
 // @grant        GM_getValue
 // ==/UserScript==
@@ -524,7 +524,7 @@
 		`;
 
 		header.appendChild(arrow);
-		header.appendChild(document.createTextNode('Claude Token Counter'));
+		header.appendChild(document.createTextNode('Claude Usage Tracker'));
 
 		// Last message counter (always visible)
 		const lastMessageCounter = document.createElement('div');
@@ -793,10 +793,10 @@
 			AI_output = await getOutputMessage();
 		}
 
-		// Process the AI output if we have it (with 5x multiplication)
+		// Process the AI output if we have it (with multiplication)
 		if (AI_output) {
 			const text = AI_output.textContent || '';
-			const tokens = calculateTokens(text) * OUTPUT_TOKEN_MULTIPLIER; // Only multiply the final response by 5
+			const tokens = calculateTokens(text) * OUTPUT_TOKEN_MULTIPLIER;
 			console.log("Processing final AI output:");
 			console.log(`Text: "${text}"`);
 			console.log(`Tokens: ${tokens}`);
