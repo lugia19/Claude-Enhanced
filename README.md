@@ -1,5 +1,7 @@
 # Claude usage counter
 
+Available on [Greasy Fork](https://greasyfork.org/en/scripts/515111-claude-usage-tracker)
+
 This is basically a script meant to help you gauge how much usage of claude you have left.
 
 It's still WIP, so the numbers for the caps of each model are mostly just guesses.
