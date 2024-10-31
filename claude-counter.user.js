@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Claude Usage Tracker
-// @namespace    Violentmonkey Scripts
+// @namespace    lugia19.com
 // @match        https://claude.ai/*
 // @version      1.0
 // @author       lugia19
