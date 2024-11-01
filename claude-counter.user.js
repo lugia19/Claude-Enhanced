@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.0.1
+// @version      1.1.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -30,7 +30,7 @@
 	const MODELS = ['3 Haiku', '3.5 Sonnet (New)', '3 Opus'];
 	const WARNING_THRESHOLD = 0.9;
 
-	// Selectors and identifiers - unchanged
+	// Selectors and identifiers
 	const SELECTORS = {
 		MAIN_INPUT: 'div[aria-label="Write your prompt to Claude"]',
 		REGENERATE_BUTTON_PATH: 'M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z',
@@ -55,10 +55,11 @@
 	//#endregion
 
 	//State variables
-	let totalTokenCount = 0;
 	let currentTokenCount = 0;
 	let currentModel = getCurrentModel();
 	let modelSections = {};
+	let currentConversationId = null;
+	let currentMessageCount = 0;
 
 
 	//#region Utility Functions
@@ -538,7 +539,7 @@
 			border-bottom: 1px solid #3B3B3B;
 			padding-bottom: 8px;
 		`;
-		lastMessageCounter.textContent = 'Last message: 0 (weighted) tokens';
+		lastMessageCounter.textContent = 'Current length: 0 tokens';
 
 		// Content container (collapsible)
 		const content = document.createElement('div');
@@ -605,13 +606,13 @@
 		});
 	}
 
-	function updateProgressBar(currentTotal, lastCount) {
+	function updateProgressBar(lastCount) {
 		// Update each model section
 		console.log("Updating progress bar...")
 
 		const lastMessageCounter = document.getElementById('current-token-count');
 		if (lastMessageCounter) {
-			lastMessageCounter.textContent = `Last message: ${lastCount.toLocaleString()} (weighted) tokens`;
+			lastMessageCounter.textContent = `Current length: ${lastCount.toLocaleString()} tokens`;
 		}
 
 		// Update each model section
@@ -804,33 +805,51 @@
 			currentCount += tokens;
 		}
 
+		return currentCount;
+	}
+
+	async function updateTokenTotal() {
+		const newCount = await countTokens();
 
 		const { total, isInitialized } = initializeOrLoadStorage();
 		console.log(`Loaded total: ${total}`)
-		totalTokenCount = isInitialized ? total + currentCount : currentCount;
-		currentTokenCount = currentCount;
+		let totalTokenCount = isInitialized ? total + newCount : newCount;
 
 		saveToStorage(totalTokenCount);
 
 		const stored = GM_getValue(getStorageKey());
 		const resetTime = new Date(stored.resetTimestamp);
 
-		console.log(`Current conversation tokens: ${currentCount}`);
+		console.log(`Current conversation tokens: ${newCount}`);
 		console.log(`Total accumulated tokens: ${totalTokenCount}`);
 		console.log(`Next reset at: ${resetTime.toLocaleTimeString()}`);
 
-		updateProgressBar(totalTokenCount, currentCount);
-
-
+		updateProgressBar(newCount);
 	}
 	//#endregion
 
 	//#region Event Handlers
-	function pollForModelChanges() {
-		setInterval(() => {
+	function pollUpdates() {
+		setInterval(async () => {
 			const newModel = getCurrentModel();
 			const currentTime = new Date();
 			let needsUpdate = false;
+
+			// Check conversation state
+			const conversationId = getConversationId();
+			if (conversationId == null) {
+				currentTokenCount = 0;
+				needsUpdate = true;
+			}
+			const messages = document.querySelectorAll(`${SELECTORS.USER_MESSAGE}, ${SELECTORS.AI_MESSAGE}`);
+
+			if ((conversationId !== currentConversationId && conversationId !== null) || messages.length !== currentMessageCount) {
+				console.log('Conversation changed, recounting tokens');
+				currentConversationId = conversationId;
+				currentMessageCount = messages.length;
+				currentTokenCount = await countTokens();
+				needsUpdate = true;
+			}
 
 			// Check for model change
 			if (newModel !== currentModel) {
@@ -839,7 +858,7 @@
 				needsUpdate = true;
 			}
 
-			// Check each model's reset time and update countdown
+			// Check each model's reset time, update countdown, and check for total changes
 			MODELS.forEach(model => {
 				const storageKey = `${STORAGE_KEY}_${model.replace(/\s+/g, '_')}`;
 				const stored = GM_getValue(storageKey);
@@ -852,22 +871,38 @@
 						GM_setValue(storageKey, null);
 						needsUpdate = true;
 					} else {
-						// Update countdown even if nothing else changed
+						// Update countdown
 						section.resetTimeDisplay.textContent = formatTimeRemaining(resetTime);
+
+						// Check if stored total is different from displayed total
+						const displayedTotal = parseInt(section.tooltip.textContent.split('/')[0].replace(/,/g, '').trim());
+						if (stored.total !== displayedTotal) {
+							console.log(`Detected change in total for ${model}: ${displayedTotal} -> ${stored.total}`);
+							needsUpdate = true;
+						}
 					}
 				} else {
 					section.resetTimeDisplay.textContent = 'Reset in: Not set';
+					if (section.tooltip.textContent !== '0 / ...') {
+						needsUpdate = true;
+					}
 				}
 			});
 
 			// Update UI if needed
 			if (needsUpdate) {
-				updateProgressBar(totalTokenCount, currentTokenCount);
+				updateProgressBar(currentTokenCount);
 			}
 		}, POLL_INTERVAL_MS);
 	}
 
 
+	async function handleTokenCount() {
+		const delay = getConversationId() ? DELAY_MS : 5000;
+		console.log(`Waiting ${delay}ms before counting tokens`);
+		await sleep(delay);
+		await updateTokenTotal();
+	}
 
 	function setupEvents() {
 		console.log("Setting up tracking...")
@@ -878,10 +913,7 @@
 			if (regenerateButton || saveButton || sendButton) {
 				console.log('Clicked:', e.target);
 				console.log('Event details:', e);
-				const delay = getConversationId() ? DELAY_MS : 5000;
-				console.log(`Waiting ${delay}ms before counting tokens`);
-				await sleep(delay);
-				await countTokens();
+				await handleTokenCount();
 				return;
 			}
 		});
@@ -892,10 +924,7 @@
 			if ((mainInput || editArea) && e.key === 'Enter' && !e.shiftKey) {
 				console.log('Enter pressed in:', e.target);
 				console.log('Event details:', e);
-				const delay = getConversationId() ? DELAY_MS : 5000;
-				console.log(`Waiting ${delay}ms before counting tokens`);
-				await sleep(delay);
-				await countTokens();
+				await handleTokenCount();
 				return;
 			}
 		});
@@ -905,13 +934,12 @@
 
 	function initialize() {
 		console.log('Initializing Chat Token Counter...');
-		const { total } = initializeOrLoadStorage();
-		totalTokenCount = total;
+		initializeOrLoadStorage();
 		currentTokenCount = 0;
 		setupEvents();
 		createProgressBar();
-		updateProgressBar(totalTokenCount, currentTokenCount);
-		pollForModelChanges();
+		updateProgressBar(currentTokenCount);
+		pollUpdates();
 		console.log('Initialization complete. Ready to track tokens.');
 	}
 
