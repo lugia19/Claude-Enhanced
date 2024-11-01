@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.0
+// @version      1.0.1
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -839,18 +839,24 @@
 				needsUpdate = true;
 			}
 
-			// Check each model's reset time
+			// Check each model's reset time and update countdown
 			MODELS.forEach(model => {
 				const storageKey = `${STORAGE_KEY}_${model.replace(/\s+/g, '_')}`;
 				const stored = GM_getValue(storageKey);
+				const section = modelSections[model];
 
 				if (stored) {
 					const resetTime = new Date(stored.resetTimestamp);
 					if (currentTime >= resetTime) {
 						console.log(`Reset time reached for ${model}, clearing total`);
-						GM_setValue(storageKey, null); // Just clear it, don't set new reset time
+						GM_setValue(storageKey, null);
 						needsUpdate = true;
+					} else {
+						// Update countdown even if nothing else changed
+						section.resetTimeDisplay.textContent = formatTimeRemaining(resetTime);
 					}
+				} else {
+					section.resetTimeDisplay.textContent = 'Reset in: Not set';
 				}
 			});
 
@@ -860,6 +866,7 @@
 			}
 		}, POLL_INTERVAL_MS);
 	}
+
 
 
 	function setupEvents() {
