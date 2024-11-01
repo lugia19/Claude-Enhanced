@@ -829,13 +829,34 @@
 	function pollForModelChanges() {
 		setInterval(() => {
 			const newModel = getCurrentModel();
+			const currentTime = new Date();
+			let needsUpdate = false;
+
+			// Check for model change
 			if (newModel !== currentModel) {
 				console.log(`Model changed from ${currentModel} to ${newModel}`);
 				currentModel = newModel;
-				currentTokenCount = 0;
-				const { total } = initializeOrLoadStorage();
-				totalTokenCount = total;
-				updateProgressBar(totalTokenCount, 0);
+				needsUpdate = true;
+			}
+
+			// Check each model's reset time
+			MODELS.forEach(model => {
+				const storageKey = `${STORAGE_KEY}_${model.replace(/\s+/g, '_')}`;
+				const stored = GM_getValue(storageKey);
+
+				if (stored) {
+					const resetTime = new Date(stored.resetTimestamp);
+					if (currentTime >= resetTime) {
+						console.log(`Reset time reached for ${model}, clearing total`);
+						GM_setValue(storageKey, null); // Just clear it, don't set new reset time
+						needsUpdate = true;
+					}
+				}
+			});
+
+			// Update UI if needed
+			if (needsUpdate) {
+				updateProgressBar(totalTokenCount, currentTokenCount);
 			}
 		}, POLL_INTERVAL_MS);
 	}
