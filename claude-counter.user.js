@@ -22,7 +22,7 @@
 	// Model-specific token limits
 	const MODEL_TOKENS = {
 		'3 Opus': 1500000,
-		'3.5 Sonnet (New)': 2500000,
+		'3.5 Sonnet (New)': 1750000,
 		'3 Haiku': 4000000,
 		'default': 2500000
 	};
@@ -107,7 +107,7 @@
 
 	function calculateTokens(text) {
 		const charCount = text.length;
-		return Math.ceil((charCount / 4) * 1.2);
+		return Math.ceil(charCount / 4);
 	}
 
 	function getResetTime(currentTime) {
