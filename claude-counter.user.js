@@ -22,7 +22,7 @@
 	// Model-specific token limits
 	const MODEL_TOKENS = {
 		'3 Opus': 1500000,
-		'3.5 Sonnet (New)': 1750000,
+		'3.5 Sonnet (New)': 1900000,
 		'3 Haiku': 4000000,
 		'default': 2500000
 	};
