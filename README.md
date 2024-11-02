@@ -14,3 +14,9 @@ The script will correctly handle calculating token usage from:
 - The AI's output (This is weighted as being 10x the usage of input tokens, based on the API pricing)
 
 (And yes, this was mostly coded using Sonnet 3.5)
+
+# Claude exporter
+
+Available on [Greasy Fork](https://greasyfork.org/en/scripts/515448-claude-chat-exporter)
+
+Does what it says. Exports the current chat to either jsonl or txt.
