@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.1.0
+// @version      1.2.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -13,7 +13,7 @@
 (function () {
 	'use strict';
 
-	//#region Constants and Configuration
+	//#region Config
 	const STORAGE_KEY = 'claudeUsageTracker';
 	const POLL_INTERVAL_MS = 1000;
 	const DELAY_MS = 100;
@@ -62,7 +62,7 @@
 	let currentMessageCount = 0;
 
 
-	//#region Utility Functions
+	//#region Utils
 	const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 	function getConversationId() {
@@ -111,6 +111,15 @@
 		return Math.ceil(charCount / 4);
 	}
 
+	function calculateMessagesLeft(modelTotal, conversationLength) {
+		const maxTokens = MODEL_TOKENS[currentModel] || MODEL_TOKENS.default;
+		if (conversationLength === 0) return '∞';  // Handle division by zero
+
+		const remainingTokens = maxTokens - modelTotal;
+		const messagesLeft = remainingTokens / conversationLength;
+		return messagesLeft.toFixed(1);  // Show one decimal place
+	}
+
 	function getResetTime(currentTime) {
 		const hourStart = new Date(currentTime);
 		hourStart.setMinutes(0, 0, 0);
@@ -120,7 +129,7 @@
 	}
 	//#endregion
 
-	//#region Storage Management
+	//#region Storage
 	function getStorageKey() {
 		return `${STORAGE_KEY}_${currentModel.replace(/\s+/g, '_')}`;
 	}
@@ -166,7 +175,7 @@
 	}
 	//#endregion
 
-	//#region Project/Chat File Processing
+	//#region File Processing
 	async function ensureSidebarLoaded() {
 		const sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
 
@@ -356,7 +365,7 @@
 	}
 	//#endregion
 
-	//#region UI Components
+	//#region UI elements
 	function createModelSection(modelName, isActive) {
 		const container = document.createElement('div');
 		container.style.cssText = `
@@ -528,10 +537,9 @@
 		header.appendChild(arrow);
 		header.appendChild(document.createTextNode('Claude Usage Tracker'));
 
-		// Last message counter (always visible)
-		const lastMessageCounter = document.createElement('div');
-		lastMessageCounter.id = 'current-token-count';
-		lastMessageCounter.style.cssText = `
+		// Counters (always visible)
+		const conversationCounter = document.createElement('div');
+		conversationCounter.style.cssText = `
 			color: white;
 			font-size: 12px;
 			padding: 0 10px;
@@ -539,7 +547,26 @@
 			border-bottom: 1px solid #3B3B3B;
 			padding-bottom: 8px;
 		`;
-		lastMessageCounter.textContent = 'Current length: 0 tokens';
+
+		const estimateDisplay = document.createElement('div');
+		estimateDisplay.id = 'messages-left-estimate';
+		estimateDisplay.style.cssText = `
+			color: white;
+			font-size: 12px;
+		`;
+		estimateDisplay.textContent = 'Est. messages left: ∞';
+
+		const lengthDisplay = document.createElement('div');
+		lengthDisplay.id = 'conversation-token-count';
+		lengthDisplay.style.cssText = `
+			color: #888;
+			font-size: 11px;
+			margin-top: 4px;
+		`;
+		lengthDisplay.textContent = 'Current length: 0 tokens';
+
+		conversationCounter.appendChild(estimateDisplay);
+		conversationCounter.appendChild(lengthDisplay);
 
 		// Content container (collapsible)
 		const content = document.createElement('div');
@@ -557,7 +584,7 @@
 		});
 
 		container.appendChild(header);
-		container.appendChild(lastMessageCounter);
+		container.appendChild(conversationCounter);
 		container.appendChild(content);
 		document.body.appendChild(container);
 
@@ -606,13 +633,24 @@
 		});
 	}
 
-	function updateProgressBar(lastCount) {
+	function updateProgressBar(currentTokens) {
 		// Update each model section
 		console.log("Updating progress bar...")
 
-		const lastMessageCounter = document.getElementById('current-token-count');
-		if (lastMessageCounter) {
-			lastMessageCounter.textContent = `Current length: ${lastCount.toLocaleString()} tokens`;
+		const lengthDisplay = document.getElementById('conversation-token-count');
+		if (lengthDisplay) {
+			lengthDisplay.textContent = `Current length: ${currentTokens.toLocaleString()} tokens`;
+		}
+
+		// Update messages left estimate
+		const estimateDisplay = document.getElementById('messages-left-estimate');
+		if (estimateDisplay) {
+			const modelStorageKey = `${STORAGE_KEY}_${currentModel.replace(/\s+/g, '_')}`;
+			const stored = GM_getValue(modelStorageKey);
+			const modelTotal = stored ? stored.total : 0;
+
+			const estimate = calculateMessagesLeft(modelTotal, currentTokens);
+			estimateDisplay.textContent = `Est. messages left: ${estimate}`;
 		}
 
 		// Update each model section
@@ -652,7 +690,7 @@
 	}
 	//#endregion
 
-	//#region Token Counting Logic
+	//#region Token Count
 	async function getOutputMessage(maxWaitSeconds = 60) {
 		console.log("Waiting for AI response...");
 		const startTime = Date.now();
@@ -697,6 +735,9 @@
 	async function countTokens() {
 		const userMessages = document.querySelectorAll(SELECTORS.USER_MESSAGE);
 		const aiMessages = document.querySelectorAll(SELECTORS.AI_MESSAGE);
+		if (!aiMessages || !userMessages) {
+			return null;
+		}
 
 		console.log('Found user messages:', userMessages);
 		console.log('Found AI messages:', aiMessages);
@@ -810,6 +851,8 @@
 
 	async function updateTokenTotal() {
 		const newCount = await countTokens();
+		if (!newCount)
+			return
 
 		const { total, isInitialized } = initializeOrLoadStorage();
 		console.log(`Loaded total: ${total}`)
@@ -848,6 +891,8 @@
 				currentConversationId = conversationId;
 				currentMessageCount = messages.length;
 				currentTokenCount = await countTokens();
+				if (!currentTokenCount)
+					return
 				needsUpdate = true;
 			}
 
