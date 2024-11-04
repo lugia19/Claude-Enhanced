@@ -15,6 +15,12 @@ The script will correctly handle calculating token usage from:
 
 (And yes, this was mostly coded using Sonnet 3.5)
 
+# Claude temperature control
+
+Available on [Greasy Fork](https://greasyfork.org/en/scripts/515809-claude-temperature-control)
+
+Lets you control the temperature (via a query parameter) on claude.ai
+
 # Claude exporter
 
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/515448-claude-chat-exporter)
