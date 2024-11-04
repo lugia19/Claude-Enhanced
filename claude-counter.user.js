@@ -753,16 +753,6 @@
 		let currentCount = 0;
 		let AI_output = null;
 
-		// Check if we have a complete set of messages
-		if (aiMessages.length !== 0) {
-			if (aiMessages.length >= userMessages.length &&
-				!aiMessages[aiMessages.length - 1].querySelector('[data-is-streaming="true"]')) {
-				console.log("Found complete set of messages, last AI message is complete");
-				AI_output = aiMessages[aiMessages.length - 1];
-			}
-		}
-
-
 		// Count user messages
 		userMessages.forEach((msg, index) => {
 			const text = msg.textContent || '';
@@ -773,6 +763,20 @@
 			currentCount += tokens;
 		});
 
+		// Check if we have a complete set of AI messages
+		if (aiMessages.length !== 0) {
+			const lastMessage = aiMessages[aiMessages.length - 1];
+			const lastParent = lastMessage.closest('[data-is-streaming]');
+			
+			if (aiMessages.length >= userMessages.length && 
+				lastParent && lastParent.getAttribute('data-is-streaming') === 'false') {
+				console.log("Found complete set of messages, last AI message is complete");
+				AI_output = lastMessage;
+			}
+		}
+
+		
+
 		// Count all AI messages except the final output (if already present)
 		aiMessages.forEach((msg, index) => {
 			// Skip if this is the final output we're saving for later
@@ -781,8 +785,8 @@
 				return;
 			}
 
-			const isStreaming = msg.querySelector('[data-is-streaming="true"]');
-			if (!isStreaming) {
+			const parent = msg.closest('[data-is-streaming]');
+			if (parent && parent.getAttribute('data-is-streaming') === 'false') {
 				const text = msg.textContent || '';
 				const tokens = calculateTokens(text); // No multiplication for intermediate responses
 				console.log(`AI message ${index}:`, msg);

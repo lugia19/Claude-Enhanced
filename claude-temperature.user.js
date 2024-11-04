@@ -196,37 +196,79 @@
 	}
 
 	async function isGenerating() {
-		const userMessages = document.querySelectorAll(SELECTORS.USER_MESSAGE);
-		const aiMessages = document.querySelectorAll(SELECTORS.AI_MESSAGE);
-		if (!aiMessages || !userMessages) {
+		const tempUserMessages = document.querySelectorAll(SELECTORS.USER_MESSAGE);
+		await new Promise(resolve => setTimeout(resolve, 100));
+		const tempAIMessages = document.querySelectorAll(SELECTORS.AI_MESSAGE);
+		await new Promise(resolve => setTimeout(resolve, 100));
+
+		console.log(tempUserMessages)
+		console.log(tempAIMessages)
+		await new Promise(resolve => setTimeout(resolve, 100));
+
+		if (!tempUserMessages) {
+			console.log("Returning false due to no tempUserMessages")
 			return false;
+		}
+
+		if (!tempAIMessages || tempAIMessages.length === 0) {
+			console.log("Returning false due to no tempAIMessages")
+			return true;
 		}
 
 		// Check if we have a complete set of messages
-		if (aiMessages.length >= userMessages.length &&
-			!aiMessages[aiMessages.length - 1].querySelector('[data-is-streaming="true"]')) {
-			return false;
-		}
-
-		return true;
+		let allFinished = true;
+		tempAIMessages.forEach(msg => {
+			const parent = msg.closest('[data-is-streaming]');
+			if (!parent || parent.getAttribute('data-is-streaming') !== 'false') {
+				allFinished = false;
+			}
+		});
+		console.log(`Returning ${allFinished}`)
+		return !allFinished
 	}
 
+	let isCheckUrlRunning = false;
+
 	async function checkUrl() {
-		const conversationId = getConversationId();
-		if (!conversationId) return;
+		if (isCheckUrlRunning) {
+			console.log('checkUrl is already running, skipping this instance');
+			return;
+		}
 
-		const temperature = loadTemperature();
-		const urlParams = new URLSearchParams(window.location.search);
-		const currentTemp = urlParams.get('t');
+		isCheckUrlRunning = true;
+		try {
+			const conversationId = getConversationId();
+			if (!conversationId) return;
 
-		if (currentTemp !== temperature.toString()) {
-			console.log(`Temperature mismatch: URL ${currentTemp}, stored ${temperature}`);
-			if (!(await isGenerating())) {
-				console.log('AI not currently generating, updating URL');
-				updateUrl(temperature);
-			} else {
-				console.log('AI is currently generating, waiting to update URL');
+			const temperature = loadTemperature();
+			const urlParams = new URLSearchParams(window.location.search);
+			const currentTemp = urlParams.get('t');
+
+			if (currentTemp !== temperature.toString()) {
+				console.log(`Temperature mismatch: URL ${currentTemp}, stored ${temperature}`);
+				let consecutiveSuccesses = 0;
+
+				while (consecutiveSuccesses < 3) {
+					if (!(await isGenerating())) {
+						consecutiveSuccesses++;
+						console.log(`AI not currently generating, success ${consecutiveSuccesses}/3`);
+
+						if (consecutiveSuccesses === 3) {
+							console.log('AI confirmed not generating, updating URL');
+							await new Promise(resolve => setTimeout(resolve, 2000));
+							updateUrl(temperature);
+							break;
+						}
+					} else {
+						consecutiveSuccesses = 0;
+						console.log('AI is currently generating, waiting to update URL');
+					}
+
+					await new Promise(resolve => setTimeout(resolve, 1000));
+				}
 			}
+		} finally {
+			isCheckUrlRunning = false;
 		}
 	}
 	//#endregion
