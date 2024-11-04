@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Claude Temperature Control
 // @namespace    lugia19.com
-// @match        https://claude.ai/chat/*
-// @version      1.0.1
+// @match        https://claude.ai/*
+// @version      1.0.2
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows adjusting the temperature setting for Claude AI.
@@ -40,7 +40,7 @@
 		const container = document.createElement('div');
 		container.style.cssText = `
             position: fixed;
-            bottom: 20px;
+            top: 45%;
             right: 20px;
             background: #2D2D2D;
             border: 1px solid #3B3B3B;
@@ -109,7 +109,9 @@
             border: none;
             border-radius: 4px;
             padding: 4px;
+            -moz-appearance: textfield;
         `;
+		manualInput.setAttribute('autocomplete', 'off');
 
 		sliderContainer.appendChild(slider);
 		sliderContainer.appendChild(manualInput);
@@ -196,15 +198,8 @@
 	async function isGenerating() {
 		const userMessages = document.querySelectorAll(SELECTORS.USER_MESSAGE);
 		const aiMessages = document.querySelectorAll(SELECTORS.AI_MESSAGE);
-		console.log(aiMessages)
 		if (!aiMessages || !userMessages) {
-			return true;
-		}
-		if (aiMessages.length === 0) {
-			if (userMessages.length === 0)
-				return false
-			else
-				return true;
+			return false;
 		}
 
 		// Check if we have a complete set of messages

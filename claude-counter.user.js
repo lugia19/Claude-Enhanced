@@ -15,7 +15,7 @@
 
 	//#region Config
 	const STORAGE_KEY = 'claudeUsageTracker';
-	const POLL_INTERVAL_MS = 1000;
+	const POLL_INTERVAL_MS = 5000;
 	const DELAY_MS = 100;
 	const OUTPUT_TOKEN_MULTIPLIER = 10;	//How much to weigh output tokens.
 
