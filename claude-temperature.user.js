@@ -255,7 +255,6 @@
 
 						if (consecutiveSuccesses === 3) {
 							console.log('AI confirmed not generating, updating URL');
-							await new Promise(resolve => setTimeout(resolve, 2000));
 							updateUrl(temperature);
 							break;
 						}
