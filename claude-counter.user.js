@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.2.0
+// @version      1.2.1
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -55,6 +55,7 @@
 	//#endregion
 
 	//State variables
+	let isProcessingEvent = false;
 	let currentTokenCount = 0;
 	let currentModel = getCurrentModel();
 	let modelSections = {};
@@ -874,6 +875,10 @@
 	//#region Event Handlers
 	function pollUpdates() {
 		setInterval(async () => {
+			if (isProcessingEvent) {
+				console.log('Event processing in progress, skipping poll');
+				return;
+			}
 			const newModel = getCurrentModel();
 			const currentTime = new Date();
 			let needsUpdate = false;
@@ -943,10 +948,15 @@
 
 
 	async function handleTokenCount() {
-		const delay = getConversationId() ? DELAY_MS : 5000;
-		console.log(`Waiting ${delay}ms before counting tokens`);
-		await sleep(delay);
-		await updateTokenTotal();
+		isProcessingEvent = true;
+		try {
+			const delay = getConversationId() ? DELAY_MS : 5000;
+			console.log(`Waiting ${delay}ms before counting tokens`);
+			await sleep(delay);
+			await updateTokenTotal();
+		} finally {
+			isProcessingEvent = false;
+		}
 	}
 
 	function setupEvents() {
