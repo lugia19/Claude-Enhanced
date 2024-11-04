@@ -2,7 +2,7 @@
 // @name         Claude Chat Exporter
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.0.5
+// @version      1.1.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows exporting chat conversations from claude.ai.
@@ -25,61 +25,99 @@
 	function createExportCard() {
 		const container = document.createElement('div');
 		container.style.cssText = `
-            position: fixed;
-            top: 80px;
-            left: calc(100% - 200px);
-            background: #2D2D2D;
-            border: 1px solid #3B3B3B;
-            border-radius: 8px;
-            z-index: 9999;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-            padding: 10px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-            cursor: move;
-            user-select: none;
-            width: 180px;
-        `;
+			position: fixed;
+			top: 80px;
+			left: calc(100% - 200px);
+			background: #2D2D2D;
+			border: 1px solid #3B3B3B;
+			border-radius: 8px;
+			z-index: 9999;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+			cursor: move;
+			user-select: none;
+			width: 180px;
+		`;
+
+		// Header (always visible)
+		const header = document.createElement('div');
+		header.style.cssText = `
+			display: flex;
+			align-items: center;
+			padding: 8px 10px;
+			color: white;
+			font-size: 12px;
+			gap: 8px;
+		`;
+
+		const arrow = document.createElement('div');
+		arrow.innerHTML = '▼';
+		arrow.style.cssText = `
+			cursor: pointer;
+			transition: transform 0.2s;
+		`;
+
+		header.appendChild(arrow);
+		header.appendChild(document.createTextNode('Export Chat'));
+
+		// Content container (collapsible)
+		const content = document.createElement('div');
+		content.style.cssText = `
+			padding: 10px;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+		`;
 
 		const exportButton = document.createElement('button');
-		exportButton.textContent = 'Export chat';
+		exportButton.textContent = 'Export';
 		exportButton.style.cssText = `
-            background: #3b82f6;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            width: 100%;
-        `;
+			background: #3b82f6;
+			color: white;
+			border: none;
+			padding: 6px 12px;
+			border-radius: 4px;
+			cursor: pointer;
+			width: 100%;
+		`;
 
 		const formatDropdown = document.createElement('select');
 		formatDropdown.innerHTML = `
-            <option value="txt">Text (.txt)</option>
-            <option value="jsonl">JSONL (.jsonl)</option>
-        `;
+			<option value="txt">Text (.txt)</option>
+			<option value="jsonl">JSONL (.jsonl)</option>
+		`;
 		formatDropdown.style.cssText = `
-            background: #3B3B3B;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            width: 100%;
-            appearance: none;
-            -webkit-appearance: none;
-            -moz-appearance: none;
-            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='white'><path d='M7 10l5 5 5-5z'/></svg>");
-            background-repeat: no-repeat;
-            background-position: right 8px center;
-            background-size: 16px;
-        `;
+			background: #3B3B3B;
+			color: white;
+			border: none;
+			padding: 6px 12px;
+			border-radius: 4px;
+			width: 100%;
+			appearance: none;
+			-webkit-appearance: none;
+			-moz-appearance: none;
+			background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='white'><path d='M7 10l5 5 5-5z'/></svg>");
+			background-repeat: no-repeat;
+			background-position: right 8px center;
+			background-size: 16px;
+		`;
 
-		container.appendChild(exportButton);
-		container.appendChild(formatDropdown);
+		content.appendChild(exportButton);
+		content.appendChild(formatDropdown);
+
+		container.appendChild(header);
+		container.appendChild(content);
 		document.body.appendChild(container);
 
+		// Toggle collapse/expand
+		let isCollapsed = false;
+		arrow.addEventListener('click', (e) => {
+			e.stopPropagation();
+			isCollapsed = !isCollapsed;
+			content.style.display = isCollapsed ? 'none' : 'block';
+			arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
+		});
+
+		// Export functionality
 		exportButton.addEventListener('click', async () => {
 			const conversationId = getConversationId();
 			if (!conversationId) {
@@ -102,10 +140,12 @@
 		let initialX;
 		let initialY;
 
-		container.addEventListener('mousedown', (e) => {
+		header.addEventListener('mousedown', (e) => {
+			if (e.target === arrow) return;
 			isDragging = true;
 			initialX = e.clientX - container.offsetLeft;
 			initialY = e.clientY - container.offsetTop;
+			header.style.cursor = 'grabbing';
 		});
 
 		document.addEventListener('mousemove', (e) => {
@@ -119,9 +159,9 @@
 
 		document.addEventListener('mouseup', () => {
 			isDragging = false;
+			header.style.cursor = 'move';
 		});
 	}
-
 	async function getMessages() {
 		const userMessages = document.querySelectorAll(SELECTORS.USER_MESSAGE);
 		const aiMessages = document.querySelectorAll(SELECTORS.AI_MESSAGE);
