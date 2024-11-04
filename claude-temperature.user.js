@@ -2,7 +2,7 @@
 // @name         Claude Temperature Control
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.0.2
+// @version      1.0.3
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows adjusting the temperature setting for Claude AI.
@@ -31,7 +31,7 @@
 	}
 
 	function loadTemperature() {
-		return GM_getValue(STORAGE_KEY, 0.5);
+		return GM_getValue(STORAGE_KEY, 0.9);
 	}
 	//#endregion
 
