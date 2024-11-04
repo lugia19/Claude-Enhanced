@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.2.1
+// @version      1.2.2
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -312,6 +312,13 @@
 			const fileContainer = button.closest('div[data-testid]');
 			if (!fileContainer) {
 				console.log('Could not find content file container');
+				return 0;
+			}
+
+			// Check for image
+			const hasImage = button.parentElement.querySelector('img');
+			if (hasImage) {
+				console.log('File is an image, skipping token count');
 				return 0;
 			}
 
@@ -636,7 +643,7 @@
 
 	function updateProgressBar(currentTokens) {
 		// Update each model section
-		console.log("Updating progress bar...")
+		console.log("Updating progress bar...", currentTokens)
 
 		const lengthDisplay = document.getElementById('conversation-token-count');
 		if (lengthDisplay) {
@@ -736,7 +743,7 @@
 	async function countTokens() {
 		const userMessages = document.querySelectorAll(SELECTORS.USER_MESSAGE);
 		const aiMessages = document.querySelectorAll(SELECTORS.AI_MESSAGE);
-		if (!aiMessages || !userMessages) {
+		if (!aiMessages || !userMessages || userMessages.length === 0) {
 			return null;
 		}
 
@@ -747,11 +754,14 @@
 		let AI_output = null;
 
 		// Check if we have a complete set of messages
-		if (aiMessages.length >= userMessages.length &&
-			!aiMessages[aiMessages.length - 1].querySelector('[data-is-streaming="true"]')) {
-			console.log("Found complete set of messages, last AI message is complete");
-			AI_output = aiMessages[aiMessages.length - 1];
+		if (aiMessages.length !== 0) {
+			if (aiMessages.length >= userMessages.length &&
+				!aiMessages[aiMessages.length - 1].querySelector('[data-is-streaming="true"]')) {
+				console.log("Found complete set of messages, last AI message is complete");
+				AI_output = aiMessages[aiMessages.length - 1];
+			}
 		}
+
 
 		// Count user messages
 		userMessages.forEach((msg, index) => {
@@ -895,9 +905,10 @@
 				console.log('Conversation changed, recounting tokens');
 				currentConversationId = conversationId;
 				currentMessageCount = messages.length;
-				currentTokenCount = await countTokens();
-				if (!currentTokenCount)
+				let newTokenCount = await countTokens();
+				if (!newTokenCount)
 					return
+				currentTokenCount = newTokenCount;
 				needsUpdate = true;
 			}
 
