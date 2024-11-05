@@ -254,7 +254,8 @@
 						console.log(`AI not currently generating, success ${consecutiveSuccesses}/3`);
 
 						if (consecutiveSuccesses === 3) {
-							console.log('AI confirmed not generating, updating URL');
+							console.log('AI confirmed not generating, updating URL - waiting 5s just to ensure we dont interfere.');
+							await new Promise(resolve => setTimeout(resolve, 5000));
 							updateUrl(temperature);
 							break;
 						}
