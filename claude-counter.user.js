@@ -543,7 +543,7 @@
 		`;
 
 		header.appendChild(arrow);
-		header.appendChild(document.createTextNode('Claude Usage Tracker'));
+		header.appendChild(document.createTextNode('Usage Tracker'));
 
 		// Counters (always visible)
 		const conversationCounter = document.createElement('div');
