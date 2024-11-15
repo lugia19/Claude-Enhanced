@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.2.2
+// @version      1.2.3
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -22,12 +22,14 @@
 	// Model-specific token limits
 	const MODEL_TOKENS = {
 		'3 Opus': 1500000,
-		'3.5 Sonnet (New)': 1900000,
-		'3 Haiku': 4000000,
+		'3.5 Sonnet': 1900000,
+		'3.5 Sonnet (June 2024)': 1900000,
+		'Haiku': 4000000,
 		'default': 2500000
 	};
 
-	const MODELS = ['3 Haiku', '3.5 Sonnet (New)', '3 Opus'];
+	const MODELS = Object.keys(MODEL_TOKENS).filter(key => key !== 'default');
+
 	const WARNING_THRESHOLD = 0.9;
 
 	// Selectors and identifiers
@@ -767,15 +769,15 @@
 		if (aiMessages.length !== 0) {
 			const lastMessage = aiMessages[aiMessages.length - 1];
 			const lastParent = lastMessage.closest('[data-is-streaming]');
-			
-			if (aiMessages.length >= userMessages.length && 
+
+			if (aiMessages.length >= userMessages.length &&
 				lastParent && lastParent.getAttribute('data-is-streaming') === 'false') {
 				console.log("Found complete set of messages, last AI message is complete");
 				AI_output = lastMessage;
 			}
 		}
 
-		
+
 
 		// Count all AI messages except the final output (if already present)
 		aiMessages.forEach((msg, index) => {
