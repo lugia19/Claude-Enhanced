@@ -15,7 +15,7 @@
 
 	//#region Config
 	const STORAGE_KEY = 'claudeTemperatureControl';
-	const COLLAPSED_STATE_KEY = 'claudeTemperatureControl_collapsed';
+	const COLLAPSED_STATE_KEY = `${STORAGE_KEY}_collapsed`;
 	const POLL_INTERVAL_MS = 3000;
 
 	// Selectors and identifiers

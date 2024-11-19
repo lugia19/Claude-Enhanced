@@ -15,7 +15,7 @@
 
 	//#region Config
 	const STORAGE_KEY = 'claudeUsageTracker';
-
+	const COLLAPSED_STATE_KEY = `${STORAGE_KEY}_collapsed`;
 	const POLL_INTERVAL_MS = 5000;
 	const DELAY_MS = 100;
 	const OUTPUT_TOKEN_MULTIPLIER = 10;	//How much to weigh output tokens.
@@ -627,13 +627,19 @@
 		container.appendChild(content);
 		document.body.appendChild(container);
 
+		// Get stored collapse state
+		let isCollapsed = GM_getValue(COLLAPSED_STATE_KEY, false);
+		content.style.display = isCollapsed ? 'none' : 'block';
+		arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
+
 		// Toggle collapse/expand
-		let isCollapsed = false;
 		arrow.addEventListener('click', (e) => {
 			e.stopPropagation();
 			isCollapsed = !isCollapsed;
 			content.style.display = isCollapsed ? 'none' : 'block';
 			arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
+			// Store the new state
+			GM_setValue(COLLAPSED_STATE_KEY, isCollapsed);
 		});
 
 		// Dragging functionality
