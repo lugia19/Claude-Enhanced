@@ -15,6 +15,7 @@
 
 	//#region Config
 	const STORAGE_KEY = 'claudeUsageTracker';
+
 	const POLL_INTERVAL_MS = 5000;
 	const DELAY_MS = 100;
 	const OUTPUT_TOKEN_MULTIPLIER = 10;	//How much to weigh output tokens.
@@ -503,8 +504,12 @@
 		container.appendChild(header);
 		container.appendChild(content);
 
+		// Add collapsed state tracking
+		let isCollapsed = !isActive; // Start collapsed if not active
+		content.style.display = isCollapsed ? 'none' : 'block';
+		arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
+
 		// Toggle section collapse/expand
-		let isCollapsed = false;
 		arrow.addEventListener('click', (e) => {
 			e.stopPropagation();
 			isCollapsed = !isCollapsed;
@@ -520,6 +525,16 @@
 			setActive: (active) => {
 				activeIndicator.style.opacity = active ? '1' : '0';
 				container.style.opacity = active ? '1' : '0.7';
+				// Expand if active, collapse if not
+				if (active) {
+					isCollapsed = false;
+					content.style.display = 'block';
+					arrow.style.transform = '';
+				} else {
+					isCollapsed = true;
+					content.style.display = 'none';
+					arrow.style.transform = 'rotate(-90deg)';
+				}
 			}
 		};
 	}
@@ -936,6 +951,13 @@
 			if (newModel !== currentModel) {
 				console.log(`Model changed from ${currentModel} to ${newModel}`);
 				currentModel = newModel;
+				// Update all sections - will collapse inactive ones
+				MODELS.forEach(modelName => {
+					const section = modelSections[modelName];
+					if (section) {
+						section.setActive(modelName === currentModel);
+					}
+				});
 				needsUpdate = true;
 			}
 
