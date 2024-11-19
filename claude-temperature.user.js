@@ -2,7 +2,7 @@
 // @name         Claude Temperature Control
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.0.3
+// @version      1.1.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows adjusting the temperature setting for Claude AI.
@@ -247,6 +247,7 @@
 			if (currentTemp !== temperature.toString()) {
 				console.log(`Temperature mismatch: URL ${currentTemp}, stored ${temperature}`);
 				let consecutiveSuccesses = 0;
+				let sawGenerating = false;
 
 				while (consecutiveSuccesses < 3) {
 					if (!(await isGenerating())) {
@@ -254,12 +255,16 @@
 						console.log(`AI not currently generating, success ${consecutiveSuccesses}/3`);
 
 						if (consecutiveSuccesses === 3) {
-							console.log('AI confirmed not generating, updating URL - waiting 5s just to ensure we dont interfere.');
-							await new Promise(resolve => setTimeout(resolve, 5000));
+							console.log('AI confirmed not generating');
+							if (sawGenerating) {
+								console.log('Waiting 5s due to previous generation activity');
+								await new Promise(resolve => setTimeout(resolve, 5000));
+							}
 							updateUrl(temperature);
 							break;
 						}
 					} else {
+						sawGenerating = true;
 						consecutiveSuccesses = 0;
 						console.log('AI is currently generating, waiting to update URL');
 					}
