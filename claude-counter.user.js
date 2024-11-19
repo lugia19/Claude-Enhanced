@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.2.3
+// @version      1.2.4
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -21,9 +21,8 @@
 
 	// Model-specific token limits
 	const MODEL_TOKENS = {
-		'3 Opus': 1500000,
-		'3.5 Sonnet': 1900000,
-		'3.5 Sonnet (June 2024)': 1900000,
+		'Opus': 1500000,
+		'Sonnet': 1900000,
 		'Haiku': 4000000,
 		'default': 2500000
 	};
@@ -78,7 +77,7 @@
 		if (!modelSelector) return 'default';
 
 		const modelText = modelSelector.querySelector('.whitespace-nowrap')?.textContent?.trim() || 'default';
-		return modelText;
+		return getModelType(modelText);
 	}
 
 	async function waitForElement(selector, maxAttempts = 5) {
@@ -130,11 +129,26 @@
 		resetTime.setHours(hourStart.getHours() + 5);
 		return resetTime;
 	}
+
+	function getModelType(fullModelName) {
+		if (!fullModelName || fullModelName === 'default') return 'default';
+
+		fullModelName = fullModelName.toLowerCase();
+		const modelTypes = Object.keys(MODEL_TOKENS).filter(key => key !== 'default');
+
+		for (const modelType of modelTypes) {
+			if (fullModelName.includes(modelType.toLowerCase())) {
+				return modelType;
+			}
+		}
+
+		return 'default';
+	}
 	//#endregion
 
 	//#region Storage
 	function getStorageKey() {
-		return `${STORAGE_KEY}_${currentModel.replace(/\s+/g, '_')}`;
+		return `${STORAGE_KEY}_${currentModel}`;
 	}
 
 	function getFileStorageKey(filename, isProjectFile = false) {
