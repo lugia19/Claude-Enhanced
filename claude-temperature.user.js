@@ -15,6 +15,7 @@
 
 	//#region Config
 	const STORAGE_KEY = 'claudeTemperatureControl';
+	const COLLAPSED_STATE_KEY = 'claudeTemperatureControl_collapsed';
 	const POLL_INTERVAL_MS = 3000;
 
 	// Selectors and identifiers
@@ -69,8 +70,11 @@
             transition: transform 0.2s;
         `;
 
+		const headerText = document.createElement('span');
+		headerText.textContent = 'Temperature Control';
+
 		header.appendChild(arrow);
-		header.appendChild(document.createTextNode('Temperature Control'));
+		header.appendChild(headerText);
 
 		// Content container (collapsible)
 		const content = document.createElement('div');
@@ -122,13 +126,35 @@
 		document.body.appendChild(container);
 
 		// Toggle collapse/expand
-		let isCollapsed = false;
+		let isCollapsed = GM_getValue(COLLAPSED_STATE_KEY, false);
+
+		function updateCollapsedState() {
+			content.style.display = isCollapsed ? 'none' : 'block';
+			arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
+			headerText.textContent = isCollapsed ?
+				`Temperature: ${loadTemperature()}` :
+				'Temperature Control';
+		}
+
+		// Apply initial state
+		updateCollapsedState();
+
 		arrow.addEventListener('click', (e) => {
 			e.stopPropagation();
 			isCollapsed = !isCollapsed;
-			content.style.display = isCollapsed ? 'none' : 'block';
-			arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
+			GM_setValue(COLLAPSED_STATE_KEY, isCollapsed);
+			updateCollapsedState();
 		});
+
+		// Update header text when temperature changes
+		slider.addEventListener('input', () => {
+			manualInput.value = slider.value;
+			saveTemperature(slider.value);
+			if (isCollapsed) {
+				headerText.textContent = `Temperature: ${slider.value}`;
+			}
+		});
+
 
 		// Dragging functionality
 		let isDragging = false;
@@ -175,6 +201,9 @@
 		manualInput.addEventListener('input', () => {
 			slider.value = manualInput.value;
 			saveTemperature(manualInput.value);
+			if (isCollapsed) {
+				headerText.textContent = `Temperature: ${manualInput.value}`;
+			}
 		});
 
 		return slider;
