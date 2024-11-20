@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.2.4
+// @version      1.3.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -14,18 +14,25 @@
 	'use strict';
 
 	//#region Config
-	const STORAGE_KEY = 'claudeUsageTracker';
+	const STORAGE_KEY = 'claudeUsageTracker_v2';
 	const COLLAPSED_STATE_KEY = `${STORAGE_KEY}_collapsed`;
 	const POLL_INTERVAL_MS = 5000;
 	const DELAY_MS = 100;
 	const OUTPUT_TOKEN_MULTIPLIER = 10;	//How much to weigh output tokens.
 
-	// Model-specific token limits
+	// Model-specific limits
 	const MODEL_TOKENS = {
 		'Opus': 1500000,
 		'Sonnet': 1900000,
 		'Haiku': 4000000,
-		'default': 2500000
+		'default': 1
+	};
+
+	const MESSAGE_CAPS = {
+		'Opus': 30,
+		'Sonnet': 45,
+		'Haiku': 10,
+		'default': -1
 	};
 
 	const MODELS = Object.keys(MODEL_TOKENS).filter(key => key !== 'default');
@@ -115,13 +122,35 @@
 	}
 
 	function calculateMessagesLeft(modelTotal, conversationLength) {
-		const maxTokens = MODEL_TOKENS[currentModel] || MODEL_TOKENS.default;
-		if (conversationLength === 0) return '∞';  // Handle division by zero
+		if (currentModel == "default") return "Loading...";
 
+		const maxTokens = MODEL_TOKENS[currentModel] || MODEL_TOKENS.default;
+		const messageCap = MESSAGE_CAPS[currentModel] || MESSAGE_CAPS.default;
+
+		// Get current message count
+		const stored = GM_getValue(getStorageKey());
+		const currentMessageCount = stored?.messageCount || 0;
+
+		if (conversationLength === 0) {
+			// Just return remaining message cap instead of infinity
+			return Math.max(0, messageCap - currentMessageCount).toFixed(1);
+		}
+
+		// Calculate remaining messages based on tokens
 		const remainingTokens = maxTokens - modelTotal;
-		const messagesLeft = remainingTokens / conversationLength;
-		return messagesLeft.toFixed(1);  // Show one decimal place
+		const messagesLeftByTokens = remainingTokens / conversationLength;
+
+		// Calculate remaining messages based on message cap
+		const messagesLeftByCap = messageCap - currentMessageCount;
+
+		// Use the more restrictive limit
+		const actualMessagesLeft = Math.min(messagesLeftByTokens, messagesLeftByCap);
+
+		// Return 0 if negative, otherwise show one decimal place
+		return Math.max(0, actualMessagesLeft).toFixed(1);
 	}
+
+
 
 	function getResetTime(currentTime) {
 		const hourStart = new Date(currentTime);
@@ -173,20 +202,23 @@
 		return { total: 0, isInitialized: false };
 	}
 
-	function saveToStorage(count) {
+	function saveToStorage(count, messageCount) {
 		const currentTime = new Date();
 		const { isInitialized } = initializeOrLoadStorage();
 		console.log(`Saving count to ${getStorageKey()}!`)
+
 		if (!isInitialized) {
 			const resetTime = getResetTime(currentTime);
 			GM_setValue(getStorageKey(), {
 				total: count,
+				messageCount: messageCount,
 				resetTimestamp: resetTime.getTime()
 			});
 		} else {
 			const existing = GM_getValue(getStorageKey());
 			GM_setValue(getStorageKey(), {
 				total: count,
+				messageCount: messageCount,
 				resetTimestamp: existing.resetTimestamp
 			});
 		}
@@ -497,6 +529,16 @@
 		});
 
 		progressContainer.appendChild(progressBar);
+
+		const messageCounter = document.createElement('div');
+		messageCounter.style.cssText = `
+			color: #888;
+			font-size: 11px;
+			margin-top: 4px;
+		`;
+		messageCounter.textContent = 'Messages: 0/' + (MESSAGE_CAPS[modelName] || MESSAGE_CAPS.default);
+		content.appendChild(messageCounter);  // Add the counter
+
 		content.appendChild(resetTimeDisplay);
 		content.appendChild(progressContainer);
 		content.appendChild(tooltip);
@@ -522,6 +564,7 @@
 			progressBar,
 			resetTimeDisplay,
 			tooltip,
+			messageCounter,
 			setActive: (active) => {
 				activeIndicator.style.opacity = active ? '1' : '0';
 				container.style.opacity = active ? '1' : '0.7';
@@ -678,18 +721,18 @@
 		});
 	}
 
-	function updateProgressBar(currentTokens) {
+	function updateProgressBar(currentTokens, updateLength = true, shouldCollapse = false) {
 		// Update each model section
 		console.log("Updating progress bar...", currentTokens)
 
 		const lengthDisplay = document.getElementById('conversation-token-count');
-		if (lengthDisplay) {
+		if (lengthDisplay && updateLength) {
 			lengthDisplay.textContent = `Current length: ${currentTokens.toLocaleString()} tokens`;
 		}
 
 		// Update messages left estimate
 		const estimateDisplay = document.getElementById('messages-left-estimate');
-		if (estimateDisplay) {
+		if (estimateDisplay && updateLength) {
 			const modelStorageKey = `${STORAGE_KEY}_${currentModel.replace(/\s+/g, '_')}`;
 			const stored = GM_getValue(modelStorageKey);
 			const modelTotal = stored ? stored.total : 0;
@@ -704,31 +747,31 @@
 			if (!section) return;
 
 			const isActiveModel = modelName === currentModel;
-			section.setActive(isActiveModel);
+			if (shouldCollapse) {  // Only call setActive when we actually want to collapse
+				section.setActive(isActiveModel);
+			}
 
-			// Get stored data for this model
 			const modelStorageKey = `${STORAGE_KEY}_${modelName.replace(/\s+/g, '_')}`;
-			console.log(`Checking ${modelStorageKey}...`)
 			const stored = GM_getValue(modelStorageKey);
+			const messageCap = MESSAGE_CAPS[modelName] || MESSAGE_CAPS.default;
 
 			if (stored) {
 				const modelTotal = stored.total;
+				const messageCount = stored.messageCount || 0;
 				const maxTokens = MODEL_TOKENS[modelName] || MODEL_TOKENS.default;
 				const percentage = (modelTotal / maxTokens) * 100;
 
-				console.log(`Model ${modelName}: ${modelTotal} tokens, ${percentage.toFixed(1)}%`);
-
 				section.progressBar.style.width = `${Math.min(percentage, 100)}%`;
 				section.progressBar.style.background = modelTotal >= maxTokens * WARNING_THRESHOLD ? '#ef4444' : '#3b82f6';
-
 				section.tooltip.textContent = `${modelTotal.toLocaleString()} / ${maxTokens.toLocaleString()} tokens (${percentage.toFixed(1)}%)`;
+				section.messageCounter.textContent = `Messages: ${messageCount}/${messageCap}`;
 
 				const resetTime = new Date(stored.resetTimestamp);
 				section.resetTimeDisplay.textContent = formatTimeRemaining(resetTime);
 			} else {
-				console.log(`No stored data for model ${modelName}`);
 				section.progressBar.style.width = '0%';
 				section.tooltip.textContent = `0 / ${MODEL_TOKENS[modelName].toLocaleString()} tokens (0.0%)`;
+				section.messageCounter.textContent = `Messages: 0/${messageCap}`;
 				section.resetTimeDisplay.textContent = 'Reset in: Not set';
 			}
 		});
@@ -906,20 +949,27 @@
 		if (!newCount)
 			return
 
+		const maxTokens = MODEL_TOKENS[currentModel] || MODEL_TOKENS.default;
+		const messageCap = MESSAGE_CAPS[currentModel] || MESSAGE_CAPS.default;
+		const minimumWeight = Math.ceil(maxTokens / messageCap);
+		const adjustedCount = newCount < minimumWeight ? minimumWeight : newCount;
+
 		const { total, isInitialized } = initializeOrLoadStorage();
-		console.log(`Loaded total: ${total}`)
-		let totalTokenCount = isInitialized ? total + newCount : newCount;
-
-		saveToStorage(totalTokenCount);
-
 		const stored = GM_getValue(getStorageKey());
-		const resetTime = new Date(stored.resetTimestamp);
+		const currentMessageCount = (stored?.messageCount || 0) + 1;  // Increment message count
 
-		console.log(`Current conversation tokens: ${newCount}`);
+		let totalTokenCount = isInitialized ? total + adjustedCount : adjustedCount;
+
+		saveToStorage(totalTokenCount, currentMessageCount);
+
+		const resetTime = new Date(stored?.resetTimestamp || Date.now());
+
+		console.log(`Current conversation tokens: ${adjustedCount}`);
 		console.log(`Total accumulated tokens: ${totalTokenCount}`);
+		console.log(`Messages used: ${currentMessageCount}/${messageCap}`);
 		console.log(`Next reset at: ${resetTime.toLocaleTimeString()}`);
 
-		updateProgressBar(newCount);
+		updateProgressBar(adjustedCount, false);
 	}
 	//#endregion
 
@@ -938,6 +988,7 @@
 			const conversationId = getConversationId();
 			if (conversationId == null) {
 				currentTokenCount = 0;
+				console.log("No conversation active, updating progressbar...")
 				needsUpdate = true;
 			}
 			const messages = document.querySelectorAll(`${SELECTORS.USER_MESSAGE}, ${SELECTORS.AI_MESSAGE}`);
@@ -984,7 +1035,10 @@
 						section.resetTimeDisplay.textContent = formatTimeRemaining(resetTime);
 
 						// Check if stored total is different from displayed total
-						const displayedTotal = parseInt(section.tooltip.textContent.split('/')[0].replace(/,/g, '').trim());
+						const displayedTotal = parseInt(section.tooltip.textContent
+							.split('/')[0]
+							.replace(/[,\.]/g, '')  // Remove both dots and commas
+							.trim());
 						if (stored.total !== displayedTotal) {
 							console.log(`Detected change in total for ${model}: ${displayedTotal} -> ${stored.total}`);
 							needsUpdate = true;
@@ -992,7 +1046,8 @@
 					}
 				} else {
 					section.resetTimeDisplay.textContent = 'Reset in: Not set';
-					if (section.tooltip.textContent !== '0 / ...') {
+					if (!section.tooltip.textContent.startsWith('0')) {
+						console.log("Tooltip wasn't updated properly, resetting...")
 						needsUpdate = true;
 					}
 				}
@@ -1000,7 +1055,8 @@
 
 			// Update UI if needed
 			if (needsUpdate) {
-				updateProgressBar(currentTokenCount);
+				console.log("Updating bar from poll event...")
+				updateProgressBar(currentTokenCount, true, newModel !== currentModel);
 			}
 		}, POLL_INTERVAL_MS);
 	}
