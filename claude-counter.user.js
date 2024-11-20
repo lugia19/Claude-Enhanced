@@ -31,7 +31,7 @@
 	const MESSAGE_CAPS = {
 		'Opus': 30,
 		'Sonnet': 45,
-		'Haiku': 10,
+		'Haiku': 100,
 		'default': -1
 	};
 
