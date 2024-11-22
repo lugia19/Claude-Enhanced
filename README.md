@@ -15,7 +15,9 @@ The script will correctly handle calculating token usage from:
 
 (And yes, this was mostly coded using Sonnet 3.5)
 
-# Claude temperature control
+# Claude temperature control - BROKEN!
+
+Now broken. They setting the temperature.
 
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/515809-claude-temperature-control)
 
