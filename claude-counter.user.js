@@ -23,15 +23,15 @@
 	// Model-specific limits
 	const MODEL_TOKENS = {
 		'Opus': 1500000,
-		'Sonnet': 1900000,
+		'Sonnet': 1600000,
 		'Haiku': 4000000,
 		'default': 1
 	};
 
 	const MESSAGE_CAPS = {
-		'Opus': 30,
-		'Sonnet': 45,
-		'Haiku': 100,
+		'Opus': 50,
+		'Sonnet': 200,
+		'Haiku': 1000,
 		'default': -1
 	};
 
