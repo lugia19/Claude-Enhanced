@@ -1,4 +1,5 @@
 # Claude usage counter
+![usage_tracker_v2](https://github.com/user-attachments/assets/666beb20-b866-4e08-adeb-0aa47febb641)
 
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/515111-claude-usage-tracker)
 
@@ -15,7 +16,9 @@ The script will correctly handle calculating token usage from:
 
 (And yes, this was mostly coded using Sonnet 3.5)
 
-# Claude temperature control
+# Claude temperature control - BROKEN!
+
+Now broken. They setting the temperature.
 
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/515809-claude-temperature-control)
 
