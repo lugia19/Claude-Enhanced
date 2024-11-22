@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.3.0
+// @version      1.3.1
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
