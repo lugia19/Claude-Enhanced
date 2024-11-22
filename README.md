@@ -1,4 +1,5 @@
 # Claude usage counter
+![usage_tracker_v2](https://github.com/user-attachments/assets/666beb20-b866-4e08-adeb-0aa47febb641)
 
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/515111-claude-usage-tracker)
 
