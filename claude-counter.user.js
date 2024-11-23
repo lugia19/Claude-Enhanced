@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.3.1
+// @version      1.3.2
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -536,7 +536,7 @@
 			font-size: 11px;
 			margin-top: 4px;
 		`;
-		messageCounter.textContent = 'Messages: 0/' + (MESSAGE_CAPS[modelName] || MESSAGE_CAPS.default);
+		messageCounter.textContent = 'Messages: 0';
 		content.appendChild(messageCounter);  // Add the counter
 
 		content.appendChild(resetTimeDisplay);
@@ -764,14 +764,14 @@
 				section.progressBar.style.width = `${Math.min(percentage, 100)}%`;
 				section.progressBar.style.background = modelTotal >= maxTokens * WARNING_THRESHOLD ? '#ef4444' : '#3b82f6';
 				section.tooltip.textContent = `${modelTotal.toLocaleString()} / ${maxTokens.toLocaleString()} tokens (${percentage.toFixed(1)}%)`;
-				section.messageCounter.textContent = `Messages: ${messageCount}/${messageCap}`;
+				section.messageCounter.textContent = `Messages: ${messageCount}`;
 
 				const resetTime = new Date(stored.resetTimestamp);
 				section.resetTimeDisplay.textContent = formatTimeRemaining(resetTime);
 			} else {
 				section.progressBar.style.width = '0%';
 				section.tooltip.textContent = `0 / ${MODEL_TOKENS[modelName].toLocaleString()} tokens (0.0%)`;
-				section.messageCounter.textContent = `Messages: 0/${messageCap}`;
+				section.messageCounter.textContent = `Messages: 0`;
 				section.resetTimeDisplay.textContent = 'Reset in: Not set';
 			}
 		});
