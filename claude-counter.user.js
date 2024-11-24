@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.4.0
+// @version      1.4.2
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -183,6 +183,17 @@
 
 		return 'default';
 	}
+
+	function isMobileView() {
+		// First check if we're on a chat page
+		if (!window.location.pathname.startsWith('/chat/')) {
+			return false;
+		}
+
+		// Check if height > width (portrait orientation)
+		return window.innerHeight > window.innerWidth;
+	}
+
 	//#endregion
 
 	//#region Storage
