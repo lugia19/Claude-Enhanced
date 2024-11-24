@@ -931,14 +931,12 @@
 		const sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
 		if (sidebar) {
 			const style = window.getComputedStyle(sidebar);
-			console.log(style.transform)
 			// If sidebar is visible (not transformed away)
 			const matrixMatch = style.transform.match(/matrix\(([\d.-]+,\s*){5}[\d.-]+\)/);
 			const isHidden = matrixMatch && style.transform.includes('428');
-
 			if (!isHidden && style.opacity !== '0') {
 				const closeButton = document.querySelector(SELECTORS.SIDEBAR_BUTTON);
-				if (closeButton && closeButton.offsetParent !== null) { // Check if button is visible
+				if (closeButton) { // Check if button is visible
 					console.log("Closing...")
 					closeButton.click();
 				}
