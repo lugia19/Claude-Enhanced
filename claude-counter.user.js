@@ -183,6 +183,21 @@
 
 		return 'default';
 	}
+
+	function isMobileView() {
+		// First check if we're on a chat page
+		if (!window.location.pathname.startsWith('/chat/')) {
+			return false;
+		}
+
+		const mobileMenuButton = document.querySelector(SELECTORS.MOBILE_MENU_BUTTON);
+		if (!mobileMenuButton) return false;
+		return mobileMenuButton.offsetParent !== null;
+	}
+
+	function hasMobileAspectRatio() {
+		return window.innerHeight > window.innerWidth;
+	}
 	//#endregion
 
 	//#region Storage
@@ -235,15 +250,6 @@
 	//#endregion
 
 	//#region File Processing
-	function isMobileView() {
-		const mobileMenuButton = document.querySelector(SELECTORS.MOBILE_MENU_BUTTON);
-		if (!mobileMenuButton) return false;
-
-		// Check if the button is actually in the DOM flow (has offsetParent)
-		return mobileMenuButton.offsetParent !== null;
-	}
-
-
 	async function ensureSidebarLoaded() {
 		/*if (isMobileView()) {
 			console.warn("Mobile view detected (menu button visible), skipping project file processing");
@@ -449,12 +455,13 @@
 	function createModelSection(modelName, isActive) {
 		const container = document.createElement('div');
 		container.style.cssText = `
-            margin-bottom: 12px;
-            border-bottom: 1px solid #3B3B3B;
-            padding-bottom: 8px;
-            opacity: ${isActive ? '1' : '0.7'};
-            transition: opacity 0.2s;
-        `;
+			margin-bottom: 12px;
+			border-bottom: 1px solid #3B3B3B;
+			padding-bottom: 8px;
+			opacity: ${isActive ? '1' : '0.7'};
+			transition: opacity 0.2s;
+			${isMobileView() && !isActive ? 'display: none;' : ''}
+		`;
 
 		container.style.cssText += `
         	position: relative;
@@ -582,16 +589,16 @@
 			arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
 		});
 
-		return {
-			container,
-			progressBar,
-			resetTimeDisplay,
-			tooltip,
-			messageCounter,
-			setActive: (active) => {
-				activeIndicator.style.opacity = active ? '1' : '0';
-				container.style.opacity = active ? '1' : '0.7';
-				// Expand if active, collapse if not
+		function setActive(active) {
+			activeIndicator.style.opacity = active ? '1' : '0';
+			container.style.opacity = active ? '1' : '0.7';
+
+			if (isMobileView()) {
+				// In mobile, completely hide inactive sections
+				container.style.display = active ? 'block' : 'none';
+			} else {
+				// In desktop, just collapse inactive sections
+				container.style.display = 'block';
 				if (active) {
 					isCollapsed = false;
 					content.style.display = 'block';
@@ -602,6 +609,15 @@
 					arrow.style.transform = 'rotate(-90deg)';
 				}
 			}
+		}
+
+		return {
+			container,
+			progressBar,
+			resetTimeDisplay,
+			tooltip,
+			messageCounter,
+			setActive
 		};
 	}
 
@@ -609,17 +625,17 @@
 	function createProgressBar() {
 		const container = document.createElement('div');
 		container.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #2D2D2D;
-            border: 1px solid #3B3B3B;
-            border-radius: 8px;
-            z-index: 9999;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-            cursor: move;
-            user-select: none;
-        `;
+			position: fixed;
+			bottom: ${hasMobileAspectRatio() ? '0' : '20px'};
+			right: ${hasMobileAspectRatio() ? '0' : '20px'};
+			background: #2D2D2D;
+			border: 1px solid #3B3B3B;
+			border-radius: '8px';
+			z-index: 9999;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+			cursor: move;
+			user-select: none;
+		`;
 
 		// Header (always visible)
 		const header = document.createElement('div');
@@ -647,7 +663,7 @@
 		conversationCounter.style.cssText = `
 			color: white;
 			font-size: 12px;
-			padding: 0 10px;
+			padding: ${hasMobileAspectRatio() ? '4px 8px' : '0 10px'};
 			margin-bottom: 8px;
 			border-bottom: 1px solid #3B3B3B;
 			padding-bottom: 8px;
@@ -676,8 +692,7 @@
 		// Content container (collapsible)
 		const content = document.createElement('div');
 		content.style.cssText = `
-			padding: 0 10px 10px 10px;
-			width: 250px;
+			padding: ${hasMobileAspectRatio() ? '0' : '0 10px 10px 10px'};
 		`;
 
 		// Create sections for each model
@@ -715,33 +730,58 @@
 		let initialX;
 		let initialY;
 
-		header.addEventListener('mousedown', (e) => {
+		function handleDragStart(e) {
 			if (e.target === arrow) return;
-			isDragging = true;
-			initialX = e.clientX - container.offsetLeft;
-			initialY = e.clientY - container.offsetTop;
-			header.style.cursor = 'grabbing';
-		});
 
-		document.addEventListener('mousemove', (e) => {
+			isDragging = true;
+			if (e.type === "mousedown") {
+				initialX = e.clientX - container.offsetLeft;
+				initialY = e.clientY - container.offsetTop;
+			} else if (e.type === "touchstart") {
+				initialX = e.touches[0].clientX - container.offsetLeft;
+				initialY = e.touches[0].clientY - container.offsetTop;
+			}
+			header.style.cursor = 'grabbing';
+		}
+
+		function handleDragMove(e) {
 			if (!isDragging) return;
 			e.preventDefault();
-			currentX = e.clientX - initialX;
-			currentY = e.clientY - initialY;
+
+			if (e.type === "mousemove") {
+				currentX = e.clientX - initialX;
+				currentY = e.clientY - initialY;
+			} else if (e.type === "touchmove") {
+				currentX = e.touches[0].clientX - initialX;
+				currentY = e.touches[0].clientY - initialY;
+			}
+
 			const maxX = window.innerWidth - container.offsetWidth;
 			const maxY = window.innerHeight - container.offsetHeight;
 			currentX = Math.min(Math.max(0, currentX), maxX);
 			currentY = Math.min(Math.max(0, currentY), maxY);
+
 			container.style.left = `${currentX}px`;
 			container.style.top = `${currentY}px`;
 			container.style.right = 'auto';
 			container.style.bottom = 'auto';
-		});
+		}
 
-		document.addEventListener('mouseup', () => {
+		function handleDragEnd() {
 			isDragging = false;
 			header.style.cursor = 'move';
-		});
+		}
+
+		// Mouse events
+		header.addEventListener('mousedown', handleDragStart);
+		document.addEventListener('mousemove', handleDragMove);
+		document.addEventListener('mouseup', handleDragEnd);
+
+		// Touch events
+		header.addEventListener('touchstart', handleDragStart, { passive: false });
+		document.addEventListener('touchmove', handleDragMove, { passive: false });
+		document.addEventListener('touchend', handleDragEnd);
+		document.addEventListener('touchcancel', handleDragEnd);
 	}
 
 	function updateProgressBar(currentTokens, updateLength = true, shouldCollapse = false) {
@@ -770,7 +810,7 @@
 			if (!section) return;
 
 			const isActiveModel = modelName === currentModel;
-			if (shouldCollapse) {  // Only call setActive when we actually want to collapse
+			if (shouldCollapse || isMobileView()) {  // Only call setActive when we actually want to collapse OR if we're on mobile.
 				section.setActive(isActiveModel);
 			}
 
