@@ -183,21 +183,6 @@
 
 		return 'default';
 	}
-
-	function isMobileView() {
-		// First check if we're on a chat page
-		if (!window.location.pathname.startsWith('/chat/')) {
-			return false;
-		}
-
-		const mobileMenuButton = document.querySelector(SELECTORS.MOBILE_MENU_BUTTON);
-		if (!mobileMenuButton) return false;
-		return mobileMenuButton.offsetParent !== null;
-	}
-
-	function hasMobileAspectRatio() {
-		return window.innerHeight > window.innerWidth;
-	}
 	//#endregion
 
 	//#region Storage
@@ -625,17 +610,17 @@
 	function createProgressBar() {
 		const container = document.createElement('div');
 		container.style.cssText = `
-			position: fixed;
-			bottom: ${hasMobileAspectRatio() ? '0' : '20px'};
-			right: ${hasMobileAspectRatio() ? '0' : '20px'};
-			background: #2D2D2D;
-			border: 1px solid #3B3B3B;
-			border-radius: '8px';
-			z-index: 9999;
-			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-			cursor: move;
-			user-select: none;
-		`;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #2D2D2D;
+            border: 1px solid #3B3B3B;
+            border-radius: 8px;
+            z-index: 9999;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            cursor: move;
+            user-select: none;
+        `;
 
 		// Header (always visible)
 		const header = document.createElement('div');
@@ -663,7 +648,7 @@
 		conversationCounter.style.cssText = `
 			color: white;
 			font-size: 12px;
-			padding: ${hasMobileAspectRatio() ? '4px 8px' : '0 10px'};
+			padding: 0 10px;
 			margin-bottom: 8px;
 			border-bottom: 1px solid #3B3B3B;
 			padding-bottom: 8px;
@@ -692,7 +677,8 @@
 		// Content container (collapsible)
 		const content = document.createElement('div');
 		content.style.cssText = `
-			padding: ${hasMobileAspectRatio() ? '0' : '0 10px 10px 10px'};
+			padding: 0 10px 10px 10px;
+			width: 250px;
 		`;
 
 		// Create sections for each model
