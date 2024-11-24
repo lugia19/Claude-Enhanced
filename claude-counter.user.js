@@ -2,71 +2,80 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.3.2
+// @version      1.4.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_xmlhttpRequest
+// @connect      raw.githubusercontent.com
 // ==/UserScript==
 
 (function () {
 	'use strict';
 
 	//#region Config
-	const STORAGE_KEY = 'claudeUsageTracker_v2';
-	const COLLAPSED_STATE_KEY = `${STORAGE_KEY}_collapsed`;
-	const POLL_INTERVAL_MS = 5000;
-	const DELAY_MS = 100;
-	const OUTPUT_TOKEN_MULTIPLIER = 10;	//How much to weigh output tokens.
+	// Declare variables at the top level
+	let STORAGE_KEY;
+	let COLLAPSED_STATE_KEY;
+	let POLL_INTERVAL_MS;
+	let DELAY_MS;
+	let OUTPUT_TOKEN_MULTIPLIER;
+	let MODEL_TOKENS;
+	let MESSAGE_CAPS;
+	let WARNING_THRESHOLD;
+	let SELECTORS;
+	let MODELS;
 
-	// Model-specific limits
-	const MODEL_TOKENS = {
-		'Opus': 1500000,
-		'Sonnet': 1600000,
-		'Haiku': 4000000,
-		'default': 1
-	};
-
-	const MESSAGE_CAPS = {
-		'Opus': 50,
-		'Sonnet': 200,
-		'Haiku': 1000,
-		'default': -1
-	};
-
-	const MODELS = Object.keys(MODEL_TOKENS).filter(key => key !== 'default');
-
-	const WARNING_THRESHOLD = 0.9;
-
-	// Selectors and identifiers
-	const SELECTORS = {
-		MAIN_INPUT: 'div[aria-label="Write your prompt to Claude"]',
-		REGENERATE_BUTTON_PATH: 'M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z',
-		SAVE_BUTTON: 'button[type="submit"]',
-		EDIT_TEXTAREA: '.font-user-message textarea',
-		USER_MESSAGE: '[data-testid="user-message"]',
-		AI_MESSAGE: '.font-claude-message',
-		SEND_BUTTON: 'button[aria-label="Send Message"]',
-		SIDEBAR_BUTTON: '[data-testid="chat-controls"]',
-		FILE_BUTTONS: 'button[data-testid="file-thumbnail"]',
-		PROJECT_FILES_CONTAINER: '.border-border-400.rounded-lg.border',
-		PROJECT_FILES: 'button[data-testid="file-thumbnail"]',
-		MODAL: '[role="dialog"]',
-		MODAL_CONTENT: '.whitespace-pre-wrap.break-all.text-xs',
-		MODAL_CLOSE: 'button:has(svg path[d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"])',
-		BACK_BUTTON: 'button:has(svg path[d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z"])',
-		SIDEBAR_CONTENT: '.bg-bg-100.border-0\\.5.border-border-300.flex-1',
-		FILE_VIEW_CONTAINER: '.flex.h-full.flex-col.pb-1.pl-5.pt-3',
-		FILE_CONTENT: '.whitespace-pre-wrap.break-all.text-xs',
-		MODEL_PICKER: '[data-testid="model-selector-dropdown"]'
+	const CONFIG_URL = 'https://raw.githubusercontent.com/lugia19/Claude-Toolbox/refs/heads/main/constants.json';
+	const DEFAULT_CONFIG = {
+		STORAGE_KEY: 'claudeUsageTracker_v2',
+		POLL_INTERVAL_MS: 5000,
+		DELAY_MS: 100,
+		OUTPUT_TOKEN_MULTIPLIER: 10,
+		MODEL_TOKENS: {
+			'Opus': 1500000,
+			'Sonnet': 1600000,
+			'Haiku': 4000000,
+			'default': 1
+		},
+		MESSAGE_CAPS: {
+			'Opus': 50,
+			'Sonnet': 200,
+			'Haiku': 1000,
+			'default': -1
+		},
+		WARNING_THRESHOLD: 0.9,
+		SELECTORS: {
+			MAIN_INPUT: 'div[aria-label="Write your prompt to Claude"]',
+			REGENERATE_BUTTON_PATH: 'M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z',
+			SAVE_BUTTON: 'button[type="submit"]',
+			EDIT_TEXTAREA: '.font-user-message textarea',
+			USER_MESSAGE: '[data-testid="user-message"]',
+			AI_MESSAGE: '.font-claude-message',
+			SEND_BUTTON: 'button[aria-label="Send Message"]',
+			SIDEBAR_BUTTON: '[data-testid="chat-controls"]',
+			FILE_BUTTONS: 'button[data-testid="file-thumbnail"]',
+			PROJECT_FILES_CONTAINER: '.border-border-400.rounded-lg.border',
+			PROJECT_FILES: 'button[data-testid="file-thumbnail"]',
+			MODAL: '[role="dialog"]',
+			MODAL_CONTENT: '.whitespace-pre-wrap.break-all.text-xs',
+			MODAL_CLOSE: 'button:has(svg path[d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"])',
+			BACK_BUTTON: 'button:has(svg path[d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z"])',
+			SIDEBAR_CONTENT: '.bg-bg-100.border-0\\.5.border-border-300.flex-1',
+			FILE_VIEW_CONTAINER: '.flex.h-full.flex-col.pb-1.pl-5.pt-3',
+			FILE_CONTENT: '.whitespace-pre-wrap.break-all.text-xs',
+			MODEL_PICKER: '[data-testid="model-selector-dropdown"]',
+			MOBILE_MENU_BUTTON: 'button[aria-haspopup="menu"]:has(svg path[d="M112,60a16,16,0,1,1,16,16A16,16,0,0,1,112,60Zm16,52a16,16,0,1,0,16,16A16,16,0,0,0,128,112Zm0,68a16,16,0,1,0,16,16A16,16,0,0,0,128,180Z"])'
+		},
 	};
 	//#endregion
 
 	//State variables
 	let isProcessingEvent = false;
 	let currentTokenCount = 0;
-	let currentModel = getCurrentModel();
+	let currentModel = 'default';
 	let modelSections = {};
 	let currentConversationId = null;
 	let currentMessageCount = 0;
@@ -226,7 +235,21 @@
 	//#endregion
 
 	//#region File Processing
+	function isMobileView() {
+		const mobileMenuButton = document.querySelector(SELECTORS.MOBILE_MENU_BUTTON);
+		if (!mobileMenuButton) return false;
+
+		// Check if the button is actually in the DOM flow (has offsetParent)
+		return mobileMenuButton.offsetParent !== null;
+	}
+
+
 	async function ensureSidebarLoaded() {
+		/*if (isMobileView()) {
+			console.warn("Mobile view detected (menu button visible), skipping project file processing");
+			return false;
+		}*/
+
 		const sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
 
 		// If sidebar exists and has been processed before, we're done
@@ -401,7 +424,7 @@
 				return 0;
 			}
 			const text = content.textContent || '';
-			console.log(`First 100 chars of content: "${text.substring(0, 100)}"`);
+			//console.log(`First 100 chars of content: "${text.substring(0, 100)}"`);
 			const tokens = calculateTokens(content.textContent || '');
 			console.log(`Content file ${filename} tokens:`, tokens);
 
@@ -837,9 +860,8 @@
 		userMessages.forEach((msg, index) => {
 			const text = msg.textContent || '';
 			const tokens = calculateTokens(text);
-			console.log(`User message ${index}:`, msg);
-			console.log(`Text: "${text}"`);
-			console.log(`Tokens: ${tokens}`);
+			console.log(`User message ${index}, length ${tokens}:`, msg);
+			//console.log(`Text: "${text}"`);
 			currentCount += tokens;
 		});
 
@@ -869,9 +891,7 @@
 			if (parent && parent.getAttribute('data-is-streaming') === 'false') {
 				const text = msg.textContent || '';
 				const tokens = calculateTokens(text); // No multiplication for intermediate responses
-				console.log(`AI message ${index}:`, msg);
-				console.log(`Text: "${text}"`);
-				console.log(`Tokens: ${tokens}`);
+				console.log(`AI message ${index}, length ${tokens}:`, msg);
 				currentCount += tokens;
 			} else {
 				console.log(`Skipping AI message ${index} - still streaming`);
@@ -1080,6 +1100,15 @@
 			const regenerateButton = e.target.closest(`button:has(path[d="${SELECTORS.REGENERATE_BUTTON_PATH}"])`);
 			const saveButton = e.target.closest(SELECTORS.SAVE_BUTTON);
 			const sendButton = e.target.closest('button[aria-label="Send Message"]');
+
+			if (saveButton) {
+				const renameChatDialog = saveButton.closest('div[role="dialog"]')?.querySelector('h2');
+				if (renameChatDialog?.textContent === 'Rename chat') {
+					console.log('Save button clicked in rename dialog, ignoring');
+					return;
+				}
+			}
+
 			if (regenerateButton || saveButton || sendButton) {
 				console.log('Clicked:', e.target);
 				console.log('Event details:', e);
@@ -1091,6 +1120,16 @@
 		document.addEventListener('keydown', async (e) => {
 			const mainInput = e.target.closest(SELECTORS.MAIN_INPUT);
 			const editArea = e.target.closest(SELECTORS.EDIT_TEXTAREA);
+
+			// For edit areas, only proceed if it's within a user message
+			if (editArea) {
+				const renameChatDialog = editArea.closest('div[role="dialog"]')?.querySelector('h2');
+				if (renameChatDialog?.textContent === 'Rename chat') {
+					console.log('Enter pressed in rename dialog, ignoring');
+					return;
+				}
+			}
+
 			if ((mainInput || editArea) && e.key === 'Enter' && !e.shiftKey) {
 				console.log('Enter pressed in:', e.target);
 				console.log('Event details:', e);
@@ -1101,9 +1140,53 @@
 	}
 	//#endregion
 
+	async function loadConfig() {
+		try {
+			const response = await fetch(CONFIG_URL);
+			if (!response.ok) {
+				console.warn('Failed to load remote config, using defaults');
+				return DEFAULT_CONFIG;
+			}
 
-	function initialize() {
+			const remoteConfig = await response.json();
+			console.log('Loaded remote config:', remoteConfig);
+			// Deep merge the remote config with defaults
+			const mergeDeep = (target, source) => {
+				for (const key in source) {
+					if (source[key] instanceof Object && key in target) {
+						target[key] = mergeDeep(target[key], source[key]);
+					} else {
+						target[key] = source[key];
+					}
+				}
+				return target;
+			};
+
+			return mergeDeep(structuredClone(DEFAULT_CONFIG), remoteConfig);
+		} catch (error) {
+			console.warn('Error loading remote config:', error);
+			return DEFAULT_CONFIG;
+		}
+	}
+
+	async function initialize() {
 		console.log('Initializing Chat Token Counter...');
+
+		// Load and assign configuration to global variables
+		const config = await loadConfig();
+		STORAGE_KEY = config.STORAGE_KEY;
+		COLLAPSED_STATE_KEY = `${STORAGE_KEY}_collapsed`;
+		POLL_INTERVAL_MS = config.POLL_INTERVAL_MS;
+		DELAY_MS = config.DELAY_MS;
+		OUTPUT_TOKEN_MULTIPLIER = config.OUTPUT_TOKEN_MULTIPLIER;
+		MODEL_TOKENS = config.MODEL_TOKENS;
+		MODELS = Object.keys(MODEL_TOKENS).filter(key => key !== 'default');
+		MESSAGE_CAPS = config.MESSAGE_CAPS;
+		WARNING_THRESHOLD = config.WARNING_THRESHOLD;
+		SELECTORS = config.SELECTORS;
+
+		// Initialize everything else
+		currentModel = getCurrentModel();
 		initializeOrLoadStorage();
 		currentTokenCount = 0;
 		setupEvents();
@@ -1113,5 +1196,11 @@
 		console.log('Initialization complete. Ready to track tokens.');
 	}
 
-	initialize();
+	(async () => {
+		try {
+			await initialize();
+		} catch (error) {
+			console.error('Failed to initialize Chat Token Counter:', error);
+		}
+	})();
 })();

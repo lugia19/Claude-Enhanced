@@ -35,6 +35,7 @@
 		"SIDEBAR_CONTENT": ".bg-bg-100.border-0\\.5.border-border-300.flex-1",
 		"FILE_VIEW_CONTAINER": ".flex.h-full.flex-col.pb-1.pl-5.pt-3",
 		"FILE_CONTENT": ".whitespace-pre-wrap.break-all.text-xs",
-		"MODEL_PICKER": "[data-testid=\"model-selector-dropdown\"]"
+		"MODEL_PICKER": "[data-testid=\"model-selector-dropdown\"]",
+		"MOBILE_MENU_BUTTON": "button[aria-haspopup=\"menu\"]:has(svg path[d=\"M112,60a16,16,0,1,1,16,16A16,16,0,0,1,112,60Zm16,52a16,16,0,1,0,16,16A16,16,0,0,0,128,112Zm0,68a16,16,0,1,0,16,16A16,16,0,0,0,128,180Z\"])"
 	}
 }
