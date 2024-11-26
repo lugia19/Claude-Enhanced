@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.4.2
+// @version      1.5.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -381,69 +381,189 @@
 		}
 	}
 
-	async function getContentFileTokens(button) {
-		try {
-			const fileContainer = button.closest('div[data-testid]');
-			if (!fileContainer) {
-				console.log('Could not find content file container');
-				return 0;
-			}
-
-			// Check for image
-			const hasImage = button.parentElement.querySelector('img');
-			if (hasImage) {
-				console.log('File is an image, skipping token count');
-				return 0;
-			}
-
-			const filename = fileContainer.getAttribute('data-testid');
-			if (!filename) {
-				console.log('Could not find content file name');
-				return 0;
-			}
-
-			console.log('Processing content file:', filename);
-
-			const storageKey = getFileStorageKey(filename, false);
-			const stored = GM_getValue(storageKey);
-			if (stored !== undefined) {
-				console.log(`Using cached tokens for content file: ${filename}`);
-				return stored;
-			}
-
-			console.log(`Calculating tokens for content file: ${filename}`);
-			button.click();
-
-			const fileView = await waitForElement(SELECTORS.FILE_VIEW_CONTAINER);
-			if (!fileView) {
-				console.log('Could not find file view');
-				return 0;
-			}
-
-			const content = fileView.querySelector(SELECTORS.FILE_CONTENT);
-			if (!content) {
-				console.log('Could not find file content');
-				return 0;
-			}
-			const text = content.textContent || '';
-			//console.log(`First 100 chars of content: "${text.substring(0, 100)}"`);
-			const tokens = calculateTokens(content.textContent || '');
-			console.log(`Content file ${filename} tokens:`, tokens);
-
-			if (tokens > 0) {
-				GM_setValue(storageKey, tokens);
-			}
-
-			const backButton = fileView.querySelector(SELECTORS.BACK_BUTTON);
-			if (backButton) {
-				backButton.click();
-			}
-
-			return tokens;
-		} catch (error) {
-			console.error('Error processing content file:', error);
+	async function handleTextFile(button) {
+		const filename = button.querySelector('.break-words')?.textContent;
+		if (!filename) {
+			console.log('Could not find filename for text file');
 			return 0;
 		}
+
+		const storageKey = getFileStorageKey(filename, false);
+		const stored = GM_getValue(storageKey);
+		if (stored !== undefined) {
+			console.log(`Using cached tokens for text file: ${filename}`);
+			return stored;
+		}
+
+		button.click();
+		await sleep(200);
+
+		const content = document.querySelector(SELECTORS.FILE_CONTENT);
+		if (!content) {
+			console.log('Could not find file content');
+			return 0;
+		}
+
+		const tokens = calculateTokens(content.textContent || '');
+		console.log(`Text file ${filename} tokens:`, tokens);
+
+		if (tokens > 0) {
+			GM_setValue(storageKey, tokens);
+		}
+
+		const closeButton = document.querySelector(SELECTORS.MODAL_CLOSE);
+		if (closeButton) {
+			closeButton.click();
+			await sleep(200);
+		}
+
+		return tokens;
+	}
+
+	async function handleImageFile(button) {
+		const filename = button.querySelector('.break-words')?.textContent;
+		if (!filename) {
+			console.log('Could not find filename for image');
+			return 0;
+		}
+
+		const storageKey = getFileStorageKey(filename, false);
+		const stored = GM_getValue(storageKey);
+		if (stored !== undefined) {
+			console.log(`Using cached tokens for image: ${filename}`);
+			return stored;
+		}
+
+		button.click();
+		await sleep(200);
+
+		const modalImage = document.querySelector('[role="dialog"] img[alt^="Preview of"]');
+		if (!modalImage) {
+			console.log('Could not find image in modal');
+			return 0;
+		}
+
+		const width = parseInt(modalImage.getAttribute('width'));
+		const height = parseInt(modalImage.getAttribute('height'));
+
+		if (!width || !height) {
+			console.log('Could not get image dimensions');
+			return 0;
+		}
+
+		const tokens = Math.min(1600, Math.ceil((width * height) / 750));
+		console.log(`Image ${filename} (${width}x${height}) tokens:`, tokens);
+
+		if (tokens > 0) {
+			GM_setValue(storageKey, tokens);
+		}
+
+		const closeButton = document.querySelector('[data-testid="close-file-preview"]');
+		if (closeButton) {
+			closeButton.click();
+			await sleep(200);
+		}
+
+		return tokens;
+	}
+
+	async function handlePDFFile(button) {
+		const filename = button.querySelector('.break-words')?.textContent;
+		if (!filename) {
+			console.log('Could not find filename for PDF');
+			return 0;
+		}
+
+		const storageKey = getFileStorageKey(filename, false);
+		const stored = GM_getValue(storageKey);
+		if (stored !== undefined) {
+			console.log(`Using cached tokens for PDF: ${filename}`);
+			return stored;
+		}
+
+		button.click();
+		await sleep(200);
+
+		const pageText = document.querySelector('[role="dialog"] .text-text-300 p')?.textContent;
+		if (!pageText) {
+			console.log('Could not find page count text');
+			return 0;
+		}
+
+		const pageCount = parseInt(pageText);
+		if (isNaN(pageCount)) {
+			console.log('Could not parse page count from:', pageText);
+			return 0;
+		}
+
+		const tokens = pageCount * 2250;
+		console.log(`PDF ${filename} (${pageCount} pages) tokens:`, tokens);
+
+		if (tokens > 0) {
+			GM_setValue(storageKey, tokens);
+		}
+
+		const closeButton = document.querySelector('[role="dialog"] button:has(svg path[d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"])');
+		if (closeButton) {
+			closeButton.click();
+			await sleep(200);
+		}
+
+		return tokens;
+	}
+
+	async function getContentFileTokens() {
+		let totalTokens = 0;
+
+		const sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
+		if (!sidebar) {
+			console.log('Could not find sidebar');
+			return 0;
+		}
+
+		// Find project files container if it exists
+		const projectContainer = sidebar.querySelector(SELECTORS.PROJECT_FILES_CONTAINER);
+
+		// Find all uls in the sidebar that aren't inside the project container
+		const uls = Array.from(sidebar.querySelectorAll('ul')).filter(ul => {
+			if (!projectContainer) return true;
+			return !projectContainer.contains(ul);
+		});
+
+		// Find the files ul - it should be the one following the "Content" heading
+		const contentUl = uls.find(ul => {
+			const prevHeader = ul.previousElementSibling;
+			return prevHeader?.tagName === 'H3' && prevHeader.textContent === 'Content';
+		});
+
+		if (!contentUl) {
+			console.log('Could not find content file list');
+			return 0;
+		}
+
+		for (const li of contentUl.querySelectorAll('li')) {
+			const button = li.querySelector('button');
+			if (!button) continue;
+
+			const isImage = !!button.querySelector('img');
+			const isPDF = !!button.querySelector(`path[d="M224,152a8,8,0,0,1-8,8H192v16h16a8,8,0,0,1,0,16H192v16a8,8,0,0,1-16,0V152a8,8,0,0,1,8-8h32A8,8,0,0,1,224,152ZM92,172a28,28,0,0,1-28,28H56v8a8,8,0,0,1-16,0V152a8,8,0,0,1,8-8H64A28,28,0,0,1,92,172Zm-16,0a12,12,0,0,0-12-12H56v24h8A12,12,0,0,0,76,172Zm88,8a36,36,0,0,1-36,36H112a8,8,0,0,1-8-8V152a8,8,0,0,1,8-8h16A36,36,0,0,1,164,180Zm-16,0a20,20,0,0,0-20-20h-8v40h8A20,20,0,0,0,148,180ZM40,112V40A16,16,0,0,1,56,24h96a8,8,0,0,1,5.66,2.34l56,56A8,8,0,0,1,216,88v24a8,8,0,0,1-16,0V96H152a8,8,0,0,1-8-8V40H56v72a8,8,0,0,1-16,0ZM160,80h28.69L160,51.31Z"]`);
+
+			let tokens = 0;
+			try {
+				if (isImage) {
+					tokens = await handleImageFile(button);
+				} else if (isPDF) {
+					tokens = await handlePDFFile(button);
+				} else {
+					tokens = await handleTextFile(button);
+				}
+			} catch (error) {
+				console.error('Error counting tokens for file:', error);
+			}
+			totalTokens += tokens;
+		}
+
+		return totalTokens;
 	}
 	//#endregion
 
@@ -937,33 +1057,25 @@
 
 
 		// Handle project files from sidebar first
-		const projectFiles = new Set(); // Keep track of project files we've processed
-
 		if (await ensureSidebarLoaded()) {
 			const projectContainer = document.querySelector(SELECTORS.PROJECT_FILES_CONTAINER);
 			const projectFileButtons = projectContainer?.querySelectorAll(SELECTORS.PROJECT_FILES) || [];
 			console.log('Found project files in sidebar:', projectFileButtons);
 
 			for (const button of projectFileButtons) {
-				projectFiles.add(button);
 				const tokens = await getProjectFileTokens(button);
 				currentCount += tokens;
 			}
 		}
-
-		// Now handle all file thumbnails that aren't in the project files set
-		const allFileButtons = document.querySelectorAll(SELECTORS.FILE_BUTTONS);
-		console.log('Found all file buttons:', allFileButtons);
-
-		for (const button of allFileButtons) {
-			if (!projectFiles.has(button)) { // Skip if it's a project file
-				console.log("Found non-project file button", button)
-				const tokens = await getContentFileTokens(button);
-				currentCount += tokens;
-			}
+		// Handle the content files
+		try {
+			currentCount += await getContentFileTokens();
+		} catch (error) {
+			console.error('Error processing content files:', error);
 		}
 
-		// Ensure sidebar is closed before waiting...
+
+		// Ensure sidebar is closed...
 		console.log("Closing sidebar...")
 		const sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
 		if (sidebar) {
