@@ -4,8 +4,8 @@
 	"DELAY_MS": 100,
 	"OUTPUT_TOKEN_MULTIPLIER": 10,
 	"MODEL_TOKENS": {
-		"Opus": 1500000,
-		"Sonnet": 1600000,
+		"Opus": 1200000,
+		"Sonnet": 1700000,
 		"Haiku": 4000000,
 		"default": 1
 	},
