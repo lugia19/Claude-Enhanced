@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.6.0
+// @version      1.6.1
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -129,20 +129,23 @@
 			const maxTokens = config.MODEL_TOKENS[model] || config.MODEL_TOKENS.default;
 			let allModelData = GM_getValue(`${STORAGE_KEY}_models`, {});
 			const stored = allModelData[model];
-
+			
+			const currentMessageCount = (stored?.messageCount || 0) + 1;
 			const totalTokenCount = stored ? stored.total + rawCount : rawCount;
-
+	
 			allModelData[model] = {
 				total: totalTokenCount,
+				messageCount: currentMessageCount,
 				resetTimestamp: stored?.resetTimestamp || this.#getResetTime(new Date()).getTime()
 			};
-
+	
 			GM_setValue(`${STORAGE_KEY}_models`, allModelData);
-
+	
 			return {
-				totalTokenCount
+				totalTokenCount,
+				messageCount: currentMessageCount
 			};
-		}
+		}	
 
 		clearModelData(model) {
 			let allModelData = GM_getValue(`${STORAGE_KEY}_models`, {});
