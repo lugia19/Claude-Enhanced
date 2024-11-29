@@ -1039,7 +1039,6 @@
 			}
 
 			const stored = storageManager.getModelData(modelName);
-			const messageCap = config.MESSAGE_CAPS[modelName] || config.MESSAGE_CAPS.default;
 
 			if (stored) {
 				const modelTotal = stored.total;
@@ -1227,7 +1226,7 @@
 
 		console.log(`Current conversation tokens: ${adjustedCount}`);
 		console.log(`Total accumulated tokens: ${totalTokenCount}`);
-		console.log(`Messages used: ${messageCount}/${config.MESSAGE_CAPS[currentModel]}`);
+		console.log(`Messages used: ${messageCount}`);
 
 		updateProgressBar(adjustedCount, false);
 	}
