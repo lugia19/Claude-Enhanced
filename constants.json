@@ -9,12 +9,6 @@
 		"Haiku": 4000000,
 		"default": 1
 	},
-	"MESSAGE_CAPS": {
-		"Opus": 50,
-		"Sonnet": 200,
-		"Haiku": 1000,
-		"default": -1
-	},
 	"WARNING_THRESHOLD": 0.9,
 	"SELECTORS": {
 		"MAIN_INPUT": "div[aria-label=\"Write your prompt to Claude\"]",
@@ -37,5 +31,24 @@
 		"FILE_CONTENT": ".whitespace-pre-wrap.break-all.text-xs",
 		"MODEL_PICKER": "[data-testid=\"model-selector-dropdown\"]",
 		"MOBILE_MENU_BUTTON": "button[aria-haspopup=\"menu\"]:has(svg path[d=\"M112,60a16,16,0,1,1,16,16A16,16,0,0,1,112,60Zm16,52a16,16,0,1,0,16,16A16,16,0,0,0,128,112Zm0,68a16,16,0,1,0,16,16A16,16,0,0,0,128,180Z\"])"
-	}
+	},
+	"CHECKBOX_OPTIONS": {
+		"personal_preferences_enabled": {
+			"text": "Preferences in profile and enabled",
+			"cost": 800
+		},
+		"artifacts_enabled": {
+			"text": "Artifacts enabled",
+			"cost": 5500
+		},
+		"analysis_enabled": {
+			"text": "Analysis Tool enabled",
+			"cost": 2000
+		},
+		"latex_enabled": {
+			"text": "LaTeX Rendering enabled",
+			"cost": 200
+		}
+	},
+	"BASE_SYSTEM_PROMPT_LENGTH": 2900
 }

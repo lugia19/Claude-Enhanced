@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.5.0
+// @version      1.6.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -17,20 +17,11 @@
 
 	//#region Config
 	// Declare variables at the top level
-	let STORAGE_KEY;
-	let COLLAPSED_STATE_KEY;
-	let POLL_INTERVAL_MS;
-	let DELAY_MS;
-	let OUTPUT_TOKEN_MULTIPLIER;
-	let MODEL_TOKENS;
-	let MESSAGE_CAPS;
-	let WARNING_THRESHOLD;
-	let SELECTORS;
-	let MODELS;
+	let config;
+	const STORAGE_KEY = "claudeUsageTracker_v2"
 
 	const CONFIG_URL = 'https://raw.githubusercontent.com/lugia19/Claude-Toolbox/refs/heads/main/constants.json';
 	const DEFAULT_CONFIG = {
-		STORAGE_KEY: 'claudeUsageTracker_v2',
 		POLL_INTERVAL_MS: 5000,
 		DELAY_MS: 100,
 		OUTPUT_TOKEN_MULTIPLIER: 10,
@@ -39,12 +30,6 @@
 			'Sonnet': 1600000,
 			'Haiku': 4000000,
 			'default': 1
-		},
-		MESSAGE_CAPS: {
-			'Opus': 50,
-			'Sonnet': 200,
-			'Haiku': 1000,
-			'default': -1
 		},
 		WARNING_THRESHOLD: 0.9,
 		SELECTORS: {
@@ -69,7 +54,164 @@
 			MODEL_PICKER: '[data-testid="model-selector-dropdown"]',
 			MOBILE_MENU_BUTTON: 'button[aria-haspopup="menu"]:has(svg path[d="M112,60a16,16,0,1,1,16,16A16,16,0,0,1,112,60Zm16,52a16,16,0,1,0,16,16A16,16,0,0,0,128,112Zm0,68a16,16,0,1,0,16,16A16,16,0,0,0,128,180Z"])'
 		},
+		CHECKBOX_OPTIONS: {	//TODO: Fill in constants.json as well
+			'personal_preferences_enabled': { text: 'Preferences in profile and enabled', cost: 800 },
+			'artifacts_enabled': { text: 'Artifacts enabled', cost: 5500 },
+			'analysis_enabled': { text: 'Analysis Tool enabled', cost: 2000 },
+			'latex_enabled': { text: 'LaTeX Rendering enabled', cost: 200 },
+		},
+		BASE_SYSTEM_PROMPT_LENGTH: (2600 + 300)	//Base + style_info
 	};
+	//#endregion
+
+	//#region Storage Manager
+	class StorageManager {
+		getCheckboxStates() {
+			return GM_getValue(`${STORAGE_KEY}_checkbox_states`, {});
+		}
+
+		setCheckboxState(key, checked) {
+			const states = this.getCheckboxStates();
+			states[key] = checked;
+			GM_setValue(`${STORAGE_KEY}_checkbox_states`, states);
+		}
+
+		getExtraCost() {
+			const states = this.getCheckboxStates();
+			return Object.entries(config.CHECKBOX_OPTIONS)
+				.reduce((total, [key, option]) =>
+					total + (states[key] ? option.cost : 0), 0);
+		}
+
+		getCollapsedState() {
+			return GM_getValue(`${STORAGE_KEY}_collapsed`, false);
+		}
+
+		setCollapsedState(isCollapsed) {
+			GM_setValue(`${STORAGE_KEY}_collapsed`, isCollapsed);
+		}
+
+		#checkAndCleanExpiredData() {
+			const allModelData = GM_getValue(`${STORAGE_KEY}_models`);
+			if (!allModelData) return;
+
+			const currentTime = new Date();
+			let hasChanges = false;
+
+			for (const model in allModelData) {
+				const resetTime = new Date(allModelData[model].resetTimestamp);
+				if (currentTime >= resetTime) {
+					delete allModelData[model];
+					hasChanges = true;
+				}
+			}
+
+			if (hasChanges) {
+				GM_setValue(`${STORAGE_KEY}_models`, allModelData);
+			}
+		}
+
+		getModelData(model) {
+			this.#checkAndCleanExpiredData();
+			const allModelData = GM_getValue(`${STORAGE_KEY}_models`);
+			return allModelData?.[model] || null;
+		}
+
+		initializeOrLoadStorage(model) {
+			const stored = this.getModelData(model);
+			if (!stored) {
+				return { total: 0, isInitialized: false };
+			}
+			return { total: stored.total, isInitialized: true };
+		}
+
+		saveModelData(model, rawCount) {
+			const maxTokens = config.MODEL_TOKENS[model] || config.MODEL_TOKENS.default;
+			let allModelData = GM_getValue(`${STORAGE_KEY}_models`, {});
+			const stored = allModelData[model];
+
+			const totalTokenCount = stored ? stored.total + rawCount : rawCount;
+
+			allModelData[model] = {
+				total: totalTokenCount,
+				resetTimestamp: stored?.resetTimestamp || this.#getResetTime(new Date()).getTime()
+			};
+
+			GM_setValue(`${STORAGE_KEY}_models`, allModelData);
+
+			return {
+				totalTokenCount
+			};
+		}
+
+		clearModelData(model) {
+			let allModelData = GM_getValue(`${STORAGE_KEY}_models`, {});
+			delete allModelData[model];
+			GM_setValue(`${STORAGE_KEY}_models`, allModelData);
+		}
+
+		#getResetTime(currentTime) {
+			const hourStart = new Date(currentTime);
+			hourStart.setMinutes(0, 0, 0);
+			const resetTime = new Date(hourStart);
+			resetTime.setHours(hourStart.getHours() + 5);
+			return resetTime;
+		}
+
+		getFormattedTimeRemaining(model) {
+			const stored = this.getModelData(model);
+			if (!stored) return 'Reset in: Not set';
+
+			const now = new Date();
+			const resetTime = new Date(stored.resetTimestamp);
+			const diff = resetTime - now;
+
+			if (diff <= 0) return 'Reset pending...';
+
+			const hours = Math.floor(diff / (1000 * 60 * 60));
+			const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+			return hours > 0 ? `Reset in: ${hours}h ${minutes}m` : `Reset in: ${minutes}m`;
+		}
+
+		calculateMessagesLeft(model, conversationLength = 0) {
+			if (model === "default") return "Loading...";
+
+			const maxTokens = config.MODEL_TOKENS[model] || config.MODEL_TOKENS.default;
+			const stored = this.getModelData(model);
+			const modelTotal = stored?.total || 0;
+			const remainingTokens = maxTokens - modelTotal;
+
+			if (conversationLength === 0) {
+				return "Loading...";
+			}
+
+			return Math.max(0, remainingTokens / conversationLength).toFixed(1);
+		}
+
+		// File storage methods
+		#getFileKey(conversationId) {
+			return `${STORAGE_KEY}_files_${conversationId}`;
+		}
+
+		getFileTokens(conversationId, filename, isProjectFile) {
+			const allFileData = GM_getValue(this.#getFileKey(conversationId), {});
+			const fileKey = `${isProjectFile ? 'project' : 'content'}_${filename}`;
+			return allFileData[fileKey];
+		}
+
+		saveFileTokens(conversationId, filename, tokens, isProjectFile) {
+			if (tokens <= 0) return;
+
+			const allFileData = GM_getValue(this.#getFileKey(conversationId), {});
+			const fileKey = `${isProjectFile ? 'project' : 'content'}_${filename}`;
+
+			allFileData[fileKey] = tokens;
+			GM_setValue(this.#getFileKey(conversationId), allFileData);
+		}
+	}
+
+	const storageManager = new StorageManager();
 	//#endregion
 
 	//State variables
@@ -79,7 +221,7 @@
 	let modelSections = {};
 	let currentConversationId = null;
 	let currentMessageCount = 0;
-
+	let lastCheckboxState = {};
 
 	//#region Utils
 	const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -90,90 +232,15 @@
 	}
 
 	function getCurrentModel() {
-		const modelSelector = document.querySelector(SELECTORS.MODEL_PICKER);
+		const modelSelector = document.querySelector(config.SELECTORS.MODEL_PICKER);
 		if (!modelSelector) return 'default';
 
-		const modelText = modelSelector.querySelector('.whitespace-nowrap')?.textContent?.trim() || 'default';
-		return getModelType(modelText);
-	}
+		let fullModelName = modelSelector.querySelector('.whitespace-nowrap')?.textContent?.trim() || 'default';
 
-	async function waitForElement(selector, maxAttempts = 5) {
-		let attempts = 0;
-		while (attempts < maxAttempts) {
-			const element = document.querySelector(selector);
-			if (element) return element;
-
-			await sleep(100);
-			attempts++;
-		}
-		return null;
-	}
-
-	function formatTimeRemaining(resetTime) {
-		const now = new Date();
-		const diff = resetTime - now;
-
-		if (diff <= 0) return 'Reset pending...';
-
-		const hours = Math.floor(diff / (1000 * 60 * 60));
-		const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
-		if (hours > 0) {
-			return `Reset in: ${hours}h ${minutes}m`;
-		} else {
-			return `Reset in: ${minutes}m`;
-		}
-	}
-
-	function calculateTokens(text) {
-		const charCount = text.length;
-		return Math.ceil(charCount / 4);
-	}
-
-	function calculateMessagesLeft(modelTotal, conversationLength) {
-		if (currentModel == "default") return "Loading...";
-
-		const maxTokens = MODEL_TOKENS[currentModel] || MODEL_TOKENS.default;
-		const messageCap = MESSAGE_CAPS[currentModel] || MESSAGE_CAPS.default;
-
-		// Get current message count
-		const stored = GM_getValue(getStorageKey());
-		const currentMessageCount = stored?.messageCount || 0;
-
-		if (conversationLength === 0) {
-			// Just return remaining message cap instead of infinity
-			return Math.max(0, messageCap - currentMessageCount).toFixed(1);
-		}
-
-		// Calculate remaining messages based on tokens
-		const remainingTokens = maxTokens - modelTotal;
-		const messagesLeftByTokens = remainingTokens / conversationLength;
-
-		// Calculate remaining messages based on message cap
-		const messagesLeftByCap = messageCap - currentMessageCount;
-
-		// Use the more restrictive limit
-		const actualMessagesLeft = Math.min(messagesLeftByTokens, messagesLeftByCap);
-
-		// Return 0 if negative, otherwise show one decimal place
-		return Math.max(0, actualMessagesLeft).toFixed(1);
-	}
-
-
-
-	function getResetTime(currentTime) {
-		const hourStart = new Date(currentTime);
-		hourStart.setMinutes(0, 0, 0);
-		const resetTime = new Date(hourStart);
-		resetTime.setHours(hourStart.getHours() + 5);
-		return resetTime;
-	}
-
-	function getModelType(fullModelName) {
 		if (!fullModelName || fullModelName === 'default') return 'default';
 
 		fullModelName = fullModelName.toLowerCase();
-		const modelTypes = Object.keys(MODEL_TOKENS).filter(key => key !== 'default');
+		const modelTypes = Object.keys(config.MODEL_TOKENS).filter(key => key !== 'default');
 
 		for (const modelType of modelTypes) {
 			if (fullModelName.includes(modelType.toLowerCase())) {
@@ -182,6 +249,11 @@
 		}
 
 		return 'default';
+	}
+
+	function calculateTokens(text) {
+		const charCount = text.length;
+		return Math.ceil(charCount / 4);
 	}
 
 	function isMobileView() {
@@ -196,55 +268,6 @@
 
 	//#endregion
 
-	//#region Storage
-	function getStorageKey() {
-		return `${STORAGE_KEY}_${currentModel}`;
-	}
-
-	function getFileStorageKey(filename, isProjectFile = false) {
-		const conversationId = getConversationId();
-		return `${STORAGE_KEY}_${isProjectFile ? 'project' : 'content'}_${conversationId}_${filename}`;
-	}
-
-	function initializeOrLoadStorage() {
-		const stored = GM_getValue(getStorageKey());
-
-		if (stored) {
-			const currentTime = new Date();
-			const resetTime = new Date(stored.resetTimestamp);
-
-			if (currentTime >= resetTime) {
-				return { total: 0, isInitialized: false };
-			} else {
-				return { total: stored.total, isInitialized: true };
-			}
-		}
-		return { total: 0, isInitialized: false };
-	}
-
-	function saveToStorage(count, messageCount) {
-		const currentTime = new Date();
-		const { isInitialized } = initializeOrLoadStorage();
-		console.log(`Saving count to ${getStorageKey()}!`)
-
-		if (!isInitialized) {
-			const resetTime = getResetTime(currentTime);
-			GM_setValue(getStorageKey(), {
-				total: count,
-				messageCount: messageCount,
-				resetTimestamp: resetTime.getTime()
-			});
-		} else {
-			const existing = GM_getValue(getStorageKey());
-			GM_setValue(getStorageKey(), {
-				total: count,
-				messageCount: messageCount,
-				resetTimestamp: existing.resetTimestamp
-			});
-		}
-	}
-	//#endregion
-
 	//#region File Processing
 	async function ensureSidebarLoaded() {
 		/*if (isMobileView()) {
@@ -252,7 +275,7 @@
 			return false;
 		}*/
 
-		const sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
+		const sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
 
 		// If sidebar exists and has been processed before, we're done
 		if (sidebar && sidebar.getAttribute('data-files-processed')) {
@@ -261,7 +284,7 @@
 		}
 
 		// If we get here, we need to open/reload the sidebar
-		const sidebarButton = document.querySelector(SELECTORS.SIDEBAR_BUTTON);
+		const sidebarButton = document.querySelector(config.SELECTORS.SIDEBAR_BUTTON);
 		if (!sidebarButton) {
 			console.log('Could not find sidebar button');
 			return false;
@@ -273,7 +296,7 @@
 		// Wait for sidebar to become visible and mark it as processed
 		let attempts = 0;
 		while (attempts < 5) {
-			let sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
+			let sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
 			if (sidebar) {
 				const style = window.getComputedStyle(sidebar);
 				const matrixMatch = style.transform.match(/matrix\(([\d.-]+,\s*){5}[\d.-]+\)/);
@@ -285,7 +308,7 @@
 					await sleep(1000);
 
 					//Ensure we have actually updated data.
-					sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
+					sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
 
 					// Close the sidebar since we only needed it to load the content
 					const closeButton = document.querySelector('button[data-testid="close-file-preview"]');
@@ -314,8 +337,7 @@
 			const filename = fileContainer.getAttribute('data-testid');
 			console.log('Processing project file:', filename);
 
-			const storageKey = getFileStorageKey(filename, true);
-			const stored = GM_getValue(storageKey);
+			const stored = storageManager.getFileTokens(getConversationId(), filename, true);
 			if (stored !== undefined) {
 				console.log(`Using cached tokens for project file: ${filename}`);
 				return stored;
@@ -330,7 +352,7 @@
 			let modalTitle = null;
 
 			while (attempts < 5) {
-				modal = document.querySelector(SELECTORS.MODAL);
+				modal = document.querySelector(config.SELECTORS.MODAL);
 				if (modal) {
 					modalTitle = modal.querySelector('h2');
 					if (modalTitle && modalTitle.textContent === filename) {
@@ -349,7 +371,7 @@
 
 
 
-			const content = modal.querySelector(SELECTORS.MODAL_CONTENT);
+			const content = modal.querySelector(config.SELECTORS.MODAL_CONTENT);
 			if (!content) {
 				console.log('Could not find modal content');
 				return 0;
@@ -361,12 +383,12 @@
 			console.log(`Project file ${filename} tokens:`, tokens);
 
 			if (tokens > 0) {
-				GM_setValue(storageKey, tokens);
+				storageManager.saveFileTokens(getConversationId(), filename, tokens, true);
 			}
 
 
 
-			const closeButton = modal.querySelector(SELECTORS.MODAL_CLOSE);
+			const closeButton = modal.querySelector(config.SELECTORS.MODAL_CLOSE);
 			if (closeButton) {
 				closeButton.click();
 			}
@@ -388,8 +410,7 @@
 			return 0;
 		}
 
-		const storageKey = getFileStorageKey(filename, false);
-		const stored = GM_getValue(storageKey);
+		const stored = storageManager.getFileTokens(getConversationId(), filename, false);
 		if (stored !== undefined) {
 			console.log(`Using cached tokens for text file: ${filename}`);
 			return stored;
@@ -398,7 +419,7 @@
 		button.click();
 		await sleep(200);
 
-		const content = document.querySelector(SELECTORS.FILE_CONTENT);
+		const content = document.querySelector(config.SELECTORS.FILE_CONTENT);
 		if (!content) {
 			console.log('Could not find file content');
 			return 0;
@@ -408,10 +429,10 @@
 		console.log(`Text file ${filename} tokens:`, tokens);
 
 		if (tokens > 0) {
-			GM_setValue(storageKey, tokens);
+			storageManager.saveFileTokens(getConversationId(), filename, tokens, false);
 		}
 
-		const closeButton = document.querySelector(SELECTORS.MODAL_CLOSE);
+		const closeButton = document.querySelector(config.SELECTORS.MODAL_CLOSE);
 		if (closeButton) {
 			closeButton.click();
 			await sleep(200);
@@ -427,8 +448,7 @@
 			return 0;
 		}
 
-		const storageKey = getFileStorageKey(filename, false);
-		const stored = GM_getValue(storageKey);
+		const stored = storageManager.getFileTokens(getConversationId(), filename, false);
 		if (stored !== undefined) {
 			console.log(`Using cached tokens for image: ${filename}`);
 			return stored;
@@ -455,7 +475,7 @@
 		console.log(`Image ${filename} (${width}x${height}) tokens:`, tokens);
 
 		if (tokens > 0) {
-			GM_setValue(storageKey, tokens);
+			storageManager.saveFileTokens(getConversationId(), filename, tokens, false);
 		}
 
 		const closeButton = document.querySelector('[data-testid="close-file-preview"]');
@@ -474,8 +494,7 @@
 			return 0;
 		}
 
-		const storageKey = getFileStorageKey(filename, false);
-		const stored = GM_getValue(storageKey);
+		const stored = storageManager.getFileTokens(getConversationId(), filename, false);
 		if (stored !== undefined) {
 			console.log(`Using cached tokens for PDF: ${filename}`);
 			return stored;
@@ -500,7 +519,7 @@
 		console.log(`PDF ${filename} (${pageCount} pages) tokens:`, tokens);
 
 		if (tokens > 0) {
-			GM_setValue(storageKey, tokens);
+			storageManager.saveFileTokens(getConversationId(), filename, tokens, false);
 		}
 
 		const closeButton = document.querySelector('[role="dialog"] button:has(svg path[d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"])');
@@ -515,14 +534,14 @@
 	async function getContentFileTokens() {
 		let totalTokens = 0;
 
-		const sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
+		const sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
 		if (!sidebar) {
 			console.log('Could not find sidebar');
 			return 0;
 		}
 
 		// Find project files container if it exists
-		const projectContainer = sidebar.querySelector(SELECTORS.PROJECT_FILES_CONTAINER);
+		const projectContainer = sidebar.querySelector(config.SELECTORS.PROJECT_FILES_CONTAINER);
 
 		// Find all uls in the sidebar that aren't inside the project container
 		const uls = Array.from(sidebar.querySelectorAll('ul')).filter(ul => {
@@ -737,8 +756,83 @@
 		};
 	}
 
+	function createSettingsButton() {
+		const button = document.createElement('div');
+		button.innerHTML = `
+			<svg viewBox="0 0 24 24" width="20" height="20" style="cursor: pointer;">
+				<path fill="currentColor" d="M12,15.5A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Zm0-5A1.5,1.5,0,1,0,13.5,12,1.5,1.5,0,0,0,12,10.5Zm7.11,4.13a7.92,7.92,0,0,0,.14-1.64s0-.08,0-.12l1.87-.93a.34.34,0,0,0,.14-.45l-1.36-2.36a.34.34,0,0,0-.44-.14l-1.94,1a7.49,7.49,0,0,0-1.42-.82l-.22-2.16a.34.34,0,0,0-.34-.3H12.36a.34.34,0,0,0-.34.3l-.22,2.16a7.49,7.49,0,0,0-1.42.82l-1.94-1a.34.34,0,0,0-.44.14L6.64,11.89a.34.34,0,0,0,.14.45l1.87.93c0,.04,0,.08,0,.12a7.92,7.92,0,0,0,.14,1.64l-1.87.93a.34.34,0,0,0-.14.45l1.36,2.36a.34.34,0,0,0,.44.14l1.94-1a7.49,7.49,0,0,0,1.42.82l.22,2.16a.34.34,0,0,0,.34.3h2.72a.34.34,0,0,0,.34-.3l.22-2.16a7.49,7.49,0,0,0,1.42-.82l1.94,1a.34.34,0,0,0,.44-.14l1.36-2.36a.34.34,0,0,0-.14-.45Z"/>
+			</svg>
+		`;
+		button.style.cssText = `
+			margin-left: auto;
+			display: flex;
+			align-items: center;
+			color: #3b82f6;
+		`;
+		return button;
+	}
 
-	function createProgressBar() {
+	function createSettingsPopup() {
+		const popup = document.createElement('div');
+		popup.style.cssText = `
+			position: absolute;
+			bottom: 100%;
+			right: 0;
+			background: #2D2D2D;
+			border: 1px solid #3B3B3B;
+			border-radius: 8px;
+			padding: 12px;
+			margin-bottom: 8px;
+			z-index: 10000;
+			max-height: 300px;
+			overflow-y: auto;
+			width: 250px;
+		`;
+
+		const checkboxContainer = document.createElement('div');
+		checkboxContainer.style.cssText = `
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		`;
+
+		const states = storageManager.getCheckboxStates();
+
+		Object.entries(config.CHECKBOX_OPTIONS).forEach(([key, option]) => {
+			const wrapper = document.createElement('div');
+			wrapper.style.cssText = `
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			`;
+
+			const checkbox = document.createElement('input');
+			checkbox.type = 'checkbox';
+			checkbox.checked = states[key] || false;
+			checkbox.addEventListener('change', (e) => {
+				storageManager.setCheckboxState(key, e.target.checked);
+				updateProgressBar(currentTokenCount, true);  // Update UI to reflect new costs
+			});
+
+			const label = document.createElement('label');
+			label.style.cssText = `
+				color: white;
+				font-size: 12px;
+				flex-grow: 1;
+			`;
+			label.textContent = `${option.text} (+${option.cost})`;
+
+			wrapper.appendChild(checkbox);
+			wrapper.appendChild(label);
+			checkboxContainer.appendChild(wrapper);
+		});
+
+		popup.appendChild(checkboxContainer);
+		return popup;
+	}
+
+
+	function createUI() {
 		const container = document.createElement('div');
 		container.style.cssText = `
             position: fixed;
@@ -771,12 +865,29 @@
 			transition: transform 0.2s;
 		`;
 
+		const settingsButton = createSettingsButton();
+		let settingsPopup = null;
+
+		settingsButton.addEventListener('click', (e) => {
+			e.stopPropagation();
+
+			if (settingsPopup) {
+				settingsPopup.remove();
+				settingsPopup = null;
+				return;
+			}
+
+			settingsPopup = createSettingsPopup();
+			header.appendChild(settingsPopup);
+		});
+
 		header.appendChild(arrow);
 		header.appendChild(document.createTextNode('Usage Tracker'));
+		header.appendChild(settingsButton);
 
-		// Counters (always visible)
-		const conversationCounter = document.createElement('div');
-		conversationCounter.style.cssText = `
+		// Counters
+		const currentConversationDisplay = document.createElement('div');
+		currentConversationDisplay.style.cssText = `
 			color: white;
 			font-size: 12px;
 			padding: 0 10px;
@@ -791,7 +902,7 @@
 			color: white;
 			font-size: 12px;
 		`;
-		estimateDisplay.textContent = 'Est. messages left: ∞';
+		estimateDisplay.textContent = 'Est. messages left: Loading...';
 
 		const lengthDisplay = document.createElement('div');
 		lengthDisplay.id = 'conversation-token-count';
@@ -802,8 +913,8 @@
 		`;
 		lengthDisplay.textContent = 'Current length: 0 tokens';
 
-		conversationCounter.appendChild(estimateDisplay);
-		conversationCounter.appendChild(lengthDisplay);
+		currentConversationDisplay.appendChild(estimateDisplay);
+		currentConversationDisplay.appendChild(lengthDisplay);
 
 		// Content container (collapsible)
 		const content = document.createElement('div');
@@ -813,7 +924,7 @@
 		`;
 
 		// Create sections for each model
-		MODELS.forEach(model => {
+		config.MODELS.forEach(model => {
 			const isActive = model === currentModel;
 			const section = createModelSection(model, isActive);
 			modelSections[model] = section;
@@ -821,12 +932,12 @@
 		});
 
 		container.appendChild(header);
-		container.appendChild(conversationCounter);
+		container.appendChild(currentConversationDisplay);
 		container.appendChild(content);
 		document.body.appendChild(container);
 
 		// Get stored collapse state
-		let isCollapsed = GM_getValue(COLLAPSED_STATE_KEY, false);
+		let isCollapsed = storageManager.getCollapsedState();
 		content.style.display = isCollapsed ? 'none' : 'block';
 		arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
 
@@ -837,7 +948,7 @@
 			content.style.display = isCollapsed ? 'none' : 'block';
 			arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
 			// Store the new state
-			GM_setValue(COLLAPSED_STATE_KEY, isCollapsed);
+			storageManager.setCollapsedState(isCollapsed);
 		});
 
 		// Dragging functionality
@@ -913,16 +1024,12 @@
 		// Update messages left estimate
 		const estimateDisplay = document.getElementById('messages-left-estimate');
 		if (estimateDisplay && updateLength) {
-			const modelStorageKey = `${STORAGE_KEY}_${currentModel.replace(/\s+/g, '_')}`;
-			const stored = GM_getValue(modelStorageKey);
-			const modelTotal = stored ? stored.total : 0;
-
-			const estimate = calculateMessagesLeft(modelTotal, currentTokens);
+			const estimate = storageManager.calculateMessagesLeft(currentModel, currentTokens);
 			estimateDisplay.textContent = `Est. messages left: ${estimate}`;
 		}
 
 		// Update each model section
-		MODELS.forEach(modelName => {
+		config.MODELS.forEach(modelName => {
 			const section = modelSections[modelName];
 			if (!section) return;
 
@@ -931,26 +1038,24 @@
 				section.setActive(isActiveModel);
 			}
 
-			const modelStorageKey = `${STORAGE_KEY}_${modelName.replace(/\s+/g, '_')}`;
-			const stored = GM_getValue(modelStorageKey);
-			const messageCap = MESSAGE_CAPS[modelName] || MESSAGE_CAPS.default;
+			const stored = storageManager.getModelData(modelName);
+			const messageCap = config.MESSAGE_CAPS[modelName] || config.MESSAGE_CAPS.default;
 
 			if (stored) {
 				const modelTotal = stored.total;
 				const messageCount = stored.messageCount || 0;
-				const maxTokens = MODEL_TOKENS[modelName] || MODEL_TOKENS.default;
+				const maxTokens = config.MODEL_TOKENS[modelName] || config.MODEL_TOKENS.default;
 				const percentage = (modelTotal / maxTokens) * 100;
 
 				section.progressBar.style.width = `${Math.min(percentage, 100)}%`;
-				section.progressBar.style.background = modelTotal >= maxTokens * WARNING_THRESHOLD ? '#ef4444' : '#3b82f6';
+				section.progressBar.style.background = modelTotal >= maxTokens * config.WARNING_THRESHOLD ? '#ef4444' : '#3b82f6';
 				section.tooltip.textContent = `${modelTotal.toLocaleString()} / ${maxTokens.toLocaleString()} tokens (${percentage.toFixed(1)}%)`;
 				section.messageCounter.textContent = `Messages: ${messageCount}`;
 
-				const resetTime = new Date(stored.resetTimestamp);
-				section.resetTimeDisplay.textContent = formatTimeRemaining(resetTime);
+				section.resetTimeDisplay.textContent = storageManager.getFormattedTimeRemaining(modelName);
 			} else {
 				section.progressBar.style.width = '0%';
-				section.tooltip.textContent = `0 / ${MODEL_TOKENS[modelName].toLocaleString()} tokens (0.0%)`;
+				section.tooltip.textContent = `0 / ${config.MODEL_TOKENS[modelName].toLocaleString()} tokens (0.0%)`;
 				section.messageCounter.textContent = `Messages: 0`;
 				section.resetTimeDisplay.textContent = 'Reset in: Not set';
 			}
@@ -966,8 +1071,8 @@
 
 		// Wait for complete set of messages
 		while (Date.now() - startTime < maxWaitSeconds * 1000) {
-			const messages = document.querySelectorAll(SELECTORS.AI_MESSAGE);
-			const userMessages = document.querySelectorAll(SELECTORS.USER_MESSAGE);
+			const messages = document.querySelectorAll(config.SELECTORS.AI_MESSAGE);
+			const userMessages = document.querySelectorAll(config.SELECTORS.USER_MESSAGE);
 
 			if (messages.length >= userMessages.length) {
 				// Check if all messages have explicitly finished streaming
@@ -1001,8 +1106,8 @@
 	}
 
 	async function countTokens() {
-		const userMessages = document.querySelectorAll(SELECTORS.USER_MESSAGE);
-		const aiMessages = document.querySelectorAll(SELECTORS.AI_MESSAGE);
+		const userMessages = document.querySelectorAll(config.SELECTORS.USER_MESSAGE);
+		const aiMessages = document.querySelectorAll(config.SELECTORS.AI_MESSAGE);
 		if (!aiMessages || !userMessages || userMessages.length === 0) {
 			return null;
 		}
@@ -1058,8 +1163,8 @@
 
 		// Handle project files from sidebar first
 		if (await ensureSidebarLoaded()) {
-			const projectContainer = document.querySelector(SELECTORS.PROJECT_FILES_CONTAINER);
-			const projectFileButtons = projectContainer?.querySelectorAll(SELECTORS.PROJECT_FILES) || [];
+			const projectContainer = document.querySelector(config.SELECTORS.PROJECT_FILES_CONTAINER);
+			const projectFileButtons = projectContainer?.querySelectorAll(config.SELECTORS.PROJECT_FILES) || [];
 			console.log('Found project files in sidebar:', projectFileButtons);
 
 			for (const button of projectFileButtons) {
@@ -1077,14 +1182,14 @@
 
 		// Ensure sidebar is closed...
 		console.log("Closing sidebar...")
-		const sidebar = document.querySelector(SELECTORS.SIDEBAR_CONTENT);
+		const sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
 		if (sidebar) {
 			const style = window.getComputedStyle(sidebar);
 			// If sidebar is visible (not transformed away)
 			const matrixMatch = style.transform.match(/matrix\(([\d.-]+,\s*){5}[\d.-]+\)/);
 			const isHidden = matrixMatch && style.transform.includes('428');
 			if (!isHidden && style.opacity !== '0') {
-				const closeButton = document.querySelector(SELECTORS.SIDEBAR_BUTTON);
+				const closeButton = document.querySelector(config.SELECTORS.SIDEBAR_BUTTON);
 				if (closeButton) { // Check if button is visible
 					console.log("Closing...")
 					closeButton.click();
@@ -1101,40 +1206,28 @@
 		// Process the AI output if we have it (with multiplication)
 		if (AI_output) {
 			const text = AI_output.textContent || '';
-			const tokens = calculateTokens(text) * OUTPUT_TOKEN_MULTIPLIER;
+			const tokens = calculateTokens(text) * config.OUTPUT_TOKEN_MULTIPLIER;
 			console.log("Processing final AI output:");
 			console.log(`Text: "${text}"`);
 			console.log(`Tokens: ${tokens}`);
 			currentCount += tokens;
 		}
 
+		currentCount += config.BASE_SYSTEM_PROMPT_LENGTH;
+		currentCount += storageManager.getExtraCost();
+
 		return currentCount;
 	}
 
 	async function updateTokenTotal() {
 		const newCount = await countTokens();
-		if (!newCount)
-			return
+		if (!newCount) return;
 
-		const maxTokens = MODEL_TOKENS[currentModel] || MODEL_TOKENS.default;
-		const messageCap = MESSAGE_CAPS[currentModel] || MESSAGE_CAPS.default;
-		const minimumWeight = Math.ceil(maxTokens / messageCap);
-		const adjustedCount = newCount < minimumWeight ? minimumWeight : newCount;
-
-		const { total, isInitialized } = initializeOrLoadStorage();
-		const stored = GM_getValue(getStorageKey());
-		const currentMessageCount = (stored?.messageCount || 0) + 1;  // Increment message count
-
-		let totalTokenCount = isInitialized ? total + adjustedCount : adjustedCount;
-
-		saveToStorage(totalTokenCount, currentMessageCount);
-
-		const resetTime = new Date(stored?.resetTimestamp || Date.now());
+		const { adjustedCount, totalTokenCount, messageCount } = storageManager.saveModelData(currentModel, newCount);
 
 		console.log(`Current conversation tokens: ${adjustedCount}`);
 		console.log(`Total accumulated tokens: ${totalTokenCount}`);
-		console.log(`Messages used: ${currentMessageCount}/${messageCap}`);
-		console.log(`Next reset at: ${resetTime.toLocaleTimeString()}`);
+		console.log(`Messages used: ${messageCount}/${config.MESSAGE_CAPS[currentModel]}`);
 
 		updateProgressBar(adjustedCount, false);
 	}
@@ -1151,6 +1244,18 @@
 			const currentTime = new Date();
 			let needsUpdate = false;
 
+			// Check checkbox states
+			const currentCheckboxState = storageManager.getCheckboxStates();
+			if (JSON.stringify(currentCheckboxState) !== JSON.stringify(lastCheckboxState)) {
+				console.log('Checkbox states changed, updating...');
+				lastCheckboxState = { ...currentCheckboxState };
+				let newTokenCount = await countTokens();
+				if (!newTokenCount)
+					return
+				currentTokenCount = newTokenCount;
+				needsUpdate = true;
+			}
+
 			// Check conversation state
 			const conversationId = getConversationId();
 			if (conversationId == null) {
@@ -1158,7 +1263,7 @@
 				console.log("No conversation active, updating progressbar...")
 				needsUpdate = true;
 			}
-			const messages = document.querySelectorAll(`${SELECTORS.USER_MESSAGE}, ${SELECTORS.AI_MESSAGE}`);
+			const messages = document.querySelectorAll(`${config.SELECTORS.USER_MESSAGE}, ${config.SELECTORS.AI_MESSAGE}`);
 
 			if ((conversationId !== currentConversationId && conversationId !== null) || messages.length !== currentMessageCount) {
 				console.log('Conversation changed, recounting tokens');
@@ -1176,7 +1281,7 @@
 				console.log(`Model changed from ${currentModel} to ${newModel}`);
 				currentModel = newModel;
 				// Update all sections - will collapse inactive ones
-				MODELS.forEach(modelName => {
+				config.MODELS.forEach(modelName => {
 					const section = modelSections[modelName];
 					if (section) {
 						section.setActive(modelName === currentModel);
@@ -1186,30 +1291,22 @@
 			}
 
 			// Check each model's reset time, update countdown, and check for total changes
-			MODELS.forEach(model => {
-				const storageKey = `${STORAGE_KEY}_${model.replace(/\s+/g, '_')}`;
-				const stored = GM_getValue(storageKey);
+			config.MODELS.forEach(model => {
+				const stored = storageManager.getModelData(model);
 				const section = modelSections[model];
 
 				if (stored) {
-					const resetTime = new Date(stored.resetTimestamp);
-					if (currentTime >= resetTime) {
-						console.log(`Reset time reached for ${model}, clearing total`);
-						GM_setValue(storageKey, null);
-						needsUpdate = true;
-					} else {
-						// Update countdown
-						section.resetTimeDisplay.textContent = formatTimeRemaining(resetTime);
+					// Update countdown
+					section.resetTimeDisplay.textContent = storageManager.getFormattedTimeRemaining(model);
 
-						// Check if stored total is different from displayed total
-						const displayedTotal = parseInt(section.tooltip.textContent
-							.split('/')[0]
-							.replace(/[,\.]/g, '')  // Remove both dots and commas
-							.trim());
-						if (stored.total !== displayedTotal) {
-							console.log(`Detected change in total for ${model}: ${displayedTotal} -> ${stored.total}`);
-							needsUpdate = true;
-						}
+					// Check if stored total is different from displayed total
+					const displayedTotal = parseInt(section.tooltip.textContent
+						.split('/')[0]
+						.replace(/[,\.]/g, '')  // Remove both dots and commas
+						.trim());
+					if (stored.total !== displayedTotal) {
+						console.log(`Detected change in total for ${model}: ${displayedTotal} -> ${stored.total}`);
+						needsUpdate = true;
 					}
 				} else {
 					section.resetTimeDisplay.textContent = 'Reset in: Not set';
@@ -1225,14 +1322,14 @@
 				console.log("Updating bar from poll event...")
 				updateProgressBar(currentTokenCount, true, newModel !== currentModel);
 			}
-		}, POLL_INTERVAL_MS);
+		}, config.POLL_INTERVAL_MS);
 	}
 
 
 	async function handleTokenCount() {
 		isProcessingEvent = true;
 		try {
-			const delay = getConversationId() ? DELAY_MS : 5000;
+			const delay = getConversationId() ? config.DELAY_MS : 5000;
 			console.log(`Waiting ${delay}ms before counting tokens`);
 			await sleep(delay);
 			await updateTokenTotal();
@@ -1244,8 +1341,8 @@
 	function setupEvents() {
 		console.log("Setting up tracking...")
 		document.addEventListener('click', async (e) => {
-			const regenerateButton = e.target.closest(`button:has(path[d="${SELECTORS.REGENERATE_BUTTON_PATH}"])`);
-			const saveButton = e.target.closest(SELECTORS.SAVE_BUTTON);
+			const regenerateButton = e.target.closest(`button:has(path[d="${config.SELECTORS.REGENERATE_BUTTON_PATH}"])`);
+			const saveButton = e.target.closest(config.SELECTORS.SAVE_BUTTON);
 			const sendButton = e.target.closest('button[aria-label="Send Message"]');
 
 			if (saveButton) {
@@ -1265,8 +1362,8 @@
 		});
 
 		document.addEventListener('keydown', async (e) => {
-			const mainInput = e.target.closest(SELECTORS.MAIN_INPUT);
-			const editArea = e.target.closest(SELECTORS.EDIT_TEXTAREA);
+			const mainInput = e.target.closest(config.SELECTORS.MAIN_INPUT);
+			const editArea = e.target.closest(config.SELECTORS.EDIT_TEXTAREA);
 
 			// For edit areas, only proceed if it's within a user message
 			if (editArea) {
@@ -1320,24 +1417,16 @@
 		console.log('Initializing Chat Token Counter...');
 
 		// Load and assign configuration to global variables
-		const config = await loadConfig();
-		STORAGE_KEY = config.STORAGE_KEY;
-		COLLAPSED_STATE_KEY = `${STORAGE_KEY}_collapsed`;
-		POLL_INTERVAL_MS = config.POLL_INTERVAL_MS;
-		DELAY_MS = config.DELAY_MS;
-		OUTPUT_TOKEN_MULTIPLIER = config.OUTPUT_TOKEN_MULTIPLIER;
-		MODEL_TOKENS = config.MODEL_TOKENS;
-		MODELS = Object.keys(MODEL_TOKENS).filter(key => key !== 'default');
-		MESSAGE_CAPS = config.MESSAGE_CAPS;
-		WARNING_THRESHOLD = config.WARNING_THRESHOLD;
-		SELECTORS = config.SELECTORS;
+		config = await loadConfig();
+		config.MODELS = Object.keys(config.MODEL_TOKENS).filter(key => key !== 'default');
 
 		// Initialize everything else
 		currentModel = getCurrentModel();
-		initializeOrLoadStorage();
+		storageManager.initializeOrLoadStorage(currentModel);
+		lastCheckboxState = storageManager.getCheckboxStates();
 		currentTokenCount = 0;
 		setupEvents();
-		createProgressBar();
+		createUI();
 		updateProgressBar(currentTokenCount);
 		pollUpdates();
 		console.log('Initialization complete. Ready to track tokens.');
