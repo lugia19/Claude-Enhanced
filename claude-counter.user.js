@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.6.1
+// @version      1.8.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -12,13 +12,19 @@
 // @connect      raw.githubusercontent.com
 // ==/UserScript==
 
+if (window.claudeTrackerInstance) {
+	console.log('Instance already running, stopping');
+	return;
+}
+window.claudeTrackerInstance = true;
+
 (function () {
 	'use strict';
 
 	//#region Config
 	// Declare variables at the top level
 	let config;
-	const STORAGE_KEY = "claudeUsageTracker_v2"
+	const STORAGE_KEY = "claudeUsageTracker_v3"
 
 	const CONFIG_URL = 'https://raw.githubusercontent.com/lugia19/Claude-Toolbox/refs/heads/main/constants.json';
 	const DEFAULT_CONFIG = {
@@ -52,20 +58,123 @@
 			FILE_VIEW_CONTAINER: '.flex.h-full.flex-col.pb-1.pl-5.pt-3',
 			FILE_CONTENT: '.whitespace-pre-wrap.break-all.text-xs',
 			MODEL_PICKER: '[data-testid="model-selector-dropdown"]',
-			MOBILE_MENU_BUTTON: 'button[aria-haspopup="menu"]:has(svg path[d="M112,60a16,16,0,1,1,16,16A16,16,0,0,1,112,60Zm16,52a16,16,0,1,0,16,16A16,16,0,0,0,128,112Zm0,68a16,16,0,1,0,16,16A16,16,0,0,0,128,180Z"])'
+			MOBILE_MENU_BUTTON: 'button[aria-haspopup="menu"]:has(svg path[d="M112,60a16,16,0,1,1,16,16A16,16,0,0,1,112,60Zm16,52a16,16,0,1,0,16,16A16,16,0,0,0,128,112Zm0,68a16,16,0,1,0,16,16A16,16,0,0,0,128,180Z"])',
+			USER_MENU_BUTTON: 'button[data-testid="user-menu-button"]',
+			PDF_ICON: `path[d="M224,152a8,8,0,0,1-8,8H192v16h16a8,8,0,0,1,0,16H192v16a8,8,0,0,1-16,0V152a8,8,0,0,1,8-8h32A8,8,0,0,1,224,152ZM92,172a28,28,0,0,1-28,28H56v8a8,8,0,0,1-16,0V152a8,8,0,0,1,8-8H64A28,28,0,0,1,92,172Zm-16,0a12,12,0,0,0-12-12H56v24h8A12,12,0,0,0,76,172Zm88,8a36,36,0,0,1-36,36H112a8,8,0,0,1-8-8V152a8,8,0,0,1,8-8h16A36,36,0,0,1,164,180Zm-16,0a20,20,0,0,0-20-20h-8v40h8A20,20,0,0,0,148,180ZM40,112V40A16,16,0,0,1,56,24h96a8,8,0,0,1,5.66,2.34l56,56A8,8,0,0,1,216,88v24a8,8,0,0,1-16,0V96H152a8,8,0,0,1-8-8V40H56v72a8,8,0,0,1-16,0ZM160,80h28.69L160,51.31Z"]`,
+			ARTIFACT_VERSION_SELECT: 'button[type="button"][aria-haspopup="menu"]'
 		},
-		CHECKBOX_OPTIONS: {	//TODO: Fill in constants.json as well
+		CHECKBOX_OPTIONS: {
 			'personal_preferences_enabled': { text: 'Preferences in profile and enabled', cost: 800 },
 			'artifacts_enabled': { text: 'Artifacts enabled', cost: 5500 },
 			'analysis_enabled': { text: 'Analysis Tool enabled', cost: 2000 },
 			'latex_enabled': { text: 'LaTeX Rendering enabled', cost: 200 },
 		},
-		BASE_SYSTEM_PROMPT_LENGTH: (2600 + 300)	//Base + style_info
+		BASE_SYSTEM_PROMPT_LENGTH: (2600 + 300),	//Base + style_info
+		FIREBASE_BASE_URL: 'https://claude-usage-tracker-default-rtdb.europe-west1.firebasedatabase.app'
 	};
 	//#endregion
 
 	//#region Storage Manager
 	class StorageManager {
+		constructor() {
+			this.syncInterval = 20000; // 20s
+			this.startSync();
+		}
+
+		startSync() {
+			setInterval(() => this.syncWithFirebase(), this.syncInterval);
+		}
+
+		async syncWithFirebase() {
+			console.log("=== FIREBASE SYNC STARTING ===");
+
+			const userId = await getUserId();
+			if (!userId) {
+				throw new Error("Could not get user ID");
+			}
+			console.log("Using hashed ID:", userId);
+
+			try {
+				// Get local data
+				const localModels = GM_getValue(`${STORAGE_KEY}_models`);
+				console.log("Local models:", localModels);
+
+				// Get remote data
+				const url = `${config.FIREBASE_BASE_URL}/users/${userId}/models.json`;
+				console.log("Fetching from:", url);
+
+				const response = await fetch(url);
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+				}
+				const firebaseModels = await response.json() || {};
+				console.log("Firebase models:", firebaseModels);
+
+				// Merge data
+				const mergedModels = this.mergeModelData(localModels, firebaseModels);
+				console.log("Merged result:", mergedModels);
+
+				// Write merged data back
+				console.log("Writing merged data back to Firebase...");
+				const writeResponse = await fetch(url, {
+					method: 'PUT',
+					body: JSON.stringify(mergedModels)
+				});
+
+				if (!writeResponse.ok) {
+					throw new Error(`Write failed! status: ${writeResponse.status}`);
+				}
+
+				// Update local storage
+				console.log("Updating local storage...");
+				GM_setValue(`${STORAGE_KEY}_models`, mergedModels);
+				console.log("=== SYNC COMPLETED SUCCESSFULLY ===");
+
+			} catch (error) {
+				console.error('=== SYNC FAILED ===');
+				console.error('Error details:', error);
+				console.error('Stack:', error.stack);
+			}
+		}
+
+		mergeModelData(localModels = {}, firebaseModels = {}) {
+			console.log("MERGING...")
+			const merged = {};
+			const allModelKeys = new Set([
+				...Object.keys(localModels),
+				...Object.keys(firebaseModels)
+			]);
+
+			allModelKeys.forEach(model => {
+				const local = localModels[model];
+				const remote = firebaseModels[model];
+
+				if (!remote) {
+					merged[model] = local;
+				} else if (!local) {
+					merged[model] = remote;
+				} else {
+					// If reset times match, take the highest counts
+					if (local.resetTimestamp === remote.resetTimestamp) {
+						console.log("TIMESTAMP MATCHES, TAKING HIGHEST COUNTS!")
+						merged[model] = {
+							total: Math.max(local.total, remote.total),
+							messageCount: Math.max(local.messageCount, remote.messageCount),
+							resetTimestamp: local.resetTimestamp
+						};
+					}
+					// Otherwise take all values from whichever has the later reset time
+					else {
+						console.log("TIMESTAMP DOES NOT MATCH, TAKING NEWEST COUNTS!")
+						merged[model] = local.resetTimestamp > remote.resetTimestamp ? local : remote;
+					}
+				}
+			});
+
+			return merged;
+		}
+
+
 		getCheckboxStates() {
 			return GM_getValue(`${STORAGE_KEY}_checkbox_states`, {});
 		}
@@ -129,23 +238,23 @@
 			const maxTokens = config.MODEL_TOKENS[model] || config.MODEL_TOKENS.default;
 			let allModelData = GM_getValue(`${STORAGE_KEY}_models`, {});
 			const stored = allModelData[model];
-			
+
 			const currentMessageCount = (stored?.messageCount || 0) + 1;
 			const totalTokenCount = stored ? stored.total + rawCount : rawCount;
-	
+
 			allModelData[model] = {
 				total: totalTokenCount,
 				messageCount: currentMessageCount,
 				resetTimestamp: stored?.resetTimestamp || this.#getResetTime(new Date()).getTime()
 			};
-	
+
 			GM_setValue(`${STORAGE_KEY}_models`, allModelData);
-	
+
 			return {
 				totalTokenCount,
 				messageCount: currentMessageCount
 			};
-		}	
+		}
 
 		clearModelData(model) {
 			let allModelData = GM_getValue(`${STORAGE_KEY}_models`, {});
@@ -178,6 +287,8 @@
 		}
 
 		calculateMessagesLeft(model, conversationLength = 0) {
+			console.log("Calculating messages left for model:", model);
+			console.log("Conversation length:", conversationLength);
 			if (model === "default") return "Loading...";
 
 			const maxTokens = config.MODEL_TOKENS[model] || config.MODEL_TOKENS.default;
@@ -197,24 +308,24 @@
 			return `${STORAGE_KEY}_files_${conversationId}`;
 		}
 
-		getFileTokens(conversationId, filename, isProjectFile) {
+		getFileTokens(conversationId, filename, fileType) {
 			const allFileData = GM_getValue(this.#getFileKey(conversationId), {});
-			const fileKey = `${isProjectFile ? 'project' : 'content'}_${filename}`;
+			const fileKey = `${fileType}_${filename}`;
 			return allFileData[fileKey];
 		}
 
-		saveFileTokens(conversationId, filename, tokens, isProjectFile) {
+		saveFileTokens(conversationId, filename, tokens, fileType) {
 			if (tokens <= 0) return;
 
 			const allFileData = GM_getValue(this.#getFileKey(conversationId), {});
-			const fileKey = `${isProjectFile ? 'project' : 'content'}_${filename}`;
+			const fileKey = `${fileType}_${filename}`;
 
 			allFileData[fileKey] = tokens;
 			GM_setValue(this.#getFileKey(conversationId), allFileData);
 		}
 	}
 
-	const storageManager = new StorageManager();
+	let storageManager;
 	//#endregion
 
 	//State variables
@@ -227,6 +338,26 @@
 	let lastCheckboxState = {};
 
 	//#region Utils
+	async function getUserId() {
+		const userMenuButton = document.querySelector(config.SELECTORS.USER_MENU_BUTTON);
+		if (!userMenuButton) {
+			console.error("Could not find user menu button");
+			return null;
+		}
+
+		const emailDiv = userMenuButton.querySelector('.min-w-0.flex-1.truncate');
+		if (!emailDiv) {
+			console.error("Could not find email element");
+			return null;
+		}
+
+		const email = emailDiv.textContent.trim();
+		const msgBuffer = new TextEncoder().encode(email);
+		const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+		const hashArray = Array.from(new Uint8Array(hashBuffer));
+		return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+	}
+
 	const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 	function getConversationId() {
@@ -273,12 +404,15 @@
 
 	//#region File Processing
 	async function ensureSidebarLoaded() {
-		/*if (isMobileView()) {
-			console.warn("Mobile view detected (menu button visible), skipping project file processing");
-			return false;
-		}*/
-
 		const sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
+
+		//Ensure we're not inside a modal
+		const backButton = document.querySelector(config.SELECTORS.BACK_BUTTON);
+		if (backButton) {
+			console.log("Found back button, clicking it");
+			backButton.click();
+			await sleep(200);
+		}
 
 		// If sidebar exists and has been processed before, we're done
 		if (sidebar && sidebar.getAttribute('data-files-processed')) {
@@ -329,7 +463,7 @@
 		return false;
 	}
 
-	async function getProjectFileTokens(button) {
+	async function handleProjectFile(button) {
 		try {
 			const fileContainer = button.closest('div[data-testid]');
 			if (!fileContainer) {
@@ -340,7 +474,7 @@
 			const filename = fileContainer.getAttribute('data-testid');
 			console.log('Processing project file:', filename);
 
-			const stored = storageManager.getFileTokens(getConversationId(), filename, true);
+			const stored = storageManager.getFileTokens(getConversationId(), filename, "project");
 			if (stored !== undefined) {
 				console.log(`Using cached tokens for project file: ${filename}`);
 				return stored;
@@ -386,7 +520,7 @@
 			console.log(`Project file ${filename} tokens:`, tokens);
 
 			if (tokens > 0) {
-				storageManager.saveFileTokens(getConversationId(), filename, tokens, true);
+				storageManager.saveFileTokens(getConversationId(), filename, tokens, "project");
 			}
 
 
@@ -406,6 +540,20 @@
 		}
 	}
 
+	async function getProjectTokens() {
+		const projectContainer = document.querySelector(config.SELECTORS.PROJECT_FILES_CONTAINER);
+		const projectFileButtons = projectContainer?.querySelectorAll(config.SELECTORS.PROJECT_FILES) || [];
+		console.log('Found project files in sidebar:', projectFileButtons);
+
+		let totalTokens = 0;
+		for (const button of projectFileButtons) {
+			const tokens = await handleProjectFile(button);
+			totalTokens += tokens;
+		}
+
+		return totalTokens;
+	}
+
 	async function handleTextFile(button) {
 		const filename = button.querySelector('.break-words')?.textContent;
 		if (!filename) {
@@ -413,7 +561,7 @@
 			return 0;
 		}
 
-		const stored = storageManager.getFileTokens(getConversationId(), filename, false);
+		const stored = storageManager.getFileTokens(getConversationId(), filename, "content");
 		if (stored !== undefined) {
 			console.log(`Using cached tokens for text file: ${filename}`);
 			return stored;
@@ -432,7 +580,7 @@
 		console.log(`Text file ${filename} tokens:`, tokens);
 
 		if (tokens > 0) {
-			storageManager.saveFileTokens(getConversationId(), filename, tokens, false);
+			storageManager.saveFileTokens(getConversationId(), filename, tokens, "content");
 		}
 
 		const closeButton = document.querySelector(config.SELECTORS.MODAL_CLOSE);
@@ -451,7 +599,7 @@
 			return 0;
 		}
 
-		const stored = storageManager.getFileTokens(getConversationId(), filename, false);
+		const stored = storageManager.getFileTokens(getConversationId(), filename, "content");
 		if (stored !== undefined) {
 			console.log(`Using cached tokens for image: ${filename}`);
 			return stored;
@@ -478,7 +626,7 @@
 		console.log(`Image ${filename} (${width}x${height}) tokens:`, tokens);
 
 		if (tokens > 0) {
-			storageManager.saveFileTokens(getConversationId(), filename, tokens, false);
+			storageManager.saveFileTokens(getConversationId(), filename, tokens, "content");
 		}
 
 		const closeButton = document.querySelector('[data-testid="close-file-preview"]');
@@ -497,7 +645,7 @@
 			return 0;
 		}
 
-		const stored = storageManager.getFileTokens(getConversationId(), filename, false);
+		const stored = storageManager.getFileTokens(getConversationId(), filename, "content");
 		if (stored !== undefined) {
 			console.log(`Using cached tokens for PDF: ${filename}`);
 			return stored;
@@ -522,10 +670,10 @@
 		console.log(`PDF ${filename} (${pageCount} pages) tokens:`, tokens);
 
 		if (tokens > 0) {
-			storageManager.saveFileTokens(getConversationId(), filename, tokens, false);
+			storageManager.saveFileTokens(getConversationId(), filename, tokens, "content");
 		}
 
-		const closeButton = document.querySelector('[role="dialog"] button:has(svg path[d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"])');
+		const closeButton = document.querySelector(`[role="dialog"] ${config.SELECTORS.MODAL_CLOSE}`);
 		if (closeButton) {
 			closeButton.click();
 			await sleep(200);
@@ -534,7 +682,7 @@
 		return tokens;
 	}
 
-	async function getContentFileTokens() {
+	async function getContentTokens() {
 		let totalTokens = 0;
 
 		const sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
@@ -568,7 +716,7 @@
 			if (!button) continue;
 
 			const isImage = !!button.querySelector('img');
-			const isPDF = !!button.querySelector(`path[d="M224,152a8,8,0,0,1-8,8H192v16h16a8,8,0,0,1,0,16H192v16a8,8,0,0,1-16,0V152a8,8,0,0,1,8-8h32A8,8,0,0,1,224,152ZM92,172a28,28,0,0,1-28,28H56v8a8,8,0,0,1-16,0V152a8,8,0,0,1,8-8H64A28,28,0,0,1,92,172Zm-16,0a12,12,0,0,0-12-12H56v24h8A12,12,0,0,0,76,172Zm88,8a36,36,0,0,1-36,36H112a8,8,0,0,1-8-8V152a8,8,0,0,1,8-8h16A36,36,0,0,1,164,180Zm-16,0a20,20,0,0,0-20-20h-8v40h8A20,20,0,0,0,148,180ZM40,112V40A16,16,0,0,1,56,24h96a8,8,0,0,1,5.66,2.34l56,56A8,8,0,0,1,216,88v24a8,8,0,0,1-16,0V96H152a8,8,0,0,1-8-8V40H56v72a8,8,0,0,1-16,0ZM160,80h28.69L160,51.31Z"]`);
+			const isPDF = !!button.querySelector(config.SELECTORS.PDF_ICON);
 
 			let tokens = 0;
 			try {
@@ -583,6 +731,153 @@
 				console.error('Error counting tokens for file:', error);
 			}
 			totalTokens += tokens;
+		}
+
+		return totalTokens;
+	}
+
+	async function handleArtifact(button, artifactName, versionCount) {
+		console.log("Handling artifact", artifactName);
+
+		// Check cache first
+		const stored = storageManager.getFileTokens(
+			getConversationId(),
+			`${artifactName}_v${versionCount}`,
+			'artifact'
+		);
+		if (stored !== undefined) {
+			console.log(`Using cached tokens for artifact: ${artifactName} (${versionCount} versions)`);
+			return stored;
+		}
+
+		// Open the artifact
+		button.click();
+		await sleep(200);
+
+		const modalContainer = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
+		if (!modalContainer) {
+			console.log('Could not find modal container');
+			return 0;
+		}
+		console.log("Ensuring code mode...")
+		// Ensure we're in code view if toggle exists
+		const toggle = modalContainer.querySelector('[role="group"]');
+		if (toggle) {
+			const codeButton = toggle.querySelector('[data-testid="undefined-code"]');
+			if (codeButton && codeButton.getAttribute('data-state') === 'off') {
+				codeButton.click();
+				await sleep(100);
+			}
+		}
+
+		console.log("Going left...")
+		// First navigate all the way left
+		while (true) {
+			const versionButton = modalContainer.querySelector(config.SELECTORS.ARTIFACT_VERSION_SELECT);
+			if (!versionButton) break;
+
+			const leftArrow = versionButton.previousElementSibling;
+			if (!leftArrow || leftArrow.hasAttribute('disabled')) break;
+
+			leftArrow.click();
+			await sleep(200);
+		}
+
+
+		let totalTokens = 0;
+		let currentVersion = 1;
+		console.log("Going right...")
+		// Now go through all versions from left to right
+		while (true) {
+			// Count tokens for current version
+			const codeBlock = modalContainer.querySelector('.code-block__code code');
+			if (codeBlock) {
+				const versionTokens = calculateTokens(codeBlock.textContent || '');
+				totalTokens += versionTokens;
+				console.log(`${artifactName} - Version ${currentVersion}/${versionCount}: ${versionTokens} tokens`);
+				currentVersion++;
+			}
+
+			// Try to go right
+			const versionButton = modalContainer.querySelector(config.SELECTORS.ARTIFACT_VERSION_SELECT);
+			if (!versionButton) break;
+
+			const rightArrow = versionButton.nextElementSibling;
+			if (!rightArrow || rightArrow.hasAttribute('disabled')) break;
+
+			rightArrow.click();
+			await sleep(100);
+		}
+
+		console.log(`${artifactName} - Total tokens across all versions: ${totalTokens}`);
+
+		if (totalTokens > 0) {
+			storageManager.saveFileTokens(
+				getConversationId(),
+				`${artifactName}_v${versionCount}`,
+				totalTokens,
+				'artifact'
+			);
+		}
+
+		// Close the artifact view
+		const backButton = modalContainer.querySelector(config.SELECTORS.BACK_BUTTON);
+		if (backButton) {
+			backButton.click();
+			await sleep(200);
+		}
+
+		return totalTokens;
+	}
+
+	async function getArtifactTokens() {
+		let totalTokens = 0;
+		const processedNames = new Set();
+
+		while (true) {
+			const sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
+			if (!sidebar) {
+				console.log('Could not find sidebar');
+				break;
+			}
+
+			// Find artifacts list again (since it may have been recreated)
+			const artifactsUl = Array.from(sidebar.querySelectorAll('ul')).find(ul => {
+				const prevHeader = ul.previousElementSibling;
+				return prevHeader?.tagName === 'H3' && prevHeader.textContent === 'Artifacts';
+			});
+
+			if (!artifactsUl) {
+				console.log('Could not find artifacts list');
+				break;
+			}
+
+			// Find an unprocessed artifact
+			let foundNew = false;
+			for (const li of artifactsUl.querySelectorAll('li')) {
+				const button = li.querySelector('button');
+				if (!button) continue;
+
+				const name = button.querySelector('.break-words')?.textContent;
+				if (!name || processedNames.has(name)) continue;
+				console.log('Processing artifact:', name);
+
+				const description = button.querySelector('.text-text-400')?.textContent;
+				const versionMatch = description?.match(/(\d+) versions?$/);
+				const versionCount = versionMatch ? parseInt(versionMatch[1]) : 1;
+				console.log("Version count:", versionCount);
+
+				// Found a new artifact to process
+				processedNames.add(name);
+				foundNew = true;
+				let newTokens = await handleArtifact(button, name, versionCount);
+				console.log("Artifact tokens:", newTokens);
+				totalTokens += newTokens
+				break;
+			}
+
+			// If we didn't find any new artifacts, we're done
+			if (!foundNew) break;
 		}
 
 		return totalTokens;
@@ -838,17 +1133,16 @@
 	function createUI() {
 		const container = document.createElement('div');
 		container.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #2D2D2D;
-            border: 1px solid #3B3B3B;
-            border-radius: 8px;
-            z-index: 9999;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-            cursor: move;
-            user-select: none;
-        `;
+			position: fixed;
+			bottom: 20px;
+			right: 20px;
+			background: #2D2D2D;
+			border: 1px solid #3B3B3B;
+			border-radius: 8px;
+			z-index: 9999;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+			user-select: none;
+		`;
 
 		// Header (always visible)
 		const header = document.createElement('div');
@@ -859,6 +1153,7 @@
 			color: white;
 			font-size: 12px;
 			gap: 8px;
+			cursor: move;
 		`;
 
 		const arrow = document.createElement('div');
@@ -1162,41 +1457,17 @@
 			}
 		});
 
-
-		// Handle project files from sidebar first
+		// Handle files from sidebar
 		if (await ensureSidebarLoaded()) {
-			const projectContainer = document.querySelector(config.SELECTORS.PROJECT_FILES_CONTAINER);
-			const projectFileButtons = projectContainer?.querySelectorAll(config.SELECTORS.PROJECT_FILES) || [];
-			console.log('Found project files in sidebar:', projectFileButtons);
-
-			for (const button of projectFileButtons) {
-				const tokens = await getProjectFileTokens(button);
-				currentCount += tokens;
+			try {
+				currentCount += await getContentTokens();
+				currentCount += await getProjectTokens();
+			} catch (error) {
+				console.error('Error processing files:', error);
 			}
-		}
-		// Handle the content files
-		try {
-			currentCount += await getContentFileTokens();
-		} catch (error) {
-			console.error('Error processing content files:', error);
-		}
 
-
-		// Ensure sidebar is closed...
-		console.log("Closing sidebar...")
-		const sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
-		if (sidebar) {
-			const style = window.getComputedStyle(sidebar);
-			// If sidebar is visible (not transformed away)
-			const matrixMatch = style.transform.match(/matrix\(([\d.-]+,\s*){5}[\d.-]+\)/);
-			const isHidden = matrixMatch && style.transform.includes('428');
-			if (!isHidden && style.opacity !== '0') {
-				const closeButton = document.querySelector(config.SELECTORS.SIDEBAR_BUTTON);
-				if (closeButton) { // Check if button is visible
-					console.log("Closing...")
-					closeButton.click();
-				}
-			}
+		} else {
+			console.log("Could not load sidebar, skipping files");
 		}
 
 
@@ -1215,8 +1486,45 @@
 			currentCount += tokens;
 		}
 
+		console.log("Now that we've waited for the AI output, we can process artifacts.")
+
+		if (await ensureSidebarLoaded()) {
+			try {
+				const artifactsTokenCount = await getArtifactTokens();
+				currentCount += artifactsTokenCount;
+
+				// If we found artifacts but the checkbox isn't enabled, add the cost
+				if (artifactsTokenCount > 0) {
+					const checkboxStates = storageManager.getCheckboxStates();
+					if (!checkboxStates.artifacts_enabled) {
+						console.log("Found artifacts in use but checkbox disabled, adding artifacts cost");
+						currentCount += config.CHECKBOX_OPTIONS.artifacts_enabled.cost;
+					}
+				}
+			} catch (error) {
+				console.error('Error processing files:', error);
+			}
+		}
+
 		currentCount += config.BASE_SYSTEM_PROMPT_LENGTH;
 		currentCount += storageManager.getExtraCost();
+
+		// Ensure sidebar is closed...
+		console.log("Closing sidebar...")
+		const sidebar = document.querySelector(config.SELECTORS.SIDEBAR_CONTENT);
+		if (sidebar) {
+			const style = window.getComputedStyle(sidebar);
+			// If sidebar is visible (not transformed away)
+			const matrixMatch = style.transform.match(/matrix\(([\d.-]+,\s*){5}[\d.-]+\)/);
+			const isHidden = matrixMatch && style.transform.includes('428');
+			if (!isHidden && style.opacity !== '0') {
+				const closeButton = document.querySelector(config.SELECTORS.SIDEBAR_BUTTON);
+				if (closeButton) { // Check if button is visible
+					console.log("Closing...")
+					closeButton.click();
+				}
+			}
+		}
 
 		return currentCount;
 	}
@@ -1261,7 +1569,7 @@
 			// Check conversation state
 			const conversationId = getConversationId();
 			if (conversationId == null) {
-				currentTokenCount = 0;
+				currentTokenCount = config.BASE_SYSTEM_PROMPT_LENGTH + storageManager.getExtraCost();
 				console.log("No conversation active, updating progressbar...")
 				needsUpdate = true;
 			}
@@ -1416,20 +1724,33 @@
 	}
 
 	async function initialize() {
-		console.log('Initializing Chat Token Counter...');
-
 		// Load and assign configuration to global variables
 		config = await loadConfig();
 		config.MODELS = Object.keys(config.MODEL_TOKENS).filter(key => key !== 'default');
 
+		// Check for duplicate running
+		const userMenuButton = document.querySelector(config.SELECTORS.USER_MENU_BUTTON);
+		if (!userMenuButton) {
+			console.error('User menu button not found');
+			return;
+		}
+
+		if (userMenuButton.getAttribute('data-script-loaded')) {
+			console.log('Script already running, stopping duplicate');
+			return;
+		}
+		userMenuButton.setAttribute('data-script-loaded', true);
+		console.log('We\'re unique, initializing Chat Token Counter...');
+
+		storageManager = new StorageManager();
 		// Initialize everything else
 		currentModel = getCurrentModel();
 		storageManager.initializeOrLoadStorage(currentModel);
 		lastCheckboxState = storageManager.getCheckboxStates();
-		currentTokenCount = 0;
+
 		setupEvents();
 		createUI();
-		updateProgressBar(currentTokenCount);
+		updateProgressBar(0);
 		pollUpdates();
 		console.log('Initialization complete. Ready to track tokens.');
 	}
