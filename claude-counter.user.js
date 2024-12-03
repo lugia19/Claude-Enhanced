@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.8.0
+// @version      1.8.1
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -1533,13 +1533,13 @@ window.claudeTrackerInstance = true;
 		const newCount = await countTokens();
 		if (!newCount) return;
 
-		const { adjustedCount, totalTokenCount, messageCount } = storageManager.saveModelData(currentModel, newCount);
+		const { totalTokenCount, messageCount } = storageManager.saveModelData(currentModel, newCount);
 
-		console.log(`Current conversation tokens: ${adjustedCount}`);
+		console.log(`Current conversation tokens: ${newCount}`);
 		console.log(`Total accumulated tokens: ${totalTokenCount}`);
 		console.log(`Messages used: ${messageCount}`);
 
-		updateProgressBar(adjustedCount, false);
+		updateProgressBar(newCount, false);
 	}
 	//#endregion
 
