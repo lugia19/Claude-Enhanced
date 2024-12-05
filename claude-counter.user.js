@@ -330,8 +330,7 @@ window.claudeTrackerInstance = true;
 
 	//State variables
 	let isProcessingEvent = false;
-	let currentTokenCount = 0;
-	let currentModel = 'default';
+	let currentlyDisplayedModel = 'default';
 	let modelSections = {};
 	let currentConversationId = null;
 	let currentMessageCount = 0;
@@ -1107,9 +1106,9 @@ window.claudeTrackerInstance = true;
 			const checkbox = document.createElement('input');
 			checkbox.type = 'checkbox';
 			checkbox.checked = states[key] || false;
-			checkbox.addEventListener('change', (e) => {
+			checkbox.addEventListener('change', async (e) => {
 				storageManager.setCheckboxState(key, e.target.checked);
-				updateProgressBar(currentTokenCount, true);  // Update UI to reflect new costs
+				updateProgressBar(await countTokens(), true);  // Update UI to reflect new costs
 			});
 
 			const label = document.createElement('label');
@@ -1131,6 +1130,7 @@ window.claudeTrackerInstance = true;
 
 
 	function createUI() {
+		const currentModel = getCurrentModel();
 		const container = document.createElement('div');
 		container.style.cssText = `
 			position: fixed;
@@ -1310,19 +1310,19 @@ window.claudeTrackerInstance = true;
 		document.addEventListener('touchcancel', handleDragEnd);
 	}
 
-	function updateProgressBar(currentTokens, updateLength = true, shouldCollapse = false) {
+	function updateProgressBar(conversationLength, updateLength = true, shouldCollapse = false) {
 		// Update each model section
-		console.log("Updating progress bar...", currentTokens)
+		console.log("Updating progress bar...", conversationLength)
 
 		const lengthDisplay = document.getElementById('conversation-token-count');
 		if (lengthDisplay && updateLength) {
-			lengthDisplay.textContent = `Current length: ${currentTokens.toLocaleString()} tokens`;
+			lengthDisplay.textContent = `Current length: ${conversationLength.toLocaleString()} tokens`;
 		}
 
 		// Update messages left estimate
 		const estimateDisplay = document.getElementById('messages-left-estimate');
 		if (estimateDisplay && updateLength) {
-			const estimate = storageManager.calculateMessagesLeft(currentModel, currentTokens);
+			const estimate = storageManager.calculateMessagesLeft(currentlyDisplayedModel, conversationLength);
 			estimateDisplay.textContent = `Est. messages left: ${estimate}`;
 		}
 
@@ -1331,7 +1331,7 @@ window.claudeTrackerInstance = true;
 			const section = modelSections[modelName];
 			if (!section) return;
 
-			const isActiveModel = modelName === currentModel;
+			const isActiveModel = modelName === currentlyDisplayedModel;
 			if (shouldCollapse || isMobileView()) {  // Only call setActive when we actually want to collapse OR if we're on mobile.
 				section.setActive(isActiveModel);
 			}
@@ -1530,14 +1530,25 @@ window.claudeTrackerInstance = true;
 	}
 
 	async function updateTokenTotal() {
+		const currentModel = getCurrentModel();
 		const newCount = await countTokens();
 		if (!newCount) return;
 
-		const { totalTokenCount, messageCount } = storageManager.saveModelData(currentModel, newCount);
+		let tries = 0;
+		while (currentModel === "default" && tries < 10) {
+			await sleep(200);
+			currentModel = getCurrentModel();
+			tries++;
+		}
 
-		console.log(`Current conversation tokens: ${newCount}`);
-		console.log(`Total accumulated tokens: ${totalTokenCount}`);
-		console.log(`Messages used: ${messageCount}`);
+		if (currentModel !== "default") {
+			const { totalTokenCount, messageCount } = storageManager.saveModelData(currentModel, newCount);
+			console.log(`Current conversation tokens: ${newCount}`);
+			console.log(`Total accumulated tokens: ${totalTokenCount}`);
+			console.log(`Messages used: ${messageCount}`);
+		} else {
+			console.log("Timed out waiting for model to change from 'default'");
+		}
 
 		updateProgressBar(newCount, false);
 	}
@@ -1559,19 +1570,14 @@ window.claudeTrackerInstance = true;
 			if (JSON.stringify(currentCheckboxState) !== JSON.stringify(lastCheckboxState)) {
 				console.log('Checkbox states changed, updating...');
 				lastCheckboxState = { ...currentCheckboxState };
-				let newTokenCount = await countTokens();
-				if (!newTokenCount)
-					return
-				currentTokenCount = newTokenCount;
 				needsUpdate = true;
 			}
 
 			// Check conversation state
 			const conversationId = getConversationId();
 			if (conversationId == null) {
-				currentTokenCount = config.BASE_SYSTEM_PROMPT_LENGTH + storageManager.getExtraCost();
 				console.log("No conversation active, updating progressbar...")
-				needsUpdate = true;
+				updateProgressBar(config.BASE_SYSTEM_PROMPT_LENGTH + storageManager.getExtraCost(), true, newModel !== currentlyDisplayedModel);
 			}
 			const messages = document.querySelectorAll(`${config.SELECTORS.USER_MESSAGE}, ${config.SELECTORS.AI_MESSAGE}`);
 
@@ -1579,22 +1585,18 @@ window.claudeTrackerInstance = true;
 				console.log('Conversation changed, recounting tokens');
 				currentConversationId = conversationId;
 				currentMessageCount = messages.length;
-				let newTokenCount = await countTokens();
-				if (!newTokenCount)
-					return
-				currentTokenCount = newTokenCount;
 				needsUpdate = true;
 			}
 
 			// Check for model change
-			if (newModel !== currentModel) {
-				console.log(`Model changed from ${currentModel} to ${newModel}`);
-				currentModel = newModel;
+			if (newModel !== currentlyDisplayedModel) {
+				console.log(`Model changed from ${currentlyDisplayedModel} to ${newModel}`);
+				currentlyDisplayedModel = newModel;
 				// Update all sections - will collapse inactive ones
 				config.MODELS.forEach(modelName => {
 					const section = modelSections[modelName];
 					if (section) {
-						section.setActive(modelName === currentModel);
+						section.setActive(modelName === currentlyDisplayedModel);
 					}
 				});
 				needsUpdate = true;
@@ -1630,7 +1632,10 @@ window.claudeTrackerInstance = true;
 			// Update UI if needed
 			if (needsUpdate) {
 				console.log("Updating bar from poll event...")
-				updateProgressBar(currentTokenCount, true, newModel !== currentModel);
+				let newTokenCount = await countTokens();
+				if (!newTokenCount)
+					return
+				updateProgressBar(newTokenCount, true, newModel !== currentlyDisplayedModel);
 			}
 		}, config.POLL_INTERVAL_MS);
 	}
@@ -1724,14 +1729,28 @@ window.claudeTrackerInstance = true;
 	}
 
 	async function initialize() {
+		const MAX_RETRIES = 15;
+		const RETRY_DELAY = 200;
 		// Load and assign configuration to global variables
 		config = await loadConfig();
 		config.MODELS = Object.keys(config.MODEL_TOKENS).filter(key => key !== 'default');
 
-		// Check for duplicate running
-		const userMenuButton = document.querySelector(config.SELECTORS.USER_MENU_BUTTON);
+		// Check for duplicate running with retry logic
+		let userMenuButton = null;
+		let attempts = 0;
+
+		while (!userMenuButton && attempts < MAX_RETRIES) {
+			userMenuButton = document.querySelector(config.SELECTORS.USER_MENU_BUTTON);
+
+			if (!userMenuButton) {
+				console.log(`User menu button not found, attempt ${attempts + 1}/${MAX_RETRIES}`);
+				await sleep(RETRY_DELAY);
+				attempts++;
+			}
+		}
+
 		if (!userMenuButton) {
-			console.error('User menu button not found');
+			console.error('User menu button not found after all attempts');
 			return;
 		}
 
@@ -1744,8 +1763,8 @@ window.claudeTrackerInstance = true;
 
 		storageManager = new StorageManager();
 		// Initialize everything else
-		currentModel = getCurrentModel();
-		storageManager.initializeOrLoadStorage(currentModel);
+		currentlyDisplayedModel = getCurrentModel();
+		storageManager.initializeOrLoadStorage(currentlyDisplayedModel);
 		lastCheckboxState = storageManager.getCheckboxStates();
 
 		setupEvents();
