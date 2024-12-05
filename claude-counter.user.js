@@ -1439,6 +1439,7 @@ window.claudeTrackerInstance = true;
 
 
 		// Count all AI messages except the final output (if already present)
+		let analysisToolUsed = false;
 		aiMessages.forEach((msg, index) => {
 			// Skip if this is the final output we're saving for later
 			if (msg === AI_output) {
@@ -1452,10 +1453,21 @@ window.claudeTrackerInstance = true;
 				const tokens = calculateTokens(text); // No multiplication for intermediate responses
 				console.log(`AI message ${index}, length ${tokens}:`, msg);
 				currentCount += tokens;
+
+				const button = msg.querySelector('button.flex.justify-start.items-center.pt-2');
+				if (button && button.textContent.trim() === 'View analysis') {
+					console.log('Found the "View analysis" button in AI message', index);
+					analysisToolUsed = true;
+				}
 			} else {
 				console.log(`Skipping AI message ${index} - still streaming`);
 			}
 		});
+
+		if (analysisToolUsed && !storageManager.getCheckboxStates().analysis_enabled) {
+			console.log("Analysis tool used but checkbox disabled, adding analysis cost");
+			currentCount += config.CHECKBOX_OPTIONS.analysis_enabled.cost
+		}
 
 		// Handle files from sidebar
 		if (await ensureSidebarLoaded()) {
@@ -1495,8 +1507,7 @@ window.claudeTrackerInstance = true;
 
 				// If we found artifacts but the checkbox isn't enabled, add the cost
 				if (artifactsTokenCount > 0) {
-					const checkboxStates = storageManager.getCheckboxStates();
-					if (!checkboxStates.artifacts_enabled) {
+					if (!storageManager.getCheckboxStates().artifacts_enabled) {
 						console.log("Found artifacts in use but checkbox disabled, adding artifacts cost");
 						currentCount += config.CHECKBOX_OPTIONS.artifacts_enabled.cost;
 					}
@@ -1546,6 +1557,7 @@ window.claudeTrackerInstance = true;
 			console.log(`Current conversation tokens: ${newCount}`);
 			console.log(`Total accumulated tokens: ${totalTokenCount}`);
 			console.log(`Messages used: ${messageCount}`);
+			console.log(`Added to model: ${currentModel}!`);
 		} else {
 			console.log("Timed out waiting for model to change from 'default'");
 		}
