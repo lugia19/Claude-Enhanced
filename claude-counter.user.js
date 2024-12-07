@@ -2,7 +2,7 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.8.1
+// @version      1.8.2
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
@@ -30,7 +30,7 @@ window.claudeTrackerInstance = true;
 	const DEFAULT_CONFIG = {
 		POLL_INTERVAL_MS: 5000,
 		DELAY_MS: 100,
-		OUTPUT_TOKEN_MULTIPLIER: 10,
+		OUTPUT_TOKEN_MULTIPLIER: 5,
 		MODEL_TOKENS: {
 			'Opus': 1500000,
 			'Sonnet': 1600000,
@@ -77,8 +77,9 @@ window.claudeTrackerInstance = true;
 	//#region Storage Manager
 	class StorageManager {
 		constructor() {
-			this.syncInterval = 20000; // 20s
-			this.startSync();
+			this.syncInterval = 60000; // 1m
+			this.lastSyncTimes = {};
+			this.isSyncing = false;
 		}
 
 		startSync() {
@@ -86,11 +87,19 @@ window.claudeTrackerInstance = true;
 		}
 
 		async syncWithFirebase() {
+			if (this.isSyncing) {
+				console.log("Sync already in progress, skipping");
+				return;
+			}
+
+			this.isSyncing = true;
 			console.log("=== FIREBASE SYNC STARTING ===");
 
 			const userId = await getUserId();
 			if (!userId) {
-				throw new Error("Could not get user ID");
+				this.isSyncing = false;
+				console.error("Could not get user ID!");
+				return;
 			}
 			console.log("Using hashed ID:", userId);
 
@@ -134,6 +143,8 @@ window.claudeTrackerInstance = true;
 				console.error('=== SYNC FAILED ===');
 				console.error('Error details:', error);
 				console.error('Stack:', error.stack);
+			} finally {
+				this.isSyncing = false;
 			}
 		}
 
@@ -234,18 +245,23 @@ window.claudeTrackerInstance = true;
 			return { total: stored.total, isInitialized: true };
 		}
 
-		saveModelData(model, rawCount) {
+		async addTokensToModel(model, newTokens) {
+			// Wait if sync is in progress
+			while (this.isSyncing) {
+				await sleep(100);
+			}
+
 			const maxTokens = config.MODEL_TOKENS[model] || config.MODEL_TOKENS.default;
 			let allModelData = GM_getValue(`${STORAGE_KEY}_models`, {});
 			const stored = allModelData[model];
 
 			const currentMessageCount = (stored?.messageCount || 0) + 1;
-			const totalTokenCount = stored ? stored.total + rawCount : rawCount;
+			const totalTokenCount = stored ? stored.total + newTokens : newTokens;
 
 			allModelData[model] = {
 				total: totalTokenCount,
 				messageCount: currentMessageCount,
-				resetTimestamp: stored?.resetTimestamp || this.#getResetTime(new Date()).getTime()
+				resetTimestamp: stored?.resetTimestamp || this.#getResetFromNow(new Date()).getTime()
 			};
 
 			GM_setValue(`${STORAGE_KEY}_models`, allModelData);
@@ -256,13 +272,7 @@ window.claudeTrackerInstance = true;
 			};
 		}
 
-		clearModelData(model) {
-			let allModelData = GM_getValue(`${STORAGE_KEY}_models`, {});
-			delete allModelData[model];
-			GM_setValue(`${STORAGE_KEY}_models`, allModelData);
-		}
-
-		#getResetTime(currentTime) {
+		#getResetFromNow(currentTime) {
 			const hourStart = new Date(currentTime);
 			hourStart.setMinutes(0, 0, 0);
 			const resetTime = new Date(hourStart);
@@ -329,12 +339,12 @@ window.claudeTrackerInstance = true;
 	//#endregion
 
 	//State variables
-	let isProcessingEvent = false;
 	let currentlyDisplayedModel = 'default';
 	let modelSections = {};
 	let currentConversationId = null;
 	let currentMessageCount = 0;
 	let lastCheckboxState = {};
+	let isProcessingUIEvent = false;
 
 	//#region Utils
 	async function getUserId() {
@@ -1494,7 +1504,7 @@ window.claudeTrackerInstance = true;
 			const tokens = calculateTokens(text) * config.OUTPUT_TOKEN_MULTIPLIER;
 			console.log("Processing final AI output:");
 			console.log(`Text: "${text}"`);
-			console.log(`Tokens: ${tokens}`);
+			console.log(`Tokens (weighted by ${config.OUTPUT_TOKEN_MULTIPLIER}x): ${tokens}`);
 			currentCount += tokens;
 		}
 
@@ -1539,38 +1549,13 @@ window.claudeTrackerInstance = true;
 
 		return currentCount;
 	}
-
-	async function updateTokenTotal() {
-		const currentModel = getCurrentModel();
-		const newCount = await countTokens();
-		if (!newCount) return;
-
-		let tries = 0;
-		while (currentModel === "default" && tries < 10) {
-			await sleep(200);
-			currentModel = getCurrentModel();
-			tries++;
-		}
-
-		if (currentModel !== "default") {
-			const { totalTokenCount, messageCount } = storageManager.saveModelData(currentModel, newCount);
-			console.log(`Current conversation tokens: ${newCount}`);
-			console.log(`Total accumulated tokens: ${totalTokenCount}`);
-			console.log(`Messages used: ${messageCount}`);
-			console.log(`Added to model: ${currentModel}!`);
-		} else {
-			console.log("Timed out waiting for model to change from 'default'");
-		}
-
-		updateProgressBar(newCount, false);
-	}
 	//#endregion
 
 	//#region Event Handlers
-	function pollUpdates() {
+	function pollUIUpdates() {
 		setInterval(async () => {
-			if (isProcessingEvent) {
-				console.log('Event processing in progress, skipping poll');
+			if (isProcessingUIEvent) {
+				console.log('Event processing in progress, skipping UI poll update');
 				return;
 			}
 			const newModel = getCurrentModel();
@@ -1653,15 +1638,37 @@ window.claudeTrackerInstance = true;
 	}
 
 
-	async function handleTokenCount() {
-		isProcessingEvent = true;
+	async function updateTokenTotal() {
+		isProcessingUIEvent = true;
 		try {
 			const delay = getConversationId() ? config.DELAY_MS : 5000;
 			console.log(`Waiting ${delay}ms before counting tokens`);
 			await sleep(delay);
-			await updateTokenTotal();
+
+			const currentModel = getCurrentModel();
+			const newCount = await countTokens();
+			if (!newCount) return;
+
+			let tries = 0;
+			while (currentModel === "default" && tries < 10) {
+				await sleep(200);
+				currentModel = getCurrentModel();
+				tries++;
+			}
+
+			if (currentModel !== "default") {
+				const { totalTokenCount, messageCount } = await storageManager.addTokensToModel(currentModel, newCount);
+				console.log(`Current conversation tokens: ${newCount}`);
+				console.log(`Total accumulated tokens: ${totalTokenCount}`);
+				console.log(`Messages used: ${messageCount}`);
+				console.log(`Added to model: ${currentModel}!`);
+			} else {
+				console.log("Timed out waiting for model to change from 'default'");
+			}
+
+			updateProgressBar(newCount, false);
 		} finally {
-			isProcessingEvent = false;
+			isProcessingUIEvent = false;
 		}
 	}
 
@@ -1683,7 +1690,7 @@ window.claudeTrackerInstance = true;
 			if (regenerateButton || saveButton || sendButton) {
 				console.log('Clicked:', e.target);
 				console.log('Event details:', e);
-				await handleTokenCount();
+				await updateTokenTotal();
 				return;
 			}
 		});
@@ -1704,7 +1711,7 @@ window.claudeTrackerInstance = true;
 			if ((mainInput || editArea) && e.key === 'Enter' && !e.shiftKey) {
 				console.log('Enter pressed in:', e.target);
 				console.log('Event details:', e);
-				await handleTokenCount();
+				await updateTokenTotal();
 				return;
 			}
 		});
@@ -1774,6 +1781,7 @@ window.claudeTrackerInstance = true;
 		console.log('We\'re unique, initializing Chat Token Counter...');
 
 		storageManager = new StorageManager();
+		storageManager.startSync();
 		// Initialize everything else
 		currentlyDisplayedModel = getCurrentModel();
 		storageManager.initializeOrLoadStorage(currentlyDisplayedModel);
@@ -1782,7 +1790,7 @@ window.claudeTrackerInstance = true;
 		setupEvents();
 		createUI();
 		updateProgressBar(0);
-		pollUpdates();
+		pollUIUpdates();
 		console.log('Initialization complete. Ready to track tokens.');
 	}
 
