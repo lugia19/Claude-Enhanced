@@ -64,7 +64,7 @@ window.claudeTrackerInstance = true;
 			ARTIFACT_VERSION_SELECT: 'button[type="button"][aria-haspopup="menu"]'
 		},
 		CHECKBOX_OPTIONS: {
-			'personal_preferences_enabled': { text: 'Preferences in profile and enabled', cost: 800 },
+			'personal_preferences_enabled': { text: 'Preferences enabled', cost: 800 },
 			'artifacts_enabled': { text: 'Artifacts enabled', cost: 5500 },
 			'analysis_enabled': { text: 'Analysis Tool enabled', cost: 2000 },
 			'latex_enabled': { text: 'LaTeX Rendering enabled', cost: 200 },

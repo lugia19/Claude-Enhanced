@@ -37,7 +37,7 @@
 	},
 	"CHECKBOX_OPTIONS": {
 		"personal_preferences_enabled": {
-			"text": "Preferences in profile and enabled",
+			"text": "Preferences enabled",
 			"cost": 800
 		},
 		"artifacts_enabled": {
