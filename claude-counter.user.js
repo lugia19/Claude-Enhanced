@@ -2,13 +2,14 @@
 // @name         Claude Usage Tracker
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.8.2
+// @version      1.9.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Helps you track your claude.ai usage caps.
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
+// @require      https://unpkg.com/gpt-tokenizer/dist/o200k_base.js
 // @connect      raw.githubusercontent.com
 // ==/UserScript==
 
@@ -20,7 +21,7 @@ window.claudeTrackerInstance = true;
 
 (function () {
 	'use strict';
-
+	const tokenizer = GPTTokenizer_o200k_base;
 	//#region Config
 	// Declare variables at the top level
 	let config;
@@ -395,8 +396,8 @@ window.claudeTrackerInstance = true;
 	}
 
 	function calculateTokens(text) {
-		const charCount = text.length;
-		return Math.ceil(charCount / 4);
+		return Math.ceil(tokenizer.countTokens(text) * 1.15);
+		//return Math.ceil(text.length / 4);
 	}
 
 	function isMobileView() {
@@ -408,7 +409,6 @@ window.claudeTrackerInstance = true;
 		// Check if height > width (portrait orientation)
 		return window.innerHeight > window.innerWidth;
 	}
-
 	//#endregion
 
 	//#region File Processing
