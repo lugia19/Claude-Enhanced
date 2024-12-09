@@ -29,10 +29,11 @@ window.claudeTrackerInstance = true;
 
 	const CONFIG_URL = 'https://raw.githubusercontent.com/lugia19/Claude-Toolbox/refs/heads/main/constants.json';
 	const DEFAULT_CONFIG = {
-		POLL_INTERVAL_MS: 5000,
-		DELAY_MS: 100,
+		UI_UPDATE_INTERVAL_MS: 5000,
+		CONVO_DELAY_MS: 100,
+		UNITIALIZED_CONVO_DELAY_MS: 5000,
 		OUTPUT_TOKEN_MULTIPLIER: 5,
-		MODEL_TOKENS: {
+		MODEL_TOKEN_CAPS: {
 			'Opus': 1500000,
 			'Sonnet': 1600000,
 			'Haiku': 4000000,
@@ -64,7 +65,7 @@ window.claudeTrackerInstance = true;
 			PDF_ICON: `path[d="M224,152a8,8,0,0,1-8,8H192v16h16a8,8,0,0,1,0,16H192v16a8,8,0,0,1-16,0V152a8,8,0,0,1,8-8h32A8,8,0,0,1,224,152ZM92,172a28,28,0,0,1-28,28H56v8a8,8,0,0,1-16,0V152a8,8,0,0,1,8-8H64A28,28,0,0,1,92,172Zm-16,0a12,12,0,0,0-12-12H56v24h8A12,12,0,0,0,76,172Zm88,8a36,36,0,0,1-36,36H112a8,8,0,0,1-8-8V152a8,8,0,0,1,8-8h16A36,36,0,0,1,164,180Zm-16,0a20,20,0,0,0-20-20h-8v40h8A20,20,0,0,0,148,180ZM40,112V40A16,16,0,0,1,56,24h96a8,8,0,0,1,5.66,2.34l56,56A8,8,0,0,1,216,88v24a8,8,0,0,1-16,0V96H152a8,8,0,0,1-8-8V40H56v72a8,8,0,0,1-16,0ZM160,80h28.69L160,51.31Z"]`,
 			ARTIFACT_VERSION_SELECT: 'button[type="button"][aria-haspopup="menu"]'
 		},
-		CHECKBOX_OPTIONS: {
+		FEATURE_CHECKBOXES: {
 			'personal_preferences_enabled': { text: 'Preferences enabled', cost: 800 },
 			'artifacts_enabled': { text: 'Artifacts enabled', cost: 5500 },
 			'analysis_enabled': { text: 'Analysis Tool enabled', cost: 2000 },
@@ -79,7 +80,6 @@ window.claudeTrackerInstance = true;
 	class StorageManager {
 		constructor() {
 			this.syncInterval = 60000; // 1m
-			this.lastSyncTimes = {};
 			this.isSyncing = false;
 		}
 
@@ -1219,7 +1219,7 @@ window.claudeTrackerInstance = true;
 			font-size: 11px;
 			margin-top: 4px;
 		`;
-		lengthDisplay.textContent = 'Current length: 0 tokens';
+		lengthDisplay.textContent = 'Current cost: 0 tokens';
 
 		currentConversationDisplay.appendChild(estimateDisplay);
 		currentConversationDisplay.appendChild(lengthDisplay);
@@ -1326,7 +1326,7 @@ window.claudeTrackerInstance = true;
 
 		const lengthDisplay = document.getElementById('conversation-token-count');
 		if (lengthDisplay && updateLength) {
-			lengthDisplay.textContent = `Current length: ${conversationLength.toLocaleString()} tokens`;
+			lengthDisplay.textContent = `Current cost: ${conversationLength.toLocaleString()} tokens`;
 		}
 
 		// Update messages left estimate
@@ -1641,7 +1641,7 @@ window.claudeTrackerInstance = true;
 	async function updateTokenTotal() {
 		isProcessingUIEvent = true;
 		try {
-			const delay = getConversationId() ? config.DELAY_MS : 5000;
+			const delay = getConversationId() ? config.DELAY_MS : config.INITIAL_LOAD_DELAY_MS;
 			console.log(`Waiting ${delay}ms before counting tokens`);
 			await sleep(delay);
 
