@@ -16,6 +16,8 @@ The script will correctly handle calculating token usage from:
 
 (And yes, this was mostly coded using Sonnet 3.5)
 
+Now uses [gpt-tokenizer](https://github.com/niieani/gpt-tokenizer) to calculate token amounts.
+
 # Claude temperature control - BROKEN!
 
 Now broken. They setting the temperature.
