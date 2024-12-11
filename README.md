@@ -1,6 +1,8 @@
 # Claude usage counter
 ![usage_tracker_v2](https://github.com/user-attachments/assets/666beb20-b866-4e08-adeb-0aa47febb641)
 
+## DEPRECATED - Use the [extension version](https://github.com/lugia19/Claude-Usage-Extension)!
+
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/515111-claude-usage-tracker)
 
 This is basically a script meant to help you gauge how much usage of claude you have left.
