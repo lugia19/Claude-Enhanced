@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         AI Chat Branch
-// @namespace    http://tampermonkey.net/
+// @name         Claude Forking
+// @namespace    https://lugia19.com
 // @version      0.1
-// @description  Add branch functionality to AI chat messages
+// @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
 // ==/UserScript==
