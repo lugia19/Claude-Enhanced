@@ -5,6 +5,7 @@
 // @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
+// @license      GPLv3
 // ==/UserScript==
 
 (function () {
