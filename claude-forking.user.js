@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Claude Forking
+// @name         Claude Fork Conversation
 // @namespace    https://lugia19.com
-// @version      0.1
+// @version      0.2.1
 // @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
@@ -11,6 +11,7 @@
 (function () {
 	'use strict';
 	let pendingForkModel = null;
+	let includeAttachments = true;
 	let isProcessing = false;
 
 	//#region UI elements creation
@@ -25,11 +26,11 @@
 			<span>Fork</span>
 		`;
 
-		button.onclick = (e) => {
+		button.onclick = async (e) => {
 			e.preventDefault();
 			e.stopPropagation();
 
-			const modal = createModal();
+			const modal = await createModal();
 			document.body.appendChild(modal);
 
 			// Add event listeners
@@ -38,9 +39,9 @@
 			};
 
 			// And in our modal click handler:
-			modal.querySelector('#confirmFork').onclick = () => {
+			modal.querySelector('#confirmFork').onclick = async () => {
 				const model = modal.querySelector('select').value;
-				forkConversationClicked(model, button);  // Pass the fork button as context
+				await forkConversationClicked(model, button, modal);  // Pass the fork button as context
 				modal.remove();
 			};
 
@@ -55,7 +56,7 @@
 		return button;
 	}
 
-	function createModal() {
+	async function createModal() {
 		const modal = document.createElement('div');
 		modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
 
@@ -68,6 +69,29 @@
 					<option value="claude-3-opus-20240229">Opus 3</option>
 					<option value="claude-3-5-haiku-20241022">Haiku 3.5</option>
 				</select>
+				
+				<div class="mb-4 space-y-2">
+					<label class="flex items-center space-x-2">
+						<input type="checkbox" id="includeFiles" class="rounded border-border-300" checked>
+						<span class="text-text-100">Include files</span>
+					</label>
+				
+					<label class="flex items-center space-x-2">
+						<input type="checkbox" id="enableAnalysis" class="rounded border-border-300">
+						<span class="text-text-100">Enable Analysis tool</span>
+					</label>
+					
+					<label class="flex items-center space-x-2">
+						<input type="checkbox" id="enableArtifacts" class="rounded border-border-300">
+						<span class="text-text-100">Enable Artifacts</span>
+					</label>
+					
+					<label class="flex items-center space-x-2">
+						<input type="checkbox" id="enableLatex" class="rounded border-border-300">
+						<span class="text-text-100">Enable LaTeX</span>
+					</label>
+				</div>
+				
 				<p class="text-sm text-text-400 sm:text-[0.75rem]">Note: Should you choose a slow model such as Opus, you may need to wait and refresh the page for the response to appear.</p>
 				<div class="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
 					<button class="inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none bg-accent-main-100 bg-gradient-to-r from-accent-main-100 via-accent-main-200/50 to-accent-main-200 bg-[length:200%_100%] hover:bg-right active:bg-accent-main-000 border-0.5 border-border-300 text-oncolor-100 font-medium font-styrene drop-shadow-sm transition-all shadow-[inset_0_0.5px_0px_rgba(255,255,0,0.15)] [text-shadow:_0_1px_2px_rgb(0_0_0_/_10%)] active:shadow-[inset_0_1px_6px_rgba(0,0,0,0.2)] hover:from-accent-main-200 hover:to-accent-main-200 h-9 px-4 py-2 rounded-lg min-w-[5rem] active:scale-[0.985] whitespace-nowrap" id="confirmFork">
@@ -79,6 +103,22 @@
 				</div>
 			</div>
 		`;
+
+		try {
+			const accountData = await fetchAccountSettings();
+			originalSettings = accountData.settings;
+
+			// Set initial checkbox states
+			modal.querySelector('#enableAnalysis').checked =
+				originalSettings.enabled_artifacts_attachments;
+			modal.querySelector('#enableArtifacts').checked =
+				originalSettings.preview_feature_uses_artifacts;
+			modal.querySelector('#enableLatex').checked =
+				originalSettings.preview_feature_uses_latex;
+		} catch (error) {
+			console.error('Failed to fetch account settings:', error);
+		}
+
 
 		return modal;
 	}
@@ -127,13 +167,29 @@
 	//#endregion
 
 
-	function forkConversationClicked(model, forkButton) {
+	async function forkConversationClicked(model, forkButton, modal) {
 		// Get conversation ID from URL
 		const conversationId = window.location.pathname.split('/').pop();
 		console.log('Forking conversation', conversationId, 'with model', model);
 
+		// Update settings before forking
+		if (originalSettings) {
+			const newSettings = { ...originalSettings };
+
+			newSettings.enabled_artifacts_attachments =
+				modal.querySelector('#enableAnalysis').checked;
+			newSettings.preview_feature_uses_artifacts =
+				modal.querySelector('#enableArtifacts').checked;
+			newSettings.preview_feature_uses_latex =
+				modal.querySelector('#enableLatex').checked;
+
+			console.log('Updating settings:', newSettings);
+			await updateAccountSettings(newSettings);
+		}
+
 		// Set up our global to catch the next retry request
 		pendingForkModel = model;
+		includeAttachments = modal.querySelector('#includeFiles')?.checked ?? true;
 
 		// Find and click the retry button in the same control group as our fork button
 		const buttonGroup = forkButton.closest('.text-text-400.flex');
@@ -147,7 +203,27 @@
 		}
 	}
 
-	//#region Convo extraction
+	//#region Convo extraction & Other API
+
+	let originalSettings = null;
+
+	async function fetchAccountSettings() {
+		const response = await fetch('/api/account');
+		console.log('Account settings response:', response);
+		const data = await response.json();
+		return data;
+	}
+
+	async function updateAccountSettings(settings) {
+		await fetch('/api/account', {
+			method: 'PUT',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ settings })
+		});
+	}
+
 	async function getConversationContext(orgId, conversationId, targetParentUuid) {
 		const response = await fetch(`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`);
 		const conversationData = await response.json();
@@ -214,6 +290,17 @@
 			if (message.parent_message_uuid === targetParentUuid) {
 				break;
 			}
+		}
+
+		if (!includeAttachments) {
+			return {
+				chatName,
+				messages,
+				syncsources: [],
+				attachments: [],
+				files: [],
+				projectUuid
+			};
 		}
 
 		return {
@@ -315,7 +402,8 @@
 				uuid: newUuid,
 				name: newName,
 				model: model,
-				include_conversation_preferences: true
+				include_conversation_preferences: true,
+				project_uuid: context.projectUuid,
 			})
 		});
 
@@ -378,7 +466,9 @@
 
 			try {
 				// Get conversation context
-				const context = await getConversationContext(orgId, conversationId, messageID);
+				const includeFiles = document.querySelector('#includeFiles')?.checked ?? true;
+				console.log(includeFiles)
+				const context = await getConversationContext(orgId, conversationId, messageID, includeFiles);
 				const downloadedFiles = await downloadFiles(context.files);
 
 				// Parallel processing of files and syncs
@@ -390,13 +480,23 @@
 				// Create forked conversation
 				const newConversationId = await createForkedConversation(orgId, context, pendingForkModel, styleData);
 
+				// Restore original settings
+				if (originalSettings) {
+					await updateAccountSettings(originalSettings);
+				}
+
 				// Navigate to new conversation
 				console.log('Forked conversation created:', newConversationId);
 				window.location.href = `/chat/${newConversationId}`;
 			} catch (error) {
 				console.error('Failed to fork conversation:', error);
+				// Restore original settings even if forking fails
+				if (originalSettings) {
+					await updateAccountSettings(originalSettings);
+				}
 			}
 
+			originalSettings = null;
 			pendingForkModel = null; // Clear the pending flag
 			return new Response(JSON.stringify({ success: true }));
 		}
