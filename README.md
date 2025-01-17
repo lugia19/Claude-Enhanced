@@ -1,4 +1,4 @@
-# Claude Forking Button
+# Claude Fork Button
 
 ![fork_button](https://github.com/user-attachments/assets/a7e7a82f-9a8d-4cef-b5f6-a9bb9f5decdc)
 
