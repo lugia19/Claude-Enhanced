@@ -2,7 +2,7 @@
 // @name         Claude Chat Exporter
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.1.0
+// @version      2.0.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows exporting chat conversations from claude.ai.
@@ -12,169 +12,167 @@
 (function () {
 	'use strict';
 
-	const SELECTORS = {
-		USER_MESSAGE: '[data-testid="user-message"]',
-		AI_MESSAGE: '.font-claude-message',
-	};
-
 	function getConversationId() {
 		const match = window.location.pathname.match(/\/chat\/([^/?]+)/);
 		return match ? match[1] : null;
 	}
 
-	function createExportCard() {
-		const container = document.createElement('div');
-		container.style.cssText = `
+	function createExportButton() {
+		const button = document.createElement('button');
+		button.className = `inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 
+			ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none 
+			disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none text-text-200 border-transparent 
+			transition-colors font-styrene active:bg-bg-400 hover:bg-bg-500/40 hover:text-text-100 h-9 w-9 
+			rounded-md active:scale-95 shrink-0`;
+		
+		button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 16 16">
+			<path d="M8 12V2m0 10 5-5m-5 5L3 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+			<path opacity="0.4" d="M2 15h12v-3H2v3Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+		</svg>`;
+
+		// Add tooltip wrapper div
+		const tooltipWrapper = document.createElement('div');
+		tooltipWrapper.setAttribute('data-radix-popper-content-wrapper', '');
+		tooltipWrapper.style.cssText = `
 			position: fixed;
-			top: 80px;
-			left: calc(100% - 200px);
-			background: #2D2D2D;
-			border: 1px solid #3B3B3B;
-			border-radius: 8px;
-			z-index: 9999;
-			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-			cursor: move;
-			user-select: none;
-			width: 180px;
+			left: 0px;
+			top: 0px;
+			min-width: max-content;
+			--radix-popper-transform-origin: 50% 0px;
+			z-index: 50;
+			display: none;
 		`;
 
-		// Header (always visible)
-		const header = document.createElement('div');
-		header.style.cssText = `
-			display: flex;
-			align-items: center;
-			padding: 8px 10px;
-			color: white;
-			font-size: 12px;
-			gap: 8px;
+		// Add tooltip content
+		tooltipWrapper.innerHTML = `
+			<div data-side="bottom" data-align="center" data-state="delayed-open" 
+				class="px-2 py-1 text-xs font-medium font-sans leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words z-tooltip max-w-[13rem]">
+				Export chatlog
+				<span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
+					Export chatlog
+				</span>
+			</div>
 		`;
 
-		const arrow = document.createElement('div');
-		arrow.innerHTML = '▼';
-		arrow.style.cssText = `
-			cursor: pointer;
-			transition: transform 0.2s;
-		`;
-
-		header.appendChild(arrow);
-		header.appendChild(document.createTextNode('Export Chat'));
-
-		// Content container (collapsible)
-		const content = document.createElement('div');
-		content.style.cssText = `
-			padding: 10px;
-			display: flex;
-			flex-direction: column;
-			gap: 10px;
-		`;
-
-		const exportButton = document.createElement('button');
-		exportButton.textContent = 'Export';
-		exportButton.style.cssText = `
-			background: #3b82f6;
-			color: white;
-			border: none;
-			padding: 6px 12px;
-			border-radius: 4px;
-			cursor: pointer;
-			width: 100%;
-		`;
-
-		const formatDropdown = document.createElement('select');
-		formatDropdown.innerHTML = `
-			<option value="txt">Text (.txt)</option>
-			<option value="jsonl">JSONL (.jsonl)</option>
-		`;
-		formatDropdown.style.cssText = `
-			background: #3B3B3B;
-			color: white;
-			border: none;
-			padding: 6px 12px;
-			border-radius: 4px;
-			width: 100%;
-			appearance: none;
-			-webkit-appearance: none;
-			-moz-appearance: none;
-			background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='white'><path d='M7 10l5 5 5-5z'/></svg>");
-			background-repeat: no-repeat;
-			background-position: right 8px center;
-			background-size: 16px;
-		`;
-
-		content.appendChild(exportButton);
-		content.appendChild(formatDropdown);
-
-		container.appendChild(header);
-		container.appendChild(content);
-		document.body.appendChild(container);
-
-		// Toggle collapse/expand
-		let isCollapsed = false;
-		arrow.addEventListener('click', (e) => {
-			e.stopPropagation();
-			isCollapsed = !isCollapsed;
-			content.style.display = isCollapsed ? 'none' : 'block';
-			arrow.style.transform = isCollapsed ? 'rotate(-90deg)' : '';
+		// Add hover events
+		button.addEventListener('mouseenter', () => {
+			tooltipWrapper.style.display = 'block';
+			const rect = button.getBoundingClientRect();
+			const tooltipRect = tooltipWrapper.getBoundingClientRect();
+			const centerX = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+			tooltipWrapper.style.transform = `translate(${centerX}px, ${rect.bottom + 5}px)`;
 		});
 
-		// Export functionality
-		exportButton.addEventListener('click', async () => {
-			const conversationId = getConversationId();
-			if (!conversationId) {
-				alert('Not in a conversation.');
-				return;
-			}
+		button.addEventListener('mouseleave', () => {
+			tooltipWrapper.style.display = 'none';
+		});
+		
+		button.onclick = async () => {
+			// Show format selection modal
+			const format = await showFormatModal();
+			if (!format) return;
 
 			const messages = await getMessages();
-			const format = formatDropdown.value;
+			const conversationId = getConversationId();
 			const filename = `Claude_export_${conversationId}.${format}`;
 			const content = formatExport(messages, format);
-
 			downloadFile(filename, content);
-		});
+		};
+		
+		// Add tooltip to document
+		document.body.appendChild(tooltipWrapper);
 
-		// Dragging functionality
-		let isDragging = false;
-		let currentX;
-		let currentY;
-		let initialX;
-		let initialY;
+		return button;
+	}
+	
+	async function showFormatModal() {
+		// Create and show a modal similar to Claude's style
+		const modal = document.createElement('div');
+		modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+		
+		modal.innerHTML = `
+			<div class="bg-bg-100 rounded-lg p-6 shadow-xl max-w-sm w-full mx-4 border border-border-300">
+				<h3 class="text-lg font-semibold mb-4 text-text-100">Export Format</h3>
+				<select class="w-full p-2 rounded mb-4 bg-bg-200 text-text-100 border border-border-300">
+					<option value="txt">Text (.txt)</option>
+					<option value="jsonl">JSONL (.jsonl)</option>
+				</select>
+				<div class="flex justify-end gap-2">
+					<button class="px-4 py-2 text-text-200 hover:bg-bg-500/40 rounded" id="cancelExport">Cancel</button>
+					<button class="px-4 py-2 bg-accent-main-100 text-oncolor-100 rounded" id="confirmExport">Export</button>
+				</div>
+			</div>
+		`;
 
-		header.addEventListener('mousedown', (e) => {
-			if (e.target === arrow) return;
-			isDragging = true;
-			initialX = e.clientX - container.offsetLeft;
-			initialY = e.clientY - container.offsetTop;
-			header.style.cursor = 'grabbing';
-		});
+		document.body.appendChild(modal);
 
-		document.addEventListener('mousemove', (e) => {
-			if (!isDragging) return;
-			e.preventDefault();
-			currentX = e.clientX - initialX;
-			currentY = e.clientY - initialY;
-			container.style.left = `${currentX}px`;
-			container.style.top = `${currentY}px`;
-		});
+		return new Promise((resolve) => {
+			const select = modal.querySelector('select');
+			
+			modal.querySelector('#cancelExport').onclick = () => {
+				modal.remove();
+				resolve(null);
+			};
 
-		document.addEventListener('mouseup', () => {
-			isDragging = false;
-			header.style.cursor = 'move';
+			modal.querySelector('#confirmExport').onclick = () => {
+				const format = select.value;
+				modal.remove();
+				resolve(format);
+			};
+
+			modal.onclick = (e) => {
+				if (e.target === modal) {
+					modal.remove();
+					resolve(null);
+				}
+			};
 		});
 	}
+	
+	
+	function getOrgId() {
+		const cookies = document.cookie.split(';');
+		for (const cookie of cookies) {
+			const [name, value] = cookie.trim().split('=');
+			if (name === 'lastActiveOrg') {
+				return value;
+			}
+		}
+		throw new Error('Could not find organization ID');
+	}
+
 	async function getMessages() {
-		const userMessages = document.querySelectorAll(SELECTORS.USER_MESSAGE);
-		const aiMessages = document.querySelectorAll(SELECTORS.AI_MESSAGE);
+		const conversationId = getConversationId();
+		if (!conversationId) {
+			throw new Error('Not in a conversation');
+		}
+
+		const orgId = getOrgId();
+
+		const response = await fetch(`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`);
+		const conversationData = await response.json();
 
 		const messages = [];
 
-		for (let i = 0; i < Math.max(userMessages.length, aiMessages.length); i++) {
-			if (i < userMessages.length) {
-				messages.push({ role: 'user', content: userMessages[i].textContent });
+		for (const message of conversationData.chat_messages) {
+			let messageContent = [];
+
+			for (const content of message.content) {
+				if (content.text) {
+					messageContent.push(content.text);
+				}
+				if (content.input?.code) {
+					messageContent.push(content.input.code);
+				}
+				if (content.content?.text) {
+					messageContent.push(content.content.text);
+				}
 			}
-			if (i < aiMessages.length) {
-				messages.push({ role: 'assistant', content: aiMessages[i].textContent });
-			}
+
+			messages.push({
+				role: message.role === 'human' ? 'user' : 'assistant',
+				content: messageContent.join(' ')
+			});
 		}
 
 		return messages;
@@ -205,7 +203,22 @@
 	}
 
 	function initialize() {
-		createExportCard();
+		// Try to add the button immediately
+		tryAddButton();
+		
+		// Also check every 5 seconds
+		setInterval(tryAddButton, 5000);
+	}
+
+	function tryAddButton() {
+		const container = document.querySelector('.right-3 .right-4 .hidden');
+		if (!container || container.querySelector('.export-button')) {
+			return; // Either container not found or button already exists
+		}
+
+		const exportButton = createExportButton();
+		exportButton.classList.add('export-button'); // Add class to check for existence
+		container.appendChild(exportButton);
 	}
 
 	initialize();
