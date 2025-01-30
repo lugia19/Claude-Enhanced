@@ -8,14 +8,6 @@ It will copy over any attachments/files you have added to the conversation as we
 
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/522141-claude-forking)
 
-# Claude usage counter
-
-## DEPRECATED - Use the [extension version](https://github.com/lugia19/Claude-Usage-Extension)!
-
-# Claude temperature control - BROKEN!
-
-Now broken. They removed setting the temperature.
-
 # Claude exporter
 
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/515448-claude-chat-exporter)
