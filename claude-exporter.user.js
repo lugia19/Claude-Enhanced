@@ -2,7 +2,7 @@
 // @name         Claude Chat Exporter
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      2.0.0
+// @version      2.1.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows exporting chat conversations from claude.ai.
@@ -24,7 +24,7 @@
 			disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none text-text-200 border-transparent 
 			transition-colors font-styrene active:bg-bg-400 hover:bg-bg-500/40 hover:text-text-100 h-9 w-9 
 			rounded-md active:scale-95 shrink-0`;
-		
+
 		button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 16 16">
 			<path d="M8 12V2m0 10 5-5m-5 5L3 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
 			<path opacity="0.4" d="M2 15h12v-3H2v3Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
@@ -66,36 +66,38 @@
 		button.addEventListener('mouseleave', () => {
 			tooltipWrapper.style.display = 'none';
 		});
-		
+
 		button.onclick = async () => {
 			// Show format selection modal
-			const format = await showFormatModal();
+			const { format, extension } = await showFormatModal();
 			if (!format) return;
 
-			const messages = await getMessages();
+			const conversationData = await getMessages(format === 'librechat');
 			const conversationId = getConversationId();
-			const filename = `Claude_export_${conversationId}.${format}`;
-			const content = formatExport(messages, format);
+			const filename = `Claude_export_${conversationData.title}_${conversationId}.${extension}`;
+			const content = await formatExport(conversationData, format, conversationId);
 			downloadFile(filename, content);
 		};
-		
+
 		// Add tooltip to document
 		document.body.appendChild(tooltipWrapper);
 
 		return button;
 	}
-	
+
 	async function showFormatModal() {
 		// Create and show a modal similar to Claude's style
 		const modal = document.createElement('div');
 		modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
-		
+
 		modal.innerHTML = `
 			<div class="bg-bg-100 rounded-lg p-6 shadow-xl max-w-sm w-full mx-4 border border-border-300">
 				<h3 class="text-lg font-semibold mb-4 text-text-100">Export Format</h3>
 				<select class="w-full p-2 rounded mb-4 bg-bg-200 text-text-100 border border-border-300">
-					<option value="txt">Text (.txt)</option>
-					<option value="jsonl">JSONL (.jsonl)</option>
+					<option value="txt_txt">Text (.txt)</option>
+					<option value="jsonl_jsonl">JSONL (.jsonl)</option>
+					<option value="librechat_json">Librechat (.json)</option>
+					<option value="raw_json">Raw JSON (.json)</option>
 				</select>
 				<div class="flex justify-end gap-2">
 					<button class="px-4 py-2 text-text-200 hover:bg-bg-500/40 rounded" id="cancelExport">Cancel</button>
@@ -108,16 +110,16 @@
 
 		return new Promise((resolve) => {
 			const select = modal.querySelector('select');
-			
+
 			modal.querySelector('#cancelExport').onclick = () => {
 				modal.remove();
 				resolve(null);
 			};
 
 			modal.querySelector('#confirmExport').onclick = () => {
-				const format = select.value;
+				const parts = select.value.split("_");
 				modal.remove();
-				resolve(format);
+				resolve({ format: parts[0], extension: parts[1] });
 			};
 
 			modal.onclick = (e) => {
@@ -128,8 +130,8 @@
 			};
 		});
 	}
-	
-	
+
+
 	function getOrgId() {
 		const cookies = document.cookie.split(';');
 		for (const cookie of cookies) {
@@ -141,7 +143,7 @@
 		throw new Error('Could not find organization ID');
 	}
 
-	async function getMessages() {
+	async function getMessages(fullTree = false) {
 		const conversationId = getConversationId();
 		if (!conversationId) {
 			throw new Error('Not in a conversation');
@@ -149,7 +151,7 @@
 
 		const orgId = getOrgId();
 
-		const response = await fetch(`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`);
+		const response = await fetch(`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=${fullTree}&rendering_mode=messages&render_all_tools=true`);
 		const conversationData = await response.json();
 
 		const messages = [];
@@ -158,35 +160,91 @@
 			let messageContent = [];
 
 			for (const content of message.content) {
-				if (content.text) {
-					messageContent.push(content.text);
-				}
-				if (content.input?.code) {
-					messageContent.push(content.input.code);
-				}
-				if (content.content?.text) {
-					messageContent.push(content.content.text);
-				}
+				messageContent = messageContent.concat(await getTextFromContent(content));
 			}
 
 			messages.push({
-				role: message.role === 'human' ? 'user' : 'assistant',
-				content: messageContent.join(' ')
+				role: message.sender === 'human' ? 'user' : 'assistant',
+				content: messageContent.join('\n')
 			});
 		}
 
-		return messages;
+		return {
+			title: conversationData.name,
+			updated_at: conversationData.updated_at,
+			messages: messages,
+			raw: conversationData
+		};
 	}
 
-	function formatExport(messages, format) {
+	async function getTextFromContent(content) {
+		let textPieces = [];
+
+		if (content.text) {
+			textPieces.push(content.text);
+		}
+		if (content.input) {
+			textPieces.push(JSON.stringify(content.input));
+		}
+		if (content.content) {
+			// Handle nested content array
+			if (Array.isArray(content.content)) {
+				for (const nestedContent of content.content) {
+					textPieces = textPieces.concat(await getTextFromContent(nestedContent));
+				}
+			}
+			// Handle single nested content object
+			else if (typeof content.content === 'object') {
+				textPieces = textPieces.concat(await getTextFromContent(content.content));
+			}
+		}
+		return textPieces;
+	}
+
+	async function formatExport(conversationData, format, conversationId) {
+		const { title, updated_at, messages } = conversationData;
+
 		switch (format) {
 			case 'txt':
-				return messages.map(msg => {
-					const role = msg.role === 'user' ? 'User' : 'Assistant';
-					return `[${role}]\n${msg.content}\n`;
-				}).join('\n');
+				return `Title: ${title}\nDate: ${updated_at}\n\n` +
+					messages.map(msg => {
+						const role = msg.role === 'user' ? 'User' : 'Assistant';
+						return `[${role}]\n${msg.content}\n`;
+					}).join('\n');
 			case 'jsonl':
 				return messages.map(JSON.stringify).join('\n');
+			case 'librechat':
+				// First, process all messages' content
+				const processedMessages = await Promise.all(conversationData.raw.chat_messages.map(async (msg) => {
+					const contentText = [];
+					for (const content of msg.content) {
+						contentText.push(...await getTextFromContent(content));
+					}
+
+					return {
+						messageId: msg.uuid,
+						parentMessageId: msg.parent_message_uuid === "00000000-0000-4000-8000-000000000000"
+							? null
+							: msg.parent_message_uuid,
+						text: contentText.join('\n'),
+						sender: msg.sender === "assistant" ? "Claude" : "human",
+						isCreatedByUser: msg.sender === "human",
+						createdAt: msg.created_at
+					};
+				}));
+
+				// Then create and return the final object
+				return JSON.stringify({
+					title: conversationData.raw.name,
+					endpoint: "anthropic",
+					conversationId: conversationId,
+					options: {
+						model: conversationData.raw.model ?? "claude-3-5-sonnet-latest"
+					},
+					messages: processedMessages
+				}, null, 2);
+			case 'raw':
+				return JSON.stringify(conversationData.raw, null, 2);
 			default:
 				throw new Error(`Unsupported format: ${format}`);
 		}
@@ -205,7 +263,7 @@
 	function initialize() {
 		// Try to add the button immediately
 		tryAddButton();
-		
+
 		// Also check every 5 seconds
 		setInterval(tryAddButton, 5000);
 	}
