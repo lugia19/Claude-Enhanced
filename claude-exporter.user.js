@@ -2,11 +2,12 @@
 // @name         Claude Chat Exporter
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      2.1.0
+// @version      2.1.1
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows exporting chat conversations from claude.ai.
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
 // ==/UserScript==
 
 (function () {
@@ -69,10 +70,10 @@
 
 		button.onclick = async () => {
 			// Show format selection modal
-			const { format, extension } = await showFormatModal();
+			const { format, extension, exportTree } = await showFormatModal();
 			if (!format) return;
 
-			const conversationData = await getMessages(format === 'librechat');
+			const conversationData = await getMessages(exportTree);
 			const conversationId = getConversationId();
 			const filename = `Claude_export_${conversationData.title}_${conversationId}.${extension}`;
 			const content = await formatExport(conversationData, format, conversationId);
@@ -86,9 +87,11 @@
 	}
 
 	async function showFormatModal() {
-		// Create and show a modal similar to Claude's style
 		const modal = document.createElement('div');
 		modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+
+		// Get last used format, defaulting to txt_txt if none saved
+		const lastFormat = GM_getValue('lastExportFormat', 'txt_txt');
 
 		modal.innerHTML = `
 			<div class="bg-bg-100 rounded-lg p-6 shadow-xl max-w-sm w-full mx-4 border border-border-300">
@@ -99,6 +102,12 @@
 					<option value="librechat_json">Librechat (.json)</option>
 					<option value="raw_json">Raw JSON (.json)</option>
 				</select>
+				<div id="treeOption" class="mb-4 hidden">
+					<label class="flex items-center text-text-100">
+						<input type="checkbox" class="mr-2">
+						Export entire tree
+					</label>
+				</div>
 				<div class="flex justify-end gap-2">
 					<button class="px-4 py-2 text-text-200 hover:bg-bg-500/40 rounded" id="cancelExport">Cancel</button>
 					<button class="px-4 py-2 bg-accent-main-100 text-oncolor-100 rounded" id="confirmExport">Export</button>
@@ -110,6 +119,20 @@
 
 		return new Promise((resolve) => {
 			const select = modal.querySelector('select');
+			const treeOption = modal.querySelector('#treeOption');
+			const checkbox = treeOption.querySelector('input[type="checkbox"]');
+
+			// Set the last used format
+			select.value = lastFormat;
+
+			// Show/hide tree option based on initial value
+			const initialFormat = lastFormat.split('_')[0];
+			treeOption.classList.toggle('hidden', !['librechat', 'raw'].includes(initialFormat));
+
+			select.onchange = () => {
+				const format = select.value.split('_')[0];
+				treeOption.classList.toggle('hidden', !['librechat', 'raw'].includes(format));
+			};
 
 			modal.querySelector('#cancelExport').onclick = () => {
 				modal.remove();
@@ -117,9 +140,16 @@
 			};
 
 			modal.querySelector('#confirmExport').onclick = () => {
+				// Save the selected format
+				GM_setValue('lastExportFormat', select.value);
+
 				const parts = select.value.split("_");
 				modal.remove();
-				resolve({ format: parts[0], extension: parts[1] });
+				resolve({
+					format: parts[0],
+					extension: parts[1],
+					exportTree: checkbox.checked
+				});
 			};
 
 			modal.onclick = (e) => {
