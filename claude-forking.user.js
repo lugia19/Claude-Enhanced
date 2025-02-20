@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude Fork Conversation
 // @namespace    https://lugia19.com
-// @version      0.2.1
+// @version      0.3.0
 // @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
@@ -131,7 +131,7 @@
 			const editButton = Array.from(buttons).find(button =>
 				button.textContent.includes('Edit')
 			);
-			return editButton?.closest('.text-text-400.flex');
+			return editButton?.closest('.justify-between');
 		}
 
 		if (messageElement.classList.contains('font-claude-message')) {
@@ -140,7 +140,7 @@
 			const retryButton = Array.from(buttons).find(button =>
 				button.textContent.includes('Retry')
 			);
-			return retryButton?.closest('.text-text-400.flex');
+			return retryButton?.closest('.justify-between');
 		}
 
 		return null;
@@ -150,12 +150,18 @@
 		if (isProcessing) return;
 		try {
 			isProcessing = true;
-			const messages = document.querySelectorAll('.font-claude-message');	//Only add to claude messages, as we leverage the retry button.
+			const messages = document.querySelectorAll('.font-claude-message');
 			messages.forEach((message) => {
 				const controls = findMessageControls(message);
 				if (controls && !controls.querySelector('.branch-button')) {
+					const container = document.createElement('div');
+					container.className = 'flex items-center gap-0.5';
+					const divider = document.createElement('div');
+					divider.className = 'w-px h-4/5 self-center bg-border-300 mr-0.5';
 					const branchBtn = createBranchButton();
-					controls.insertBefore(branchBtn, controls.firstChild);
+					container.appendChild(branchBtn);
+					container.appendChild(divider);
+					controls.insertBefore(container, controls.firstChild);
 				}
 			});
 		} catch (error) {
@@ -164,6 +170,7 @@
 			isProcessing = false;
 		}
 	}
+
 	//#endregion
 
 
@@ -192,7 +199,7 @@
 		includeAttachments = modal.querySelector('#includeFiles')?.checked ?? true;
 
 		// Find and click the retry button in the same control group as our fork button
-		const buttonGroup = forkButton.closest('.text-text-400.flex');
+		const buttonGroup = forkButton.closest('.justify-between');
 		const retryButton = Array.from(buttonGroup.querySelectorAll('button'))
 			.find(button => button.textContent.includes('Retry'));
 
