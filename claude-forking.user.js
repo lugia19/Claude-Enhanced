@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude Fork Conversation
 // @namespace    https://lugia19.com
-// @version      0.3.0
+// @version      0.4.0
 // @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
@@ -64,8 +64,9 @@
 			<div class="bg-bg-100 rounded-lg p-6 shadow-xl max-w-sm w-full mx-4 border border-border-300">
 				<h3 class="text-lg font-semibold mb-4 text-text-100">Choose Model for Fork</h3>
 				<select class="w-full p-2 rounded mb-4 bg-bg-200 text-text-100 border border-border-300">
-					<option value="claude-3-5-sonnet-20241022">Sonnet 3.5 (New)</option>
-					<option value="claude-3-5-sonnet-20240620">Sonnet 3.5 (Old)</option>
+					<option value="claude-3-7-sonnet-20250219">Sonnet 3.7</option>
+					<option value="claude-3-5-sonnet-20241022">Sonnet 3.5 (October)</option>
+					<option value="claude-3-5-sonnet-20240620">Sonnet 3.5 (June)</option>
 					<option value="claude-3-opus-20240229">Opus 3</option>
 					<option value="claude-3-5-haiku-20241022">Haiku 3.5</option>
 				</select>
@@ -173,7 +174,6 @@
 
 	//#endregion
 
-
 	async function forkConversationClicked(model, forkButton, modal) {
 		// Get conversation ID from URL
 		const conversationId = window.location.pathname.split('/').pop();
@@ -204,7 +204,29 @@
 			.find(button => button.textContent.includes('Retry'));
 
 		if (retryButton) {
-			retryButton.click();
+			// Dispatch pointerdown event which Radix UI components use
+			retryButton.dispatchEvent(new PointerEvent('pointerdown', {
+				bubbles: true,
+				cancelable: true,
+				view: window,
+				pointerType: 'mouse'
+			}));
+
+			// Wait for the dropdown to appear
+			await new Promise(resolve => setTimeout(resolve, 300));
+
+			// Look for the dropdown menu with "With no changes" option
+			const withNoChangesOption = Array.from(document.querySelectorAll('[role="menuitem"]'))
+				.find(element => element.textContent.includes('With no changes'));
+
+			if (withNoChangesOption) {
+				console.log('Detected retry dropdown, clicking "With no changes"');
+				// For the menu item, a regular click should work
+				withNoChangesOption.click();
+			} else {
+				console.log('No dropdown detected, assuming direct retry');
+				// If no dropdown appeared, the retry might have been triggered directly
+			}
 		} else {
 			console.error('Could not find retry button');
 		}
