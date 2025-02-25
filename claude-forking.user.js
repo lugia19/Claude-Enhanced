@@ -225,6 +225,7 @@
 				withNoChangesOption.click();
 			} else {
 				console.log('No dropdown detected, assuming direct retry');
+				retryButton.click();
 				// If no dropdown appeared, the retry might have been triggered directly
 			}
 		} else {
