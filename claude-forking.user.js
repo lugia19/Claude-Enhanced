@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude Fork Conversation
 // @namespace    https://lugia19.com
-// @version      0.4.0
+// @version      0.4.1
 // @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
@@ -259,7 +259,7 @@
 		const conversationData = await response.json();
 
 		let messages = [];
-		let projectUuid = conversationData.project_uuid || null;
+		let projectUuid = conversationData?.project.uuid || null;
 		const chatName = conversationData.name;
 		const files = []
 		const syncsources = []

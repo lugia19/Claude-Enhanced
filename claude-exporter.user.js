@@ -2,7 +2,7 @@
 // @name         Claude Chat Exporter
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      2.1.1
+// @version      2.1.2
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows exporting chat conversations from claude.ai.
@@ -257,7 +257,7 @@
 							? null
 							: msg.parent_message_uuid,
 						text: contentText.join('\n'),
-						sender: msg.sender === "assistant" ? "Claude" : "human",
+						sender: msg.sender === "assistant" ? "Claude" : "User",
 						isCreatedByUser: msg.sender === "human",
 						createdAt: msg.created_at
 					};
