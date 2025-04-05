@@ -2,7 +2,7 @@
 // @name         Claude Chat Exporter
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      2.1.2
+// @version      2.1.3
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows exporting chat conversations from claude.ai.
@@ -299,14 +299,13 @@
 	}
 
 	function tryAddButton() {
-		const container = document.querySelector('.right-3 .right-4 .hidden');
-		if (!container || container.querySelector('.export-button')) {
+		const container = document.querySelector(".right-3.flex.gap-2");
+		if (!container || container.querySelector('.export-button') || container.querySelectorAll("button").length == 0) {
 			return; // Either container not found or button already exists
 		}
-
 		const exportButton = createExportButton();
 		exportButton.classList.add('export-button'); // Add class to check for existence
-		container.appendChild(exportButton);
+		container.insertBefore(exportButton, container.firstChild);
 	}
 
 	initialize();
