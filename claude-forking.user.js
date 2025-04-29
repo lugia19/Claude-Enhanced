@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude Fork Conversation
 // @namespace    https://lugia19.com
-// @version      0.5.0
+// @version      0.5.1
 // @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
@@ -445,8 +445,26 @@
 
 		if (model) bodyJSON.model = model;
 
-		if (thinking) bodyJSON.paprika_mode = "extended";
+		if (thinking) {
+			let isFree = true;
+			const statSigResponse = await fetch(`/api/bootstrap/${orgId}/statsig`, {
+				method: 'GET',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+			});
+			if (statSigResponse.ok) {
+				const statSigData = await statSigResponse.json();
+				if (statSigData?.user?.custom?.orgType !== 'claude_free') {
+					isFree = false;
+				}
+			}
 
+			if (!isFree) {
+				bodyJSON.paprika_mode = "extended";
+			}
+
+		}
 		const createResponse = await fetch(`/api/organizations/${orgId}/chat_conversations`, {
 			method: 'POST',
 			headers: {
@@ -550,7 +568,8 @@
 			});
 
 			if (!summaryResponse.ok) {
-				throw new Error('Failed to generate summary');
+				console.error('Failed to generate summary');
+				return null;
 			}
 
 
@@ -659,18 +678,22 @@
 					// Generate summary
 					console.log("Generating summary for forking");
 					const summary = await generateSummary(orgId, context, pendingForkModel);
-
-					// Prepare context for summary-based fork
-					const summaryContext = { ...context };
-					summaryContext.messages = null;  // Don't generate chatlog
-					summaryContext.attachments = [{
-						"extracted_content": summary,
-						"file_name": "conversation_summary.txt",
-						"file_size": 0,
-						"file_type": "text/plain"
-					}];
-					// Create forked conversation with summary
-					newConversationId = await createForkedConversation(orgId, summaryContext, pendingForkModel, styleData);
+					if (summary === null) {
+						// Fall back to normal forking
+						newConversationId = await createForkedConversation(orgId, context, pendingForkModel, styleData);
+					} else {
+						// Prepare context for summary-based fork
+						const summaryContext = { ...context };
+						summaryContext.messages = null;  // Don't generate chatlog
+						summaryContext.attachments = [{
+							"extracted_content": summary,
+							"file_name": "conversation_summary.txt",
+							"file_size": 0,
+							"file_type": "text/plain"
+						}];
+						// Create forked conversation with summary
+						newConversationId = await createForkedConversation(orgId, summaryContext, pendingForkModel, styleData);
+					}
 				} else {
 					// Standard workflow with full chatlog
 					newConversationId = await createForkedConversation(orgId, context, pendingForkModel, styleData);
