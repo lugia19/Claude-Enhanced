@@ -8,8 +8,20 @@ It will copy over any attachments/files you have added to the conversation as we
 
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/522141-claude-forking)
 
-# Claude exporter
+# Claude Exporter
+
+![export_button](https://github.com/user-attachments/assets/1ba5bd8f-1d52-4027-9b04-596fbae15db9)
 
 Available on [Greasy Fork](https://greasyfork.org/en/scripts/515448-claude-chat-exporter)
 
 Does what it says. Exports the current chat to either jsonl or txt.
+
+# Claude Long Conversation Typing Lag Fix
+
+![Screenshot 2025-05-25 181754](https://github.com/user-attachments/assets/646f299f-16f6-4dc0-afce-3fe61f912ba1)
+
+Available on [Greasy Fork](https://greasyfork.org/en/scripts/537230-claude-typing-lag-fix)
+
+Fixes the lag issues whilst typing that happen in long chats, by swapping the text input with a custom one.
+
+This breaks the "live preview" of formatting (though it does still show up correctly after the fact). One exception is codeblocks that also contain triple backticks will look kinda glitchy. Not much I can do.
