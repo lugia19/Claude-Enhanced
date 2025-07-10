@@ -211,7 +211,7 @@
 				modal.querySelector('#enableArtifacts').checked;
 			newSettings.preview_feature_uses_latex =
 				modal.querySelector('#enableLatex').checked;
-
+			newSettings.paprika_mode = null; // Ensure it's off when we create the conversation (will be overridden to on if needed)
 			console.log('Updating settings:', newSettings);
 			await updateAccountSettings(newSettings);
 		}
