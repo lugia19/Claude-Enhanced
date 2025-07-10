@@ -98,21 +98,6 @@
 				<input type="checkbox" id="includeFiles" class="rounded border-border-300" checked>
 				<span class="text-text-100">Include files</span>
 			  </label>
-			
-			  <label class="flex items-center space-x-2">
-				<input type="checkbox" id="enableAnalysis" class="rounded border-border-300">
-				<span class="text-text-100">Enable Analysis tool</span>
-			  </label>
-			  
-			  <label class="flex items-center space-x-2">
-				<input type="checkbox" id="enableArtifacts" class="rounded border-border-300">
-				<span class="text-text-100">Enable Artifacts</span>
-			  </label>
-			  
-			  <label class="flex items-center space-x-2">
-				<input type="checkbox" id="enableLatex" class="rounded border-border-300">
-				<span class="text-text-100">Enable LaTeX</span>
-			  </label>
 			</div>
 			
 			<p class="text-sm text-text-400 sm:text-[0.75rem]">Note: Should you choose a slow model such as Opus, you may need to wait and refresh the page for the response to appear.</p>
@@ -130,14 +115,6 @@
 		try {
 			const accountData = await fetchAccountSettings();
 			originalSettings = accountData.settings;
-
-			// Set initial checkbox states
-			modal.querySelector('#enableAnalysis').checked =
-				originalSettings.enabled_artifacts_attachments;
-			modal.querySelector('#enableArtifacts').checked =
-				originalSettings.preview_feature_uses_artifacts;
-			modal.querySelector('#enableLatex').checked =
-				originalSettings.preview_feature_uses_latex;
 		} catch (error) {
 			console.error('Failed to fetch account settings:', error);
 		}
@@ -201,16 +178,8 @@
 		const conversationId = window.location.pathname.split('/').pop();
 		console.log('Forking conversation', conversationId, 'with model', model);
 
-		// Update settings before forking
 		if (originalSettings) {
 			const newSettings = { ...originalSettings };
-
-			newSettings.enabled_artifacts_attachments =
-				modal.querySelector('#enableAnalysis').checked;
-			newSettings.preview_feature_uses_artifacts =
-				modal.querySelector('#enableArtifacts').checked;
-			newSettings.preview_feature_uses_latex =
-				modal.querySelector('#enableLatex').checked;
 			newSettings.paprika_mode = null; // Ensure it's off when we create the conversation (will be overridden to on if needed)
 			console.log('Updating settings:', newSettings);
 			await updateAccountSettings(newSettings);
