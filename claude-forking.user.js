@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude Fork Conversation
 // @namespace    https://lugia19.com
-// @version      0.5.2
+// @version      0.5.3
 // @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
