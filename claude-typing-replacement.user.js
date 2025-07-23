@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude typing lag fix
 // @namespace    https://lugia19.com
-// @version      1.2.2
+// @version      1.2.5
 // @description  Fix typing lag in long claude chats by replacing the text entry field.
 // @author       lugia19
 // @match        https://claude.ai/*
@@ -9,6 +9,7 @@
 // @grant        GM_getValue
 // @grant        GM_deleteValue
 // @run-at       document-idle
+// @license      MIT
 // ==/UserScript==
 
 
@@ -18,22 +19,24 @@
 	const processedProseMirrors = new WeakSet();
 	let currentTextarea = null;
 	let draftSaveTimer;
-	let draftDebounce = 500; // 0.5 seconds debounce for draft saving
+	let draftDebounce = 300; // 0.3 seconds debounce for draft saving
+	const messageCountThreshold = 50; // Threshold for long conversations
+	const longConversations = new Set();
 
 	document.addEventListener('keydown', (e) => {
-		// Check for body element OR thought process containers
-		const isTargetBody = e.target.tagName === 'BODY' &&
-			e.target.classList.contains('bg-bg-100') &&
-			e.target.classList.contains('text-text-100');
+		// Blacklist: elements where typing SHOULD work normally
+		const isInputField = e.target.matches('input, select, option');
+		const isTextarea = e.target.matches('textarea') && !e.target.classList.contains('claude-simple-input');
+		const isContentEditable = e.target.getAttribute('contenteditable') === 'true' && !e.target.classList.contains('ProseMirror');
+		const isCodeEditor = e.target.closest('.monaco-editor, .cm-editor'); // Common code editor classes
 
-		const isThoughtProcessContainer = e.target.tagName === 'DIV' &&
-			e.target.classList.contains('h-full') &&
-			e.target.classList.contains('overflow-y-auto') &&
-			e.target.classList.contains('overflow-x-hidden');
+		// Skip if it's an actual input field
+		if (isInputField || isTextarea || isContentEditable || isCodeEditor) {
+			return; // Let normal typing happen
+		}
 
 		const hasModifiers = e.ctrlKey || e.altKey || e.metaKey;
 
-		// Blacklist navigation/special keys instead of whitelisting characters
 		const isNavigationKey = [
 			'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
 			'PageUp', 'PageDown', 'Home', 'End',
@@ -42,8 +45,9 @@
 			'Shift', 'Control', 'Alt', 'Meta'
 		].includes(e.key);
 
-		if (!isNavigationKey && (isTargetBody || isThoughtProcessContainer) && !hasModifiers && currentTextarea) {
-			console.log('🎯 Intercepting typing character:', e.key);
+		// Intercept typing on EVERYTHING else
+		if (!isNavigationKey && !hasModifiers && currentTextarea) {
+			console.log('🎯 Intercepting typing from:', e.target.tagName, e.target.className.substring(0, 50));
 
 			e.stopImmediatePropagation();
 			e.preventDefault();
@@ -271,93 +275,142 @@
 
 		const proseMirrorDiv = document.querySelector('.ProseMirror');
 		if (proseMirrorDiv) {
-			// Temporarily re-enable it for submission
-			proseMirrorDiv.setAttribute('contenteditable', 'true');
+			// FIRST: Clear it completely, no matter what
+			proseMirrorDiv.innerHTML = '';
+			proseMirrorDiv.textContent = '';
 
-			// Process markdown first
-			const processedText = processMarkdownCodeBlocks(text);
-
-			// If it has code blocks, use innerHTML (but escaped), otherwise use paragraphs
-			if (processedText !== text) {
-				proseMirrorDiv.innerHTML = processedText;
-			} else {
-				// Original paragraph approach for non-code text
-				proseMirrorDiv.innerHTML = '';
-				const lines = text.split('\n');
-				lines.forEach(line => {
-					const p = document.createElement('p');
-					p.textContent = line || '\u00A0';
-					proseMirrorDiv.appendChild(p);
-				});
-			}
-
-			proseMirrorDiv.dispatchEvent(new Event('input', { bubbles: true }));
-			proseMirrorDiv.dispatchEvent(new Event('change', { bubbles: true }));
-
+			// Wait a bit to ensure it's properly cleared
 			setTimeout(() => {
-				// Find and click submit...
-				let hiddenSubmit = document.querySelector('button[aria-label="Send message"][style*="display: none"]');
-				if (!hiddenSubmit) {
-					hiddenSubmit = document.querySelector('button[aria-label="Send message"]:not(.claude-custom-submit)');
+				// Temporarily re-enable it for submission
+				proseMirrorDiv.setAttribute('contenteditable', 'true');
+
+				// Process markdown first
+				const processedText = processMarkdownCodeBlocks(text);
+
+				// If it has code blocks, use innerHTML (but escaped), otherwise use paragraphs
+				if (processedText !== text) {
+					proseMirrorDiv.innerHTML = processedText;
+				} else {
+					// Original paragraph approach for non-code text
+					proseMirrorDiv.innerHTML = '';
+					const lines = text.split('\n');
+					lines.forEach(line => {
+						const p = document.createElement('p');
+						p.textContent = line || '\u00A0';
+						proseMirrorDiv.appendChild(p);
+					});
 				}
 
-				if (hiddenSubmit && !hiddenSubmit.disabled) {
-					hiddenSubmit.click();
-				}
+				proseMirrorDiv.dispatchEvent(new Event('input', { bubbles: true }));
+				proseMirrorDiv.dispatchEvent(new Event('change', { bubbles: true }));
 
-				// Disable it again after submission
-				// Clear our textarea and clean up the original
 				setTimeout(() => {
-					console.log('🧹 Cleaning up after submission');
-					if (currentTextarea) {
-						currentTextarea.value = '';
-						currentTextarea.style.height = 'auto';
-						currentTextarea.style.height = '1.5rem';
-						currentTextarea.style.overflowY = 'hidden';
-						currentTextarea.focus();
+					// Find and click submit...
+					let hiddenSubmit = document.querySelector('button[aria-label="Send message"][style*="display: none"]');
+					if (!hiddenSubmit) {
+						hiddenSubmit = document.querySelector('button[aria-label="Send message"]:not(.claude-custom-submit)');
 					}
 
-					// Clear the original
-					proseMirrorDiv.innerHTML = '';
-					proseMirrorDiv.textContent = '';
-					proseMirrorDiv.setAttribute('contenteditable', 'false');
+					if (hiddenSubmit && !hiddenSubmit.disabled) {
+						hiddenSubmit.click();
+					}
 
-					// Scroll to bottom with multiple attempts
-					const scrollToBottom = () => {
-						const chatContainer = document.querySelector('.relative.h-full.flex-1.flex.overflow-x-hidden.overflow-y-scroll.pt-6');
-						if (chatContainer) {
-							chatContainer.scrollTo(0, chatContainer.scrollHeight);
+					// Disable it again after submission
+					// Clear our textarea and clean up the original
+					setTimeout(() => {
+						console.log('🧹 Cleaning up after submission');
+						if (currentTextarea) {
+							currentTextarea.value = '';
+							currentTextarea.style.height = 'auto';
+							currentTextarea.style.height = '1.5rem';
+							currentTextarea.style.overflowY = 'hidden';
+							currentTextarea.focus();
 						}
-					};
 
-					scrollToBottom(); // Immediate
-					setTimeout(scrollToBottom, 1000); // 1s
-					setTimeout(scrollToBottom, 2000); // 2s
-					setTimeout(scrollToBottom, 3000); // 3s
-					setTimeout(clearDraft, 200);
-				}, 100);
-			}, 50);
+						// Clear the original
+						proseMirrorDiv.innerHTML = '';
+						proseMirrorDiv.textContent = '';
+						proseMirrorDiv.setAttribute('contenteditable', 'false');
+
+						// Scroll to bottom with multiple attempts
+						const scrollToBottom = () => {
+							const chatContainer = document.querySelector('.relative.h-full.flex-1.flex.overflow-x-hidden.overflow-y-scroll.pt-6');
+							if (chatContainer) {
+								chatContainer.scrollTo(0, chatContainer.scrollHeight);
+							}
+						};
+
+						scrollToBottom(); // Immediate
+						setTimeout(scrollToBottom, 500); // 0.5s
+						setTimeout(scrollToBottom, 1000); // 1s
+						setTimeout(clearDraft, 200);
+					}, 100);
+				}, 50);
+			}, 100);
 		}
 	}
 
 	// Separate polling for each component
 	function checkAndMaintain() {
-		const proseMirrorExists = !!document.querySelector('.ProseMirror');
-		const ourTextareaExists = !!document.querySelector('.claude-simple-input');
-		const ourButtonExists = !!document.querySelector('.claude-custom-submit');
+		const currentUrlMatch = unsafeWindow.location.pathname.match(/\/chat\/([a-f0-9-]+)/);
+		const currentConvId = currentUrlMatch ? currentUrlMatch[1] : null;
 
-		if (proseMirrorExists && !ourTextareaExists) {
-			replaceProseMirror();
-		}
+		// Only enable performance mode if current conversation is in the long conversations set
+		if ((currentConvId && longConversations.has(currentConvId)) || (messageCountThreshold <= 0 && unsafeWindow.location.pathname.indexOf("new") != -1)) {
+			const proseMirrorExists = !!document.querySelector('.ProseMirror');
+			const ourTextareaExists = !!document.querySelector('.claude-simple-input');
+			const ourButtonExists = !!document.querySelector('.claude-custom-submit');
 
-		if (!ourButtonExists) {
-			replaceSubmitButton();
+			if (proseMirrorExists && !ourTextareaExists) {
+				replaceProseMirror();
+			}
+
+			if (!ourButtonExists) {
+				replaceSubmitButton();
+			}
 		}
 	}
 
+	// Monkey patch fetch to monitor conversation updates
+	// Monkey patch fetch
+	const originalFetch = unsafeWindow.fetch;
+	unsafeWindow.fetch = function (...args) {
+		const url = args[0];
+
+		if (typeof url === 'string' && url.includes('/chat_conversations/') && url.includes('tree=True')) {
+			console.log('🔍 Intercepted tree=True call, making tree=False call');
+
+			// Extract conversation ID
+			const conversationIdMatch = url.match(/chat_conversations\/([a-f0-9-]+)/);
+			const fetchedConvId = conversationIdMatch ? conversationIdMatch[1] : null;
+
+			if (fetchedConvId) {
+				// Make our own call with tree=False to get visible message count
+				const visibleMessagesUrl = url.replace('tree=True', 'tree=False');
+
+				originalFetch(visibleMessagesUrl, args[1])
+					.then(response => response.json())
+					.then(data => {
+						const visibleMessageCount = data.chat_messages?.length || 0;
+						console.log(`📊 Conversation ${fetchedConvId} has ${visibleMessageCount} visible messages`);
+
+						if (visibleMessageCount > messageCountThreshold) {
+							longConversations.add(fetchedConvId);
+							console.log('📝 Added to long conversations set (based on visible messages)');
+						} else {
+							longConversations.delete(fetchedConvId);
+							console.log('📝 Removed from long conversations set');
+						}
+					})
+					.catch(err => {
+						console.log('❌ Failed to fetch visible messages:', err);
+					});
+			}
+		}
+
+		return originalFetch.apply(this, args);
+	};
 	// Start
-	replaceProseMirror();
-	replaceSubmitButton();
-	setInterval(checkAndMaintain, 50);
+	setInterval(checkAndMaintain, 100);
 
 })();
