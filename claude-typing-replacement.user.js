@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude typing lag fix
 // @namespace    https://lugia19.com
-// @version      1.2.5
+// @version      1.2.6
 // @description  Fix typing lag in long claude chats by replacing the text entry field.
 // @author       lugia19
 // @match        https://claude.ai/*
@@ -26,7 +26,7 @@
 	document.addEventListener('keydown', (e) => {
 		// Blacklist: elements where typing SHOULD work normally
 		const isInputField = e.target.matches('input, select, option');
-		const isTextarea = e.target.matches('textarea') && !e.target.classList.contains('claude-simple-input');
+		const isTextarea = e.target.matches('textarea');
 		const isContentEditable = e.target.getAttribute('contenteditable') === 'true' && !e.target.classList.contains('ProseMirror');
 		const isCodeEditor = e.target.closest('.monaco-editor, .cm-editor'); // Common code editor classes
 
