@@ -450,6 +450,7 @@
 	}
 
 	async function createForkedConversation(orgId, context, model, styleData) {
+		if (!context.chatName || context.chatName.trim() === '') context.chatName = "Untitled"
 		const newName = `Fork of ${context.chatName}`;
 
 		// Create a new chat conversation

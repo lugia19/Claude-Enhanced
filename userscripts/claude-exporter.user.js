@@ -12,6 +12,61 @@
 
 (function () {
 	'use strict';
+	// ======== POLYGLOT SETUP ========
+	if (typeof unsafeWindow === 'undefined') var unsafeWindow = window;
+
+	let setStorageValue, getStorageValue, deleteStorageValue;
+
+	if (typeof GM_setValue !== 'undefined') {
+		// Running as userscript
+		setStorageValue = async (key, value) => {
+			GM_setValue(key, value);
+		};
+
+		getStorageValue = async (key, defaultValue) => {
+			return GM_getValue(key, defaultValue);
+		};
+
+		deleteStorageValue = async (key) => {
+			GM_deleteValue(key);
+		};
+	} else {
+		// Running as extension
+		setStorageValue = async (key, value) => {
+			window.postMessage({
+				type: 'GM_setValue',
+				key: key,
+				value: value
+			}, '*');
+		};
+
+		getStorageValue = async (key, defaultValue) => {
+			return new Promise((resolve) => {
+				const requestId = Math.random().toString(36).substr(2, 9);
+				const listener = (event) => {
+					if (event.data.type === 'GM_getValue_response' &&
+						event.data.requestId === requestId) {
+						window.removeEventListener('message', listener);
+						resolve(event.data.value !== undefined ? event.data.value : defaultValue);
+					}
+				};
+				window.addEventListener('message', listener);
+
+				window.postMessage({
+					type: 'GM_getValue',
+					key: key,
+					requestId: requestId
+				}, '*');
+			});
+		};
+
+		deleteStorageValue = async (key) => {
+			window.postMessage({
+				type: 'GM_deleteValue',
+				key: key
+			}, '*');
+		};
+	}
 
 	function getConversationId() {
 		const match = window.location.pathname.match(/\/chat\/([^/?]+)/);
@@ -70,8 +125,17 @@
 
 		button.onclick = async () => {
 			// Show format selection modal
-			const { format, extension, exportTree } = await showFormatModal();
-			if (!format) return;
+			let format, extension, exportTree;
+			try {
+				const modalResult = await showFormatModal();
+				format = modalResult.format;
+				extension = modalResult.extension;
+				exportTree = modalResult.exportTree;
+				if (!format) return;
+			} catch (error) {
+				console.error('Error during export:', error);
+				return;
+			}
 
 			const conversationData = await getMessages(exportTree);
 			const conversationId = getConversationId();
@@ -91,7 +155,7 @@
 		modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
 
 		// Get last used format, defaulting to txt_txt if none saved
-		const lastFormat = GM_getValue('lastExportFormat', 'txt_txt');
+		const lastFormat = await getStorageValue('lastExportFormat', 'txt_txt');
 
 		modal.innerHTML = `
 			<div class="bg-bg-100 rounded-lg p-6 shadow-xl max-w-sm w-full mx-4 border border-border-300">
@@ -139,9 +203,9 @@
 				resolve(null);
 			};
 
-			modal.querySelector('#confirmExport').onclick = () => {
+			modal.querySelector('#confirmExport').onclick = async () => {
 				// Save the selected format
-				GM_setValue('lastExportFormat', select.value);
+				await setStorageValue('lastExportFormat', select.value);
 
 				const parts = select.value.split("_");
 				modal.remove();

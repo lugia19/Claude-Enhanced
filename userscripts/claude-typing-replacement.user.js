@@ -15,6 +15,60 @@
 
 (function () {
 	'use strict';
+	// ======== POLYGLOT SETUP ========
+	if (typeof unsafeWindow === 'undefined') var unsafeWindow = window;
+	let setStorageValue, getStorageValue, deleteStorageValue;
+
+	if (typeof GM_setValue !== 'undefined') {
+		// Running as userscript
+		setStorageValue = async (key, value) => {
+			GM_setValue(key, value);
+		};
+
+		getStorageValue = async (key, defaultValue) => {
+			return GM_getValue(key, defaultValue);
+		};
+
+		deleteStorageValue = async (key) => {
+			GM_deleteValue(key);
+		};
+	} else {
+		// Running as extension
+		setStorageValue = async (key, value) => {
+			window.postMessage({
+				type: 'GM_setValue',
+				key: key,
+				value: value
+			}, '*');
+		};
+
+		getStorageValue = async (key, defaultValue) => {
+			return new Promise((resolve) => {
+				const requestId = Math.random().toString(36).substr(2, 9);
+				const listener = (event) => {
+					if (event.data.type === 'GM_getValue_response' &&
+						event.data.requestId === requestId) {
+						window.removeEventListener('message', listener);
+						resolve(event.data.value !== undefined ? event.data.value : defaultValue);
+					}
+				};
+				window.addEventListener('message', listener);
+
+				window.postMessage({
+					type: 'GM_getValue',
+					key: key,
+					requestId: requestId
+				}, '*');
+			});
+		};
+
+		deleteStorageValue = async (key) => {
+			window.postMessage({
+				type: 'GM_deleteValue',
+				key: key
+			}, '*');
+		};
+	}
 
 	const processedProseMirrors = new WeakSet();
 	let currentTextarea = null;
@@ -71,43 +125,43 @@
 		return uuid ? `claude-draft-${uuid}` : null;
 	}
 
-	function saveDraft(text) {
+	async function saveDraft(text) {
 		const key = getDraftKey();
 		if (!key) return;
 
 		clearTimeout(draftSaveTimer);
-		draftSaveTimer = setTimeout(() => {
+		draftSaveTimer = setTimeout(async () => {
 			if (text.trim()) {
-				GM_setValue(key, text);
+				await setStorageValue(key, text);
 				console.log('💾 Draft saved for chat:', getDraftKey());
 			} else {
-				GM_deleteValue(key);
+				await deleteStorageValue(key);
 				console.log('🗑️ Empty draft deleted for chat:', getDraftKey());
 			}
 		}, draftDebounce); // 0.5 second debounce
 	}
 
-	function loadDraft() {
+	async function loadDraft() {
 		const key = getDraftKey();
 		if (!key) return '';
 
-		const draft = GM_getValue(key, '');
+		const draft = await getStorageValue(key, '');
 		if (draft) {
 			console.log('📂 Draft loaded for chat:', getDraftKey());
 		}
 		return draft;
 	}
 
-	function clearDraft() {
+	async function clearDraft() {
 		const key = getDraftKey();
 		if (key) {
-			GM_deleteValue(key);
+			await deleteStorageValue(key);
 			console.log('🗑️ Draft cleared for chat:', getDraftKey());
 		}
 	}
 
 	//Actual replacement
-	function replaceProseMirror() {
+	async function replaceProseMirror() {
 		const proseMirrorDiv = document.querySelector('.ProseMirror');
 		if (!proseMirrorDiv || processedProseMirrors.has(proseMirrorDiv)) {
 			return;
@@ -155,7 +209,7 @@
 
 
 		// Auto-resize function
-		function autoResize() {
+		async function autoResize() {
 			// Reset height to measure scrollHeight accurately
 			simpleTextarea.style.height = 'auto';
 
@@ -175,13 +229,13 @@
 		}
 
 		// Add auto-resize to input events
-		simpleTextarea.addEventListener('input', () => {
-			saveDraft(simpleTextarea.value);
-			autoResize();
+		simpleTextarea.addEventListener('input', async () => {
+			await saveDraft(simpleTextarea.value);
+			await autoResize();
 		});
 
 		// Load existing draft
-		const existingDraft = loadDraft();
+		const existingDraft = await loadDraft();
 		if (existingDraft) {
 			simpleTextarea.value = existingDraft;
 		}
@@ -356,7 +410,7 @@
 	}
 
 	// Separate polling for each component
-	function checkAndMaintain() {
+	async function checkAndMaintain() {
 		// Only enable performance mode if current conversation is in the long conversations set
 		if (isLongConversation() || (messageCountThreshold <= 0 && unsafeWindow.location.pathname.indexOf("new") != -1)) {
 			const proseMirrorExists = !!document.querySelector('.ProseMirror');
@@ -364,7 +418,7 @@
 			const ourButtonExists = !!document.querySelector('.claude-custom-submit');
 
 			if (proseMirrorExists && !ourTextareaExists) {
-				replaceProseMirror();
+				await replaceProseMirror();
 			}
 
 			if (!ourButtonExists) {
@@ -410,9 +464,9 @@
 						args[1].body = JSON.stringify(bodyData);
 
 						// Clear our textarea after successful injection
-						setTimeout(() => {
+						setTimeout(async () => {
 							currentTextarea.value = '';
-							clearDraft();
+							await clearDraft();
 						}, 100);
 					} catch (e) {
 						console.error('❌ Failed to modify request:', e);

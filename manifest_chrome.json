@@ -1,0 +1,16 @@
+{
+	"manifest_version": 3,
+	"name": "Claude Toolbox",
+	"version": "1.0",
+	"description": "Collection of enhancement scripts for Claude.ai",
+	"permissions": [
+		"scripting",
+		"storage"
+	],
+	"host_permissions": [
+		"https://claude.ai/*"
+	],
+	"background": {
+		"service_worker": "background.js"
+	}
+}
