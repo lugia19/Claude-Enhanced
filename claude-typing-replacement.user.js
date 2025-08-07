@@ -20,7 +20,7 @@
 	let currentTextarea = null;
 	let draftSaveTimer;
 	let draftDebounce = 300; // 0.3 seconds debounce for draft saving
-	const messageCountThreshold = 0; // Threshold for long conversations
+	const messageCountThreshold = 50; // Threshold for long conversations
 	const longConversations = new Set();
 
 	document.addEventListener('keydown', (e) => {
