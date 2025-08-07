@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude typing lag fix
 // @namespace    https://lugia19.com
-// @version      1.2.6
+// @version      1.3.0
 // @description  Fix typing lag in long claude chats by replacing the text entry field.
 // @author       lugia19
 // @match        https://claude.ai/*
@@ -20,7 +20,7 @@
 	let currentTextarea = null;
 	let draftSaveTimer;
 	let draftDebounce = 300; // 0.3 seconds debounce for draft saving
-	const messageCountThreshold = 50; // Threshold for long conversations
+	const messageCountThreshold = 0; // Threshold for long conversations
 	const longConversations = new Set();
 
 	document.addEventListener('keydown', (e) => {
@@ -371,11 +371,55 @@
 		}
 	}
 
-	// Monkey patch fetch to monitor conversation updates
 	// Monkey patch fetch
 	const originalFetch = unsafeWindow.fetch;
 	unsafeWindow.fetch = function (...args) {
 		const url = args[0];
+
+		// Intercept completion calls
+		if (typeof url === 'string' && url.includes('/completion')) {
+			console.log('🎯 Intercepting completion call');
+
+			// ONLY inject if our textarea is focused AND has content
+			if (currentTextarea &&
+				currentTextarea.value.trim() &&
+				document.activeElement === currentTextarea) {
+
+				let savedText = currentTextarea.value.trim();
+				savedText = savedText.replace(/```(\w+)\n/g, '```\n'); // Normalize code block start
+				console.log('💉 Textarea is focused, injecting our text:', savedText);
+
+				// Parse and modify the body
+				if (args[1] && args[1].body) {
+					try {
+						const bodyText = args[1].body;
+						const bodyData = JSON.parse(bodyText);
+
+						// Just inject the plain text - no HTML formatting needed!
+						if (bodyData.prompt !== undefined) {
+							bodyData.prompt = savedText;
+						} else if (bodyData.text !== undefined) {
+							bodyData.text = savedText;
+						} else if (bodyData.content !== undefined) {
+							bodyData.content = savedText;
+						}
+
+						console.log('📦 Modified body with plain text');
+						args[1].body = JSON.stringify(bodyData);
+
+						// Clear our textarea after successful injection
+						setTimeout(() => {
+							currentTextarea.value = '';
+							clearDraft();
+						}, 100);
+					} catch (e) {
+						console.error('❌ Failed to modify request:', e);
+					}
+				}
+			} else {
+				console.log('⏭️ Textarea not focused or empty, skipping injection');
+			}
+		}
 
 		if (typeof url === 'string' && url.includes('/chat_conversations/') && url.includes('tree=True')) {
 			console.log('🔍 Intercepted tree=True call, making tree=False call');
