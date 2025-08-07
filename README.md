@@ -1,3 +1,11 @@
+# Claude Toolbox Extension
+
+Available on the Desktop Client using [Claude-WebExt-Patcher](https://github.com/lugia19/claude-webext-patcher)
+
+I'll be publishing it to the Chrome/Firefox stores once I've added some more features to it.
+
+Right now it basically just loads the userscripts you can already get on greasyfork.
+
 # Claude Fork Button
 
 ![fork_button](https://github.com/user-attachments/assets/a7e7a82f-9a8d-4cef-b5f6-a9bb9f5decdc)
