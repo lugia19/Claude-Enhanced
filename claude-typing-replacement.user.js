@@ -21,7 +21,6 @@
 	let draftSaveTimer;
 	let draftDebounce = 300; // 0.3 seconds debounce for draft saving
 	const messageCountThreshold = 50; // Threshold for long conversations
-	const longConversations = new Set();
 
 	document.addEventListener('keydown', (e) => {
 		// Blacklist: elements where typing SHOULD work normally
@@ -350,13 +349,16 @@
 		}
 	}
 
+	function isLongConversation() {
+		const userMessages = document.querySelectorAll('.font-user-message');
+		const estimatedTotal = userMessages.length * 2;
+		return estimatedTotal > messageCountThreshold;
+	}
+
 	// Separate polling for each component
 	function checkAndMaintain() {
-		const currentUrlMatch = unsafeWindow.location.pathname.match(/\/chat\/([a-f0-9-]+)/);
-		const currentConvId = currentUrlMatch ? currentUrlMatch[1] : null;
-
 		// Only enable performance mode if current conversation is in the long conversations set
-		if ((currentConvId && longConversations.has(currentConvId)) || (messageCountThreshold <= 0 && unsafeWindow.location.pathname.indexOf("new") != -1)) {
+		if (isLongConversation() || (messageCountThreshold <= 0 && unsafeWindow.location.pathname.indexOf("new") != -1)) {
 			const proseMirrorExists = !!document.querySelector('.ProseMirror');
 			const ourTextareaExists = !!document.querySelector('.claude-simple-input');
 			const ourButtonExists = !!document.querySelector('.claude-custom-submit');
@@ -421,40 +423,9 @@
 			}
 		}
 
-		if (typeof url === 'string' && url.includes('/chat_conversations/') && url.includes('tree=True')) {
-			console.log('🔍 Intercepted tree=True call, making tree=False call');
-
-			// Extract conversation ID
-			const conversationIdMatch = url.match(/chat_conversations\/([a-f0-9-]+)/);
-			const fetchedConvId = conversationIdMatch ? conversationIdMatch[1] : null;
-
-			if (fetchedConvId) {
-				// Make our own call with tree=False to get visible message count
-				const visibleMessagesUrl = url.replace('tree=True', 'tree=False');
-
-				originalFetch(visibleMessagesUrl, args[1])
-					.then(response => response.json())
-					.then(data => {
-						const visibleMessageCount = data.chat_messages?.length || 0;
-						console.log(`📊 Conversation ${fetchedConvId} has ${visibleMessageCount} visible messages`);
-
-						if (visibleMessageCount > messageCountThreshold) {
-							longConversations.add(fetchedConvId);
-							console.log('📝 Added to long conversations set (based on visible messages)');
-						} else {
-							longConversations.delete(fetchedConvId);
-							console.log('📝 Removed from long conversations set');
-						}
-					})
-					.catch(err => {
-						console.log('❌ Failed to fetch visible messages:', err);
-					});
-			}
-		}
-
 		return originalFetch.apply(this, args);
 	};
 	// Start
-	setInterval(checkAndMaintain, 100);
+	setInterval(checkAndMaintain, 500);
 
 })();
