@@ -4,21 +4,38 @@
 	"version": "1.0",
 	"description": "Collection of enhancement scripts for Claude.ai",
 	"permissions": [
-		"scripting",
 		"storage"
 	],
 	"host_permissions": [
 		"https://claude.ai/*"
 	],
-	"background": {
-		"scripts": [
-			"background.js"
-		]
-	},
+	"content_scripts": [
+		{
+			"matches": [
+				"https://claude.ai/*"
+			],
+			"js": [
+				"content-bridge.js"
+			],
+			"run_at": "document_start"
+		},
+		{
+			"matches": [
+				"https://claude.ai/*"
+			],
+			"js": [
+				"userscripts/claude-exporter.user.js",
+				"userscripts/claude-typing-replacement.user.js",
+				"userscripts/claude-forking.user.js"
+			],
+			"world": "MAIN",
+			"run_at": "document_idle"
+		}
+	],
 	"browser_specific_settings": {
 		"gecko": {
 			"id": "claude-toolbox@lugia19.com",
-			"strict_min_version": "109.0"
+			"strict_min_version": "128.0"
 		}
 	}
 }
