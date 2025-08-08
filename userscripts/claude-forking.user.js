@@ -73,6 +73,7 @@
 			<h3 class="text-lg font-semibold mb-4 text-text-100">Choose Model for Fork</h3>
 			<select class="w-full p-2 rounded mb-4 bg-bg-200 text-text-100 border border-border-300">
 			  <option value="claude-sonnet-4-20250514">Sonnet 4</option>
+			  <option value="claude-opus-4-1-20250805">Opus 4.1</option>
 			  <option value="claude-opus-4-20250514">Opus 4</option>
 			  <option value="claude-3-7-sonnet-20250219">Sonnet 3.7</option>
 			  <option value="claude-3-opus-20240229">Opus 3</option>
