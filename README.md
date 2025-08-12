@@ -6,6 +6,8 @@ I'll be publishing it to the Chrome/Firefox stores once I've added some more fea
 
 Right now it basically just loads the userscripts you can already get on greasyfork.
 
+**NOTE:** Most of my userscripts rely in some form on fetch monkeypatching, which **Greasemonkey** does not allow. Use something else.
+
 # Claude Fork Button
 
 ![fork_button](https://github.com/user-attachments/assets/a7e7a82f-9a8d-4cef-b5f6-a9bb9f5decdc)
