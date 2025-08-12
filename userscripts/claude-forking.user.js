@@ -125,33 +125,19 @@
 
 
 	function findMessageControls(messageElement) {
-		if (messageElement.classList.contains('font-user-message')) {
-			const group = messageElement.closest('.group');
-			const buttons = group?.querySelectorAll('button');
-			if (!buttons) return;
-			const editButton = Array.from(buttons).find(button =>
-				button.textContent.includes('Edit')
-			);
-			return editButton?.closest('.justify-between');
-		}
-
-		if (messageElement.classList.contains('font-claude-message')) {
-			const group = messageElement.closest('.group');
-			const buttons = group?.querySelectorAll('button');
-			const retryButton = Array.from(buttons).find(button =>
-				button.textContent.includes('Retry')
-			);
-			return retryButton?.closest('.justify-between');
-		}
-
-		return null;
+		const group = messageElement.closest('.group');
+		const buttons = group?.querySelectorAll('button');
+		const retryButton = Array.from(buttons).find(button =>
+			button.textContent.includes('Retry')
+		);
+		return retryButton?.closest('.justify-between');
 	}
 
 	function addBranchButtons() {
 		if (isProcessing) return;
 		try {
 			isProcessing = true;
-			const messages = document.querySelectorAll('.font-claude-message');
+			const messages = document.querySelectorAll('.font-claude-response');
 			messages.forEach((message) => {
 				const controls = findMessageControls(message);
 				if (controls && !controls.querySelector('.branch-button')) {

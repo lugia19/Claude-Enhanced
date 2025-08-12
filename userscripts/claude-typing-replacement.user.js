@@ -404,7 +404,7 @@
 	}
 
 	function isLongConversation() {
-		const userMessages = document.querySelectorAll('.font-user-message');
+		const userMessages = document.querySelectorAll('[data-testid="user-message"]')
 		const estimatedTotal = userMessages.length * 2;
 		return estimatedTotal > messageCountThreshold;
 	}
