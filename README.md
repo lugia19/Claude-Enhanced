@@ -1,6 +1,6 @@
 # Claude Toolbox Extension
 
-Available on the Desktop Client using [Claude-WebExt-Patcher](https://github.com/lugia19/claude-webext-patcher)
+Available on the Desktop Client using [Claude-WebExtension-Launcher](https://github.com/lugia19/Claude-WebExtension-Launcher)
 
 I'll be publishing it to the Chrome/Firefox stores once I've added some more features to it.
 
