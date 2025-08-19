@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude typing lag fix
 // @namespace    https://lugia19.com
-// @version      1.3.0
+// @version      1.3.1
 // @description  Fix typing lag in long claude chats by replacing the text entry field.
 // @author       lugia19
 // @match        https://claude.ai/*
@@ -16,7 +16,7 @@
 (function () {
 	'use strict';
 	// ======== POLYGLOT SETUP ========
-	if (typeof unsafeWindow === 'undefined') var unsafeWindow = window;
+	if (typeof unsafeWindow === 'undefined') unsafeWindow = window;	//Running as userscript
 	let setStorageValue, getStorageValue, deleteStorageValue;
 
 	if (typeof GM_setValue !== 'undefined') {

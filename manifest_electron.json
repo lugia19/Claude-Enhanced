@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
 	"name": "Claude Toolbox",
-	"version": "1.0",
+	"version": "1.1",
 	"description": "Collection of enhancement scripts for Claude.ai",
 	"permissions": [
 		"storage"

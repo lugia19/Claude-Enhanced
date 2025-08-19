@@ -13,7 +13,7 @@
 (function () {
 	'use strict';
 	// ======== POLYGLOT SETUP ========
-	if (typeof unsafeWindow === 'undefined') var unsafeWindow = window;
+	if (typeof unsafeWindow === 'undefined') unsafeWindow = window;
 
 	let setStorageValue, getStorageValue, deleteStorageValue;
 

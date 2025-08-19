@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude Fork Conversation
 // @namespace    https://lugia19.com
-// @version      0.5.3
+// @version      0.5.5
 // @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
@@ -127,6 +127,7 @@
 	function findMessageControls(messageElement) {
 		const group = messageElement.closest('.group');
 		const buttons = group?.querySelectorAll('button');
+		if (!buttons) return null;
 		const retryButton = Array.from(buttons).find(button =>
 			button.textContent.includes('Retry')
 		);
