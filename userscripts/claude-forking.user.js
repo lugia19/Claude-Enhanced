@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude Fork Conversation
 // @namespace    https://lugia19.com
-// @version      0.5.5
+// @version      0.6.0
 // @description  Adds forking functionality to claude.ai
 // @match        https://claude.ai/*
 // @grant        none
@@ -18,18 +18,90 @@
 	//#region UI elements creation
 	function createBranchButton() {
 		const button = document.createElement('button');
-		button.className = 'branch-button flex flex-row items-center gap-1 rounded-md p-1 py-0.5 text-xs transition-opacity delay-100 hover:bg-bg-200 group/button';
+		button.className = `inline-flex
+  items-center
+  justify-center
+  relative
+  shrink-0
+  can-focus
+  select-none
+  disabled:pointer-events-none
+  disabled:opacity-50
+  disabled:shadow-none
+  disabled:drop-shadow-none text-text-300
+          border-transparent
+          transition
+          font-ui
+          tracking-tight
+          duration-300
+          ease-[cubic-bezier(0.165,0.85,0.45,1)]
+          hover:bg-bg-300
+          aria-checked:bg-bg-400
+          aria-expanded:bg-bg-400
+          hover:text-text-100
+          aria-pressed:text-text-100
+          aria-checked:text-text-100
+          aria-expanded:text-text-100 h-8 w-8 rounded-md active:scale-95 select-auto`;
+
+		button.type = 'button';
+		button.setAttribute('data-state', 'closed');
+		button.setAttribute('aria-label', 'Fork from here');
 
 		button.innerHTML = `
-			<svg xmlns="http://www.w3.org/2000/svg" width="1.35em" height="1.35em" fill="currentColor" viewBox="0 0 22 22">
-				<path d="M7 5C7 3.89543 7.89543 3 9 3C10.1046 3 11 3.89543 11 5C11 5.74028 10.5978 6.38663 10 6.73244V14.0396H11.7915C12.8961 14.0396 13.7915 13.1441 13.7915 12.0396V10.7838C13.1823 10.4411 12.7708 9.78837 12.7708 9.03955C12.7708 7.93498 13.6662 7.03955 14.7708 7.03955C15.8753 7.03955 16.7708 7.93498 16.7708 9.03955C16.7708 9.77123 16.3778 10.4111 15.7915 10.7598V12.0396C15.7915 14.2487 14.0006 16.0396 11.7915 16.0396H10V17.2676C10.5978 17.6134 11 18.2597 11 19C11 20.1046 10.1046 21 9 21C7.89543 21 7 20.1046 7 19C7 18.2597 7.4022 17.6134 8 17.2676V6.73244C7.4022 6.38663 7 5.74028 7 5Z"/>
-			</svg>
-			<span>Fork</span>
-		`;
+        <div class="flex items-center justify-center" style="width: 16px; height: 16px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 22 22" class="shrink-0" aria-hidden="true">
+                <path d="M7 5C7 3.89543 7.89543 3 9 3C10.1046 3 11 3.89543 11 5C11 5.74028 10.5978 6.38663 10 6.73244V14.0396H11.7915C12.8961 14.0396 13.7915 13.1441 13.7915 12.0396V10.7838C13.1823 10.4411 12.7708 9.78837 12.7708 9.03955C12.7708 7.93498 13.6662 7.03955 14.7708 7.03955C15.8753 7.03955 16.7708 7.93498 16.7708 9.03955C16.7708 9.77123 16.3778 10.4111 15.7915 10.7598V12.0396C15.7915 14.2487 14.0006 16.0396 11.7915 16.0396H10V17.2676C10.5978 17.6134 11 18.2597 11 19C11 20.1046 10.1046 21 9 21C7.89543 21 7 20.1046 7 19C7 18.2597 7.4022 17.6134 8 17.2676V6.73244C7.4022 6.38663 7 5.74028 7 5Z"/>
+            </svg>
+        </div>
+    `;
+
+		// Create tooltip wrapper
+		const tooltipWrapper = document.createElement('div');
+		tooltipWrapper.setAttribute('data-radix-popper-content-wrapper', '');
+		tooltipWrapper.style.cssText = `
+        position: fixed;
+        left: 0px;
+        top: 0px;
+        min-width: max-content;
+        --radix-popper-transform-origin: 50% 0px;
+        z-index: 50;
+        display: none;
+        pointer-events: none;
+    `;
+
+		// Add tooltip content
+		tooltipWrapper.innerHTML = `
+        <div data-side="bottom" data-align="center" data-state="delayed-open" 
+            class="px-2 py-1 text-xs font-normal font-ui leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words z-tooltip max-w-[13rem]">
+            Fork from here
+            <span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
+                Fork from here
+            </span>
+        </div>
+    `;
+
+		// Add hover events
+		button.addEventListener('mouseenter', () => {
+			tooltipWrapper.style.display = 'block';
+			const rect = button.getBoundingClientRect();
+			const tooltipRect = tooltipWrapper.getBoundingClientRect();
+			const centerX = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+			tooltipWrapper.style.transform = `translate(${centerX}px, ${rect.bottom + 5}px)`;
+		});
+
+		button.addEventListener('mouseleave', () => {
+			tooltipWrapper.style.display = 'none';
+		});
+
+		// Add tooltip to document body
+		document.body.appendChild(tooltipWrapper);
 
 		button.onclick = async (e) => {
 			e.preventDefault();
 			e.stopPropagation();
+
+			// Hide tooltip when clicked
+			tooltipWrapper.style.display = 'none';
 
 			const modal = await createModal();
 			document.body.appendChild(modal);
@@ -39,12 +111,10 @@
 				modal.remove();
 			};
 
-			// And in our modal click handler:
 			modal.querySelector('#confirmFork').onclick = async () => {
 				const model = modal.querySelector('select').value;
 				const useSummary = modal.querySelector('#summaryMode').checked;
 
-				// Disable the button to prevent multiple clicks
 				const confirmBtn = modal.querySelector('#confirmFork');
 				confirmBtn.disabled = true;
 				confirmBtn.textContent = 'Processing...';
@@ -53,12 +123,18 @@
 				modal.remove();
 			};
 
-			// Click outside to cancel
 			modal.onclick = (e) => {
 				if (e.target === modal) {
 					modal.remove();
 				}
 			};
+		};
+
+		// Clean up tooltip when button is removed
+		const originalRemove = button.remove.bind(button);
+		button.remove = () => {
+			tooltipWrapper.remove();
+			originalRemove();
 		};
 
 		return button;
@@ -141,15 +217,17 @@
 			const messages = document.querySelectorAll('.font-claude-response');
 			messages.forEach((message) => {
 				const controls = findMessageControls(message);
-				if (controls && !controls.querySelector('.branch-button')) {
-					const container = document.createElement('div');
-					container.className = 'flex items-center gap-0.5';
-					const divider = document.createElement('div');
-					divider.className = 'w-px h-4/5 self-center bg-border-300 mr-0.5';
+				if (controls && !controls.querySelector('[aria-label="Fork conversation"]')) {
 					const branchBtn = createBranchButton();
-					container.appendChild(branchBtn);
-					container.appendChild(divider);
-					controls.insertBefore(container, controls.firstChild);
+					branchBtn.setAttribute('aria-label', 'Fork conversation');
+
+					// Insert the button directly without container or separator
+					const copyButton = controls.querySelector('[data-testid="action-bar-copy"]');
+					if (copyButton) {
+						controls.insertBefore(branchBtn, copyButton);
+					} else {
+						controls.insertBefore(branchBtn, controls.firstChild);
+					}
 				}
 			});
 		} catch (error) {
