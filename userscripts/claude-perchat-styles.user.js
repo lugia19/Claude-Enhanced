@@ -246,9 +246,7 @@
 			};
 
 			modal.querySelector('#confirmStyle').onclick = async () => {
-				console.log("Style got applied.")
 				const selectedUuid = select.value;
-				console.log("Selected:", select);
 				if (selectedUuid === 'none') {
 					// Clear the style for this conversation
 					await deleteStorageValue(`style_${conversationId}`);
@@ -360,31 +358,23 @@
 		}
 
 		// Check if this is a completion or retry_completion request
-		console.log('🔍 Fetch request URL:', url);
 		if (url && (url.includes('/completion') || url.includes('/retry_completion')) && config?.body) {
-			console.log('🎯 Intercepted completion request:', url);
 
 			const conversationId = getConversationId();
-			console.log('📝 Conversation ID:', conversationId);
 
 			if (conversationId) {
 				const customStyle = await getStorageValue(`style_${conversationId}`, null);
-				console.log('💾 Stored style for this chat:', customStyle);
 
 				try {
 					const bodyJSON = JSON.parse(config.body);
-					console.log('📤 Original personalized_styles:', bodyJSON.personalized_styles);
 
 					if (customStyle && customStyle.type !== 'none') {
 						// Replace with custom style
 						bodyJSON.personalized_styles = [customStyle];
-						console.log('✅ Replaced with custom style:', bodyJSON.personalized_styles);
 					} else if (!customStyle) {
-						console.log('⏭️ No override - using default');
 					} else {
 						// "Use current" selected - send empty array
 						bodyJSON.personalized_styles = [];
-						console.log('🚫 Cleared styles (use current)');
 					}
 
 					config.body = JSON.stringify(bodyJSON);
