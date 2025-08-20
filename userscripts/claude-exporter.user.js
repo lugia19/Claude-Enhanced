@@ -102,7 +102,7 @@
 		// Add tooltip content
 		tooltipWrapper.innerHTML = `
 			<div data-side="bottom" data-align="center" data-state="delayed-open" 
-				class="px-2 py-1 text-xs font-medium font-sans leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words z-tooltip max-w-[13rem]">
+				class="px-2 py-1 text-xs font-normal font-ui leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words z-tooltip max-w-[13rem]">
 				Export chatlog
 				<span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
 					Export chatlog

@@ -165,7 +165,7 @@
 
 		tooltipWrapper.innerHTML = `
 			<div data-side="bottom" data-align="center" data-state="delayed-open" 
-				class="px-2 py-1 text-xs font-medium font-sans leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words z-tooltip max-w-[13rem]">
+				class="px-2 py-1 text-xs font-normal font-ui leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words z-tooltip max-w-[13rem]">
 				<span class="tooltip-text">Chat style: None</span>
 			</div>
 		`;
