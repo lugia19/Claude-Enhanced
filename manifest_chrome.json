@@ -7,7 +7,8 @@
 		"storage"
 	],
 	"host_permissions": [
-		"https://claude.ai/*"
+		"https://claude.ai/*",
+		"https://api.groq.com/*"
 	],
 	"content_scripts": [
 		{
@@ -31,5 +32,8 @@
 			"world": "MAIN",
 			"run_at": "document_idle"
 		}
-	]
+	],
+	"background": {
+		"service_worker": "background.js"
+	},
 }
