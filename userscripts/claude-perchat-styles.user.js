@@ -2,7 +2,7 @@
 // @name         Claude Per-Chat Styles
 // @namespace    https://lugia19.com
 // @match        https://claude.ai/*
-// @version      1.0.1
+// @version      1.0.2
 // @author       lugia19
 // @license      MIT
 // @description  Allows setting styles on a per-chat basis for Claude.ai
@@ -388,17 +388,43 @@
 	};
 
 	// ======== INITIALIZATION ========
-	async function tryAddButton() {
-		const container = document.querySelector('.right-3.flex.gap-2');
-		if (!container || container.querySelector('.style-selector-button') || container.querySelectorAll('button').length === 0) {
-			return;
+	function tryAddButton() {
+		// Configuration for this specific script
+		const buttonCreationFunction = createStyleButton;
+		const buttonClass = 'style-selector-button';
+
+		const BUTTON_PRIORITY = [
+			'style-selector-button',
+			'stt-settings-button',
+			'export-button'
+		];
+
+		// Generic logic from here on
+		const container = document.querySelector(".right-3.flex.gap-2");
+		if (!container || container.querySelector('.' + buttonClass) || container.querySelectorAll("button").length == 0) {
+			return; // Either container not found or button already exists
 		}
 
-		const styleButton = createStyleButton();
-		container.insertBefore(styleButton, container.firstChild);
+		const button = buttonCreationFunction();
+		button.classList.add(buttonClass);
 
-		// Update appearance based on current conversation
-		await updateButtonAppearance();
+		const myIndex = BUTTON_PRIORITY.indexOf(buttonClass);
+
+		// Look for the button that should come right before us
+		for (let i = myIndex - 1; i >= 0; i--) {
+			const previousButton = container.querySelector('.' + BUTTON_PRIORITY[i]);
+			if (previousButton) {
+				if (previousButton.nextSibling) {
+					container.insertBefore(button, previousButton.nextSibling);
+				} else {
+					container.appendChild(button);
+				}
+				return;
+			}
+		}
+
+		// No previous buttons found, we go first
+		container.insertBefore(button, container.firstChild);
 	}
 
 	function initialize() {

@@ -2,7 +2,7 @@
 // @name         Claude Chat Exporter
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      2.1.3
+// @version      2.1.4
 // @author       lugia19
 // @license      GPLv3
 // @description  Allows exporting chat conversations from claude.ai.
@@ -363,13 +363,42 @@
 	}
 
 	function tryAddButton() {
+		// Configuration for this specific script
+		const buttonCreationFunction = createExportButton;
+		const buttonClass = 'export-button';
+
+		const BUTTON_PRIORITY = [
+			'style-selector-button',
+			'stt-settings-button',
+			'export-button'
+		];
+
+		// Generic logic from here on
 		const container = document.querySelector(".right-3.flex.gap-2");
-		if (!container || container.querySelector('.export-button') || container.querySelectorAll("button").length == 0) {
+		if (!container || container.querySelector('.' + buttonClass) || container.querySelectorAll("button").length == 0) {
 			return; // Either container not found or button already exists
 		}
-		const exportButton = createExportButton();
-		exportButton.classList.add('export-button'); // Add class to check for existence
-		container.insertBefore(exportButton, container.firstChild);
+
+		const button = buttonCreationFunction();
+		button.classList.add(buttonClass);
+
+		const myIndex = BUTTON_PRIORITY.indexOf(buttonClass);
+
+		// Look for the button that should come right before us
+		for (let i = myIndex - 1; i >= 0; i--) {
+			const previousButton = container.querySelector('.' + BUTTON_PRIORITY[i]);
+			if (previousButton) {
+				if (previousButton.nextSibling) {
+					container.insertBefore(button, previousButton.nextSibling);
+				} else {
+					container.appendChild(button);
+				}
+				return;
+			}
+		}
+
+		// No previous buttons found, we go first
+		container.insertBefore(button, container.firstChild);
 	}
 
 	initialize();

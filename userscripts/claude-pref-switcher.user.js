@@ -2,13 +2,14 @@
 // @name         Claude Preferences Switcher
 // @namespace    lugia19.com
 // @match        https://claude.ai/*
-// @version      1.0.0
+// @version      0.2.0
 // @author       lugia19
 // @license      GPLv3
 // @description  Manage multiple preference presets for Claude.ai
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
@@ -75,8 +76,16 @@
 		const originalFetch = unsafeWindow.fetch;
 
 		unsafeWindow.fetch = async function (...args) {
-			const [url, options = {}] = args;
-
+			const [input, options, config] = args;
+			let url = undefined
+			if (input instanceof URL) {
+				url = input.href
+			} else if (typeof input === 'string') {
+				url = input
+			} else if (input instanceof Request) {
+				url = input.url
+			}
+			console.log('Intercepted fetch call:', url, options);
 			// Check if this is a PUT to the account_profile endpoint
 			if (typeof url === 'string' &&
 				url.includes('/api/account_profile') &&
@@ -159,23 +168,6 @@
 			lastModified: Date.now()
 		};
 		await setStorageValue('preference_presets', presets);
-	}
-
-	async function initializeExamplePresets() {
-		const presets = await getStorageValue('preference_presets', {});
-
-		// Only add examples if we don't have any presets yet (except None)
-		const hasNonDefaultPresets = Object.keys(presets).some(key => key !== 'None');
-
-		if (!hasNonDefaultPresets) {
-			console.log('Adding example presets for testing...');
-
-			await savePreset('Concise', 'Please be concise and direct in your responses. Avoid lengthy explanations unless specifically requested. Get straight to the point.');
-
-			await savePreset('Detailed', 'Please provide thorough and detailed explanations. Include relevant context, examples, and step-by-step breakdowns when applicable. Be comprehensive in your responses.');
-
-			console.log('Example presets added');
-		}
 	}
 
 	async function getCurrentPresetName() {
@@ -280,17 +272,6 @@
 			select.value = currentPresetName;
 		}
 	}
-
-
-
-	async function updateButtonText(button) {
-		const currentPreset = await getCurrentPresetName();
-		const textSpan = button.querySelector('.preset-button-text');
-		if (textSpan) {
-			textSpan.textContent = `Preset: ${currentPreset}`;
-		}
-	}
-
 
 	// ======== SIDEBAR INJECTION ========
 	async function findSidebarContainers() {
@@ -566,7 +547,7 @@
 	// New function to set preferences without the source param (triggers sidebar update)
 	async function setPreferencesWithoutSource(preferencesText) {
 		try {
-			const response = await fetch('https://claude.ai/api/account_profile', {
+			const response = await unsafeWindow.fetch('https://claude.ai/api/account_profile', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -626,9 +607,6 @@
 		// Set up fetch interceptor
 		setupFetchInterceptor();
 
-		//TODO: Remove this...
-		initializeExamplePresets();
-
 		// Try to inject immediately
 		tryInjectUI();
 		tryInjectSettingsUI();
@@ -650,8 +628,34 @@
 				}, 500);
 			}
 		}, 1000);
+
+		// Handle tab visibility changes for multi-tab sync
+		document.addEventListener('visibilitychange', async () => {
+			if (!document.hidden) {
+				console.log('Tab became visible, checking for preference changes...');
+
+				// Update sidebar dropdown if present
+				const sidebarSelect = document.querySelector('.preset-switcher-dropdown select');
+				if (sidebarSelect) {
+					const currentValue = sidebarSelect.value;
+					await updateDropdownOptions(sidebarSelect);
+					const newValue = sidebarSelect.value;
+
+					if (currentValue !== newValue) {
+						console.log(`Preset changed from "${currentValue}" to "${newValue}"`);
+					}
+				}
+
+				// Update settings UI if present
+				const settingsSelect = document.querySelector('.preset-manager-settings .preset-selector');
+				const settingsContent = document.querySelector('.preset-manager-settings .preset-content');
+				if (settingsSelect && settingsContent) {
+					await updatePresetSelector(settingsSelect, settingsContent);
+				}
+			}
+		});
 	}
 
-	// Start the script
-	initialize();
+	// Start the script, wait 5s to ensure the usage tracker itself is also loaded (if present ofc)
+	setTimeout(initialize, 5000);
 })();
