@@ -224,7 +224,7 @@
 					// Insert the button directly without container or separator
 					const copyButton = controls.querySelector('[data-testid="action-bar-copy"]');
 					if (copyButton) {
-						controls.insertBefore(branchBtn, copyButton);
+						controls.insertBefore(branchBtn, copyButton.parentElement);
 					} else {
 						controls.insertBefore(branchBtn, controls.firstChild);
 					}
