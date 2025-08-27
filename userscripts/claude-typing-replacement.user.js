@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude typing lag fix
 // @namespace    https://lugia19.com
-// @version      1.3.1
+// @version      1.3.2
 // @description  Fix typing lag in long claude chats by replacing the text entry field.
 // @author       lugia19
 // @match        https://claude.ai/*
@@ -160,15 +160,73 @@
 		}
 	}
 
-	//Actual replacement
+	// Add this helper function before replaceProseMirror
+	function extractTextFromProseMirror(proseMirrorDiv) {
+		// Handle different possible structures in ProseMirror
+		const paragraphs = proseMirrorDiv.querySelectorAll('p');
+		if (paragraphs.length > 0) {
+			return Array.from(paragraphs)
+				.map(p => p.textContent || '')
+				.join('\n')
+				.trim();
+		}
+
+		// Fallback to just getting all text content
+		return proseMirrorDiv.textContent?.trim() || '';
+	}
+
+	function monitorProseMirrorChanges(proseMirrorDiv) {
+		const observer = new MutationObserver((mutations) => {
+			// Check if ProseMirror now has content
+			const proseMirrorText = extractTextFromProseMirror(proseMirrorDiv);
+
+			if (proseMirrorText && currentTextarea) {
+				const textareaText = currentTextarea.value.trim();
+
+				// If ProseMirror has text but our textarea is empty (likely an error return)
+				if (!textareaText) {
+					console.log('🔄 Error detected - copying text back from ProseMirror.');
+					currentTextarea.value = proseMirrorText;
+
+					// Save as draft
+					saveDraft(proseMirrorText);
+
+					// Trigger resize
+					currentTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+
+					// Clear the ProseMirror again
+					setTimeout(() => {
+						proseMirrorDiv.innerHTML = '';
+						proseMirrorDiv.textContent = '';
+					}, 100);
+				}
+			}
+		});
+
+		// Observe changes to the ProseMirror div
+		observer.observe(proseMirrorDiv, {
+			childList: true,
+			subtree: true,
+			characterData: true
+		});
+
+		return observer;
+	}
+
 	async function replaceProseMirror() {
 		const proseMirrorDiv = document.querySelector('.ProseMirror');
 		if (!proseMirrorDiv || processedProseMirrors.has(proseMirrorDiv)) {
 			return;
 		}
 
-		console.log('📝 Replacing ProseMirror with textarea');
+		console.log('🔄 Replacing ProseMirror with textarea');
 		processedProseMirrors.add(proseMirrorDiv);
+
+		// Extract existing text from ProseMirror BEFORE clearing it
+		const existingProseMirrorText = extractTextFromProseMirror(proseMirrorDiv);
+		if (existingProseMirrorText) {
+			console.log('📋 Found existing text in ProseMirror:', existingProseMirrorText);
+		}
 
 		// Hide and clear original
 		proseMirrorDiv.innerHTML = '';
@@ -176,51 +234,44 @@
 		proseMirrorDiv.setAttribute('contenteditable', 'false');
 		proseMirrorDiv.setAttribute('tabindex', '-1');
 		proseMirrorDiv.style.cssText = `
-			opacity: 0 !important;
-			pointer-events: none !important;
-			position: absolute !important;
-			z-index: -1 !important;
-			height: 0 !important;
-			overflow: hidden !important;
-		`;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        position: absolute !important;
+        z-index: -1 !important;
+        height: 0 !important;
+        overflow: hidden !important;
+    `;
+
+		// Set up mutation observer AFTER hiding but BEFORE clearing
+		monitorProseMirrorChanges(proseMirrorDiv);
 
 		// Create textarea
-		// In the replaceProseMirror function, update the textarea creation:
-
 		const simpleTextarea = document.createElement('textarea');
 		simpleTextarea.className = 'claude-simple-input';
 		simpleTextarea.style.cssText = `
-			width: 100%;
-			min-height: 1.5rem;
-			max-height: none;
-			border: none;
-			outline: none;
-			resize: none;
-			overflow: hidden;
-			font-family: inherit;
-			font-size: inherit;
-			line-height: inherit;
-			padding: 0;
-			background: transparent;
-			color: inherit;
-		`;
-		simpleTextarea.placeholder = 'Write your prompt to Claude';
-
-
+        width: 100%;
+        min-height: 1.5rem;
+        max-height: none;
+        border: none;
+        outline: none;
+        resize: none;
+        overflow: hidden;
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        padding: 0;
+        background: transparent;
+        color: inherit;
+    `;
+		simpleTextarea.placeholder = 'Write your prompt to Claude (Lagfix active)...';
 
 		// Auto-resize function
 		async function autoResize() {
-			// Reset height to measure scrollHeight accurately
 			simpleTextarea.style.height = 'auto';
-
-			// Calculate new height
-			const newHeight = Math.max(24, simpleTextarea.scrollHeight); // 24px minimum (1.5rem)
-			const maxHeight = unsafeWindow.innerHeight * 0.4; // Max 40% of viewport height
-
-			// Apply the height
+			const newHeight = Math.max(24, simpleTextarea.scrollHeight);
+			const maxHeight = unsafeWindow.innerHeight * 0.4;
 			simpleTextarea.style.height = Math.min(newHeight, maxHeight) + 'px';
 
-			// If we hit max height, show scrollbar
 			if (newHeight > maxHeight) {
 				simpleTextarea.style.overflowY = 'auto';
 			} else {
@@ -234,10 +285,30 @@
 			await autoResize();
 		});
 
-		// Load existing draft
+		// Load text - use whichever is longer between ProseMirror text and draft
 		const existingDraft = await loadDraft();
-		if (existingDraft) {
-			simpleTextarea.value = existingDraft;
+		let initialText = '';
+
+		if (existingProseMirrorText && existingDraft) {
+			// Both exist - use the longer one
+			if (existingProseMirrorText.length > existingDraft.length) {
+				initialText = existingProseMirrorText;
+				console.log('📋 Using ProseMirror text (longer)');
+			} else {
+				initialText = existingDraft;
+				console.log('📂 Using draft text (longer)');
+			}
+		} else if (existingProseMirrorText) {
+			initialText = existingProseMirrorText;
+			console.log('📋 Using ProseMirror text (only source)');
+		} else if (existingDraft) {
+			initialText = existingDraft;
+			console.log('📂 Using draft text (only source)');
+		}
+
+		if (initialText) {
+			simpleTextarea.value = initialText;
+			await saveDraft(initialText);
 		}
 
 		// Initial resize
