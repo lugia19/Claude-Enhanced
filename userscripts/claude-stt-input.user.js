@@ -113,7 +113,7 @@
 	let audioChunks = [];
 	let audioStream = null;
 	let micButton = null;
-	let currentState = 'idle'; // idle, recording, review
+	let currentState = 'idle'; // idle, recording, loading
 
 	// ======== SETTINGS MANAGEMENT ========
 	async function showSettingsModal() {
@@ -249,9 +249,25 @@
 	function stopRecording() {
 		if (mediaRecorder && mediaRecorder.state !== 'inactive') {
 			mediaRecorder.stop();
-			mediaRecorder.onstop = () => {
-				currentState = 'review';
+			mediaRecorder.onstop = async () => {
+				currentState = 'loading';
 				updateMicButton();
+
+				try {
+					const transcription = await transcribeAudio();
+					const autoSend = await getStorageValue('stt_auto_send', false);
+					insertTextAndSend(transcription, autoSend);
+
+					audioChunks = [];
+					currentState = 'idle';
+					updateMicButton();
+				} catch (error) {
+					alert('Transcription failed. Please try again.');
+					console.error(error);
+					audioChunks = [];
+					currentState = 'idle';
+					updateMicButton();
+				}
 			};
 
 			if (audioStream) {
@@ -413,105 +429,45 @@
 		// Clear container
 		container.innerHTML = '';
 
+		// Create the button element
+		const button = document.createElement('button');
+		button.className = `inline-flex items-center justify-center relative shrink-0 
+			disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none 
+			disabled:drop-shadow-none text-white transition-colors h-8 w-8 rounded-lg active:scale-95`;
+		button.style.backgroundColor = '#2c84db';
+		button.style.cssText += 'background-color: #2c84db !important;';
+
+		button.onmouseover = () => button.style.backgroundColor = '#2573c4';
+		button.onmouseout = () => button.style.backgroundColor = '#2c84db';
+
 		switch (currentState) {
 			case 'idle':
-			case 'recording':
-			case 'loading':
-				// Single button for these states
-				const button = document.createElement('button');
-				button.className = `inline-flex items-center justify-center relative shrink-0 
-                disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none 
-                disabled:drop-shadow-none text-white transition-colors h-8 w-8 rounded-lg active:scale-95`;
-				button.style.backgroundColor = '#2c84db';
-				button.style.cssText += 'background-color: #2c84db !important;';
-
-				button.onmouseover = () => button.style.backgroundColor = '#2573c4';
-				button.onmouseout = () => button.style.backgroundColor = '#2c84db';
-
-				if (currentState === 'idle') {
-					button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
-						<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-						<line x1="12" y1="19" x2="12" y2="23"></line>
-						<line x1="8" y1="23" x2="16" y2="23"></line>
-					</svg>`;
-					button.onclick = startRecording;
-				} else if (currentState === 'recording') {
-					button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="6" y="6" width="12" height="12" rx="2"></rect>
-                </svg>`;
-					button.onclick = stopRecording;
-				} else if (currentState === 'loading') {
-					button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin">
-                    <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-                </svg>`;
-					button.disabled = true;
-				}
-
-				container.appendChild(button);
+				button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+					<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+					<line x1="12" y1="19" x2="12" y2="23"></line>
+					<line x1="8" y1="23" x2="16" y2="23"></line>
+				</svg>`;
+				button.onclick = startRecording;
 				break;
 
-			case 'review':
-				// Two separate buttons for review
-				const trashButton = document.createElement('button');
-				trashButton.className = `inline-flex items-center justify-center relative shrink-0 
-                disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none 
-                disabled:drop-shadow-none text-white transition-colors h-8 w-8 rounded-lg active:scale-95`;
-				trashButton.style.cssText = 'background-color: #ef4444 !important;';
+			case 'recording':
+				button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+					<rect x="6" y="6" width="12" height="12" rx="2"></rect>
+				</svg>`;
+				button.onclick = stopRecording;
+				break;
 
-				trashButton.onmouseover = () => trashButton.style.backgroundColor = '#dc2626 !important';
-				trashButton.onmouseout = () => trashButton.style.backgroundColor = '#ef4444 !important';
-
-				trashButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 6h18"></path>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-                <path d="M10 11v6"></path>
-                <path d="M14 11v6"></path>
-            </svg>`;
-				trashButton.onclick = () => {
-					audioChunks = [];
-					currentState = 'idle';
-					updateMicButton();
-				};
-
-				const sendButton = document.createElement('button');
-				sendButton.className = `inline-flex items-center justify-center relative shrink-0 
-                disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none 
-                disabled:drop-shadow-none text-white transition-colors h-8 w-8 rounded-lg active:scale-95`;
-				sendButton.style.backgroundColor = '#2c84db';
-				sendButton.style.cssText += 'background-color: #2c84db !important;';
-
-				sendButton.onmouseover = () => sendButton.style.backgroundColor = '#2573c4';
-				sendButton.onmouseout = () => sendButton.style.backgroundColor = '#2c84db';
-
-				// Using the airplane/send icon instead of arrow
-				sendButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 2L11 13"></path>
-                <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
-            </svg>`;
-				sendButton.onclick = async () => {
-					currentState = 'loading';
-					updateMicButton();
-					try {
-						const transcription = await transcribeAudio();
-						const autoSend = await getStorageValue('stt_auto_send', false);
-						insertTextAndSend(transcription, autoSend);
-
-						audioChunks = [];
-						currentState = 'idle';
-						updateMicButton();
-					} catch (error) {
-						alert('Transcription failed. Please try again.');
-						console.error(error);
-						currentState = 'idle';
-						updateMicButton();
-					}
-				};
-
-				container.appendChild(trashButton);
-				container.appendChild(sendButton);
+			case 'loading':
+				button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin">
+					<path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+				</svg>`;
+				button.disabled = true;
+				button.onclick = null;
 				break;
 		}
+
+		container.appendChild(button);
 	}
 
 	// ======== BUTTON INSERTION ========
