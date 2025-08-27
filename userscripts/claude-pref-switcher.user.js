@@ -85,7 +85,7 @@
 			} else if (input instanceof Request) {
 				url = input.url
 			}
-			console.log('Intercepted fetch call:', url, options);
+
 			// Check if this is a PUT to the account_profile endpoint
 			if (typeof url === 'string' &&
 				url.includes('/api/account_profile') &&
