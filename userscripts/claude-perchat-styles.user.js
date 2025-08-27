@@ -425,6 +425,8 @@
 
 		// No previous buttons found, we go first
 		container.insertBefore(button, container.firstChild);
+		// Update appearance based on current conversation
+		updateButtonAppearance();
 	}
 
 	function initialize() {
