@@ -10,6 +10,153 @@
 
 (function () {
 	'use strict';
+
+	//#region Style map and helper
+	// ======== STYLE MAP ========
+	const claudeStyleMap = {
+		// Icon buttons (top bar and message controls)
+		'claude-icon-btn': 'inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none text-text-200 border-transparent transition-colors font-styrene active:bg-bg-400 hover:bg-bg-500/40 hover:text-text-100 h-9 w-9 rounded-md active:scale-95',
+
+		// Modal backdrop
+		'claude-modal-backdrop': 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50',
+
+		// Modal content box
+		'claude-modal': 'bg-bg-100 rounded-lg p-6 shadow-xl max-w-md w-full mx-4 border border-border-300',
+
+		// Primary button (white action buttons)
+		'claude-btn-primary': 'inline-flex items-center justify-center px-4 py-2 font-base-bold bg-text-000 text-bg-000 rounded hover:bg-text-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-w-[5rem] h-9',
+
+		// Secondary button (cancel/neutral buttons)
+		'claude-btn-secondary': 'inline-flex items-center justify-center px-4 py-2 hover:bg-bg-500/40 rounded transition-colors min-w-[5rem] h-9 text-text-000 font-base-bold border-0.5 border-border-200',
+
+		// Select dropdown
+		'claude-select': 'w-full p-2 rounded bg-bg-200 text-text-100 border border-border-300 hover:border-border-200 cursor-pointer',
+
+		// Checkbox
+		'claude-checkbox': 'mr-2 rounded border-border-300 accent-accent-main-100',
+
+		// Text input
+		'claude-input': 'w-full p-2 rounded bg-bg-200 text-text-100 border border-border-300 hover:border-border-200',
+
+		// Tooltip wrapper (positioned absolutely)
+		'claude-tooltip': 'fixed left-0 top-0 min-w-max z-50 pointer-events-none',
+
+		// Tooltip content
+		'claude-tooltip-content': 'px-2 py-1 text-xs font-normal font-ui leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words max-w-[13rem]',
+
+		// Modal section headings
+		'claude-modal-heading': 'text-lg font-semibold mb-4 text-text-100',
+
+		// Modal section text/labels
+		'claude-modal-text': 'text-sm text-text-400',
+
+		// Form label
+		'claude-label': 'block text-sm font-medium text-text-200 mb-1',
+
+		// Radio/checkbox container
+		'claude-check-group': 'flex items-center text-text-100',
+
+		// Small/fine print text
+		'claude-text-sm': 'text-sm text-text-400 sm:text-[0.75rem]',
+
+		// Toggle switch container
+		'claude-toggle': 'group/switch relative select-none cursor-pointer inline-block',
+
+		// Hidden checkbox (screen reader only)
+		'claude-toggle-input': 'peer sr-only',
+
+		// Toggle track/background
+		'claude-toggle-track': 'border-border-300 rounded-full bg-bg-500 transition-colors peer-checked:bg-accent-secondary-100 peer-disabled:opacity-50',
+
+		// Toggle thumb/circle
+		'claude-toggle-thumb': 'absolute flex items-center justify-center rounded-full bg-white transition-transform group-hover/switch:opacity-80',
+	};
+
+	function applyClaudeStyling(element) {
+		// Apply to the element itself if it has claude- classes
+		const elementClasses = Array.from(element.classList || []);
+		elementClasses.forEach(className => {
+			if (className.startsWith('claude-') && claudeStyleMap[className]) {
+				element.classList.remove(className);
+				claudeStyleMap[className].split(' ').forEach(c => {
+					if (c) element.classList.add(c);
+				});
+			}
+		});
+
+		// Find and process all child elements with claude- classes
+		const elements = element.querySelectorAll('[class*="claude-"]');
+		elements.forEach(el => {
+			const classes = Array.from(el.classList);
+			classes.forEach(className => {
+				if (className.startsWith('claude-') && claudeStyleMap[className]) {
+					el.classList.remove(className);
+					claudeStyleMap[className].split(' ').forEach(c => {
+						if (c) el.classList.add(c);
+					});
+				}
+			});
+		});
+	}
+
+	function createClaudeToggle(labelText = '', checked = false, onChange = null) {
+		// Container for toggle + label
+		const container = document.createElement('div');
+		container.className = 'flex items-center gap-2';
+
+		// Toggle wrapper
+		const toggleWrapper = document.createElement('label');
+
+		const toggleContainer = document.createElement('div');
+		toggleContainer.className = 'group/switch relative select-none cursor-pointer inline-block';
+
+		const input = document.createElement('input');
+		input.type = 'checkbox';
+		input.className = 'peer sr-only';
+		input.role = 'switch';
+		input.checked = checked;
+		input.style.width = '36px';
+		input.style.height = '20px';
+
+		const track = document.createElement('div');
+		track.className = 'border-border-300 rounded-full bg-bg-500 transition-colors peer-checked:bg-accent-secondary-100 peer-disabled:opacity-50';
+		track.style.width = '36px';
+		track.style.height = '20px';
+
+		const thumb = document.createElement('div');
+		thumb.className = 'absolute flex items-center justify-center rounded-full bg-white transition-transform group-hover/switch:opacity-80';
+		thumb.style.width = '16px';
+		thumb.style.height = '16px';
+		thumb.style.left = '2px';
+		thumb.style.top = '2px';
+		thumb.style.transform = checked ? 'translateX(16px)' : 'translateX(0)';
+
+		input.addEventListener('change', (e) => {
+			thumb.style.transform = e.target.checked ? 'translateX(16px)' : 'translateX(0)';
+			if (onChange) onChange(e.target.checked);
+		});
+
+		toggleContainer.appendChild(input);
+		toggleContainer.appendChild(track);
+		toggleContainer.appendChild(thumb);
+		toggleWrapper.appendChild(toggleContainer);
+
+		container.appendChild(toggleWrapper);
+
+		// Add label text if provided
+		if (labelText) {
+			const label = document.createElement('span');
+			label.className = 'text-text-100 select-none cursor-pointer';
+			label.style.transform = 'translateY(-3px)'; // Slight upward adjustment
+			label.textContent = labelText;
+			label.onclick = () => input.click(); // Make label clickable
+			container.appendChild(label);
+		}
+
+		return { container, input, toggle: toggleContainer };
+	}
+	//#endregion
+
 	let pendingForkModel = null;
 	let includeAttachments = true;
 	let isProcessing = false;
@@ -18,31 +165,7 @@
 	//#region UI elements creation
 	function createBranchButton() {
 		const button = document.createElement('button');
-		button.className = `inline-flex
-  items-center
-  justify-center
-  relative
-  shrink-0
-  can-focus
-  select-none
-  disabled:pointer-events-none
-  disabled:opacity-50
-  disabled:shadow-none
-  disabled:drop-shadow-none text-text-300
-          border-transparent
-          transition
-          font-ui
-          tracking-tight
-          duration-300
-          ease-[cubic-bezier(0.165,0.85,0.45,1)]
-          hover:bg-bg-300
-          aria-checked:bg-bg-400
-          aria-expanded:bg-bg-400
-          hover:text-text-100
-          aria-pressed:text-text-100
-          aria-checked:text-text-100
-          aria-expanded:text-text-100 h-8 w-8 rounded-md active:scale-95 select-auto`;
-
+		button.className = 'claude-icon-btn h-8 w-8';
 		button.type = 'button';
 		button.setAttribute('data-state', 'closed');
 		button.setAttribute('aria-label', 'Fork from here');
@@ -57,28 +180,27 @@
 
 		// Create tooltip wrapper
 		const tooltipWrapper = document.createElement('div');
+		tooltipWrapper.className = 'claude-tooltip';
+		tooltipWrapper.style.display = 'none';
 		tooltipWrapper.setAttribute('data-radix-popper-content-wrapper', '');
-		tooltipWrapper.style.cssText = `
-        position: fixed;
-        left: 0px;
-        top: 0px;
-        min-width: max-content;
-        --radix-popper-transform-origin: 50% 0px;
-        z-index: 50;
-        display: none;
-        pointer-events: none;
-    `;
 
 		// Add tooltip content
-		tooltipWrapper.innerHTML = `
-        <div data-side="bottom" data-align="center" data-state="delayed-open" 
-            class="px-2 py-1 text-xs font-normal font-ui leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words z-tooltip max-w-[13rem]">
-            Fork from here
-            <span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
-                Fork from here
-            </span>
-        </div>
-    `;
+		const tooltipContent = document.createElement('div');
+		tooltipContent.className = 'claude-tooltip-content';
+		tooltipContent.setAttribute('data-side', 'bottom');
+		tooltipContent.setAttribute('data-align', 'center');
+		tooltipContent.setAttribute('data-state', 'delayed-open');
+		tooltipContent.innerHTML = `
+			Fork from here
+			<span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
+				Fork from here
+			</span>
+		`;
+		tooltipWrapper.appendChild(tooltipContent);
+
+		// Apply styles to button and tooltip
+		applyClaudeStyling(button);
+		applyClaudeStyling(tooltipWrapper);
 
 		// Add hover events
 		button.addEventListener('mouseenter', () => {
@@ -142,12 +264,12 @@
 
 	async function createModal() {
 		const modal = document.createElement('div');
-		modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+		modal.className = 'claude-modal-backdrop';
 
 		modal.innerHTML = `
-		  <div class="bg-bg-100 rounded-lg p-6 shadow-xl max-w-sm w-full mx-4 border border-border-300">
-			<h3 class="text-lg font-semibold mb-4 text-text-100">Choose Model for Fork</h3>
-			<select class="w-full p-2 rounded mb-4 bg-bg-200 text-text-100 border border-border-300">
+		  <div class="claude-modal">
+			<h3 class="claude-modal-heading">Choose Model for Fork</h3>
+			<select class="claude-select mb-4">
 			  <option value="claude-sonnet-4-20250514">Sonnet 4</option>
 			  <option value="claude-opus-4-1-20250805">Opus 4.1</option>
 			  <option value="claude-opus-4-20250514">Opus 4</option>
@@ -160,34 +282,39 @@
 			  <div class="flex items-center justify-between mb-3 p-2 bg-bg-200 rounded">
 				<span class="text-text-100 font-medium">Fork Type:</span>
 				<div class="flex items-center gap-4">
-				  <label class="flex items-center space-x-2">
+				  <label class="claude-check-group space-x-2">
 					<input type="radio" id="fullChatlog" name="forkType" value="full" checked class="accent-accent-main-100">
-					<span class="text-text-100">Full Chatlog</span>
+					<span>Full Chatlog</span>
 				  </label>
-				  <label class="flex items-center space-x-2">
+				  <label class="claude-check-group space-x-2">
 					<input type="radio" id="summaryMode" name="forkType" value="summary" class="accent-accent-main-100">
-					<span class="text-text-100">Summary</span>
+					<span>Summary</span>
 				  </label>
 				</div>
 			  </div>
 			
-			  <label class="flex items-center space-x-2">
-				<input type="checkbox" id="includeFiles" class="rounded border-border-300" checked>
-				<span class="text-text-100">Include files</span>
-			  </label>
+			  <div id="includeFilesContainer"></div>
 			</div>
 			
-			<p class="text-sm text-text-400 sm:text-[0.75rem]">Note: Should you choose a slow model such as Opus, you may need to wait and refresh the page for the response to appear.</p>
+			<p class="claude-text-sm">Note: Should you choose a slow model such as Opus, you may need to wait and refresh the page for the response to appear.</p>
 			<div class="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
-			  <button class="inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none bg-accent-main-100 bg-gradient-to-r from-accent-main-100 via-accent-main-200/50 to-accent-main-200 bg-[length:200%_100%] hover:bg-right active:bg-accent-main-000 border-0.5 border-border-300 text-oncolor-100 font-medium font-styrene drop-shadow-sm transition-all shadow-[inset_0_0.5px_0px_rgba(255,255,0,0.15)] [text-shadow:_0_1px_2px_rgb(0_0_0_/_10%)] active:shadow-[inset_0_1px_6px_rgba(0,0,0,0.2)] hover:from-accent-main-200 hover:to-accent-main-200 h-9 px-4 py-2 rounded-lg min-w-[5rem] active:scale-[0.985] whitespace-nowrap" id="confirmFork">
+			  <button class="claude-btn-primary inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none bg-gradient-to-r from-accent-main-100 via-accent-main-200/50 to-accent-main-200 bg-[length:200%_100%] hover:bg-right active:bg-accent-main-000 border-0.5 border-border-300 font-medium font-styrene drop-shadow-sm shadow-[inset_0_0.5px_0px_rgba(255,255,0,0.15)] [text-shadow:_0_1px_2px_rgb(0_0_0_/_10%)] active:shadow-[inset_0_1px_6px_rgba(0,0,0,0.2)] hover:from-accent-main-200 hover:to-accent-main-200 rounded-lg active:scale-[0.985] whitespace-nowrap" id="confirmFork">
 				Fork Chat
 			  </button>
-			  <button class="inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none bg-[radial-gradient(ellipse,_var(--tw-gradient-stops))] from-bg-500/10 from-50% to-bg-500/30 border-0.5 border-border-400 font-medium font-styrene text-text-100/90 transition-colors active:bg-bg-500/50 hover:text-text-000 hover:bg-bg-500/60 h-9 px-4 py-2 rounded-lg min-w-[5rem] active:scale-[0.985] whitespace-nowrap" id="cancelFork">
+			  <button class="claude-btn-secondary bg-[radial-gradient(ellipse,_var(--tw-gradient-stops))] from-bg-500/10 from-50% to-bg-500/30 border-0.5 border-border-400 font-medium font-styrene text-text-100/90 active:bg-bg-500/50 hover:text-text-000 hover:bg-bg-500/60 rounded-lg active:scale-[0.985] whitespace-nowrap" id="cancelFork">
 				Cancel
 			  </button>
 			</div>
 		  </div>
 		`;
+
+		// Apply styling to modal
+		applyClaudeStyling(modal);
+
+		// Add the toggle for include files
+		const includeFilesToggle = createClaudeToggle('Include files', true);
+		includeFilesToggle.input.id = 'includeFiles'; // Keep the ID for the querySelector
+		modal.querySelector('#includeFilesContainer').appendChild(includeFilesToggle.container);
 
 		try {
 			const accountData = await fetchAccountSettings();

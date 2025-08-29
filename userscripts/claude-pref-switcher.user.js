@@ -442,6 +442,9 @@
 					contentArea.value = preset.content;
 					// Disable delete button for "None" preset
 					deleteBtn.disabled = (presetName === 'None');
+
+					// Apply the preset immediately (like the sidebar does)
+					await setPreferencesWithoutSource(preset.content);
 				}
 			}
 		});
@@ -607,15 +610,15 @@
 		// Set up fetch interceptor
 		setupFetchInterceptor();
 
-		// Try to inject immediately
-		tryInjectUI();
+		// Try to inject the settings UI immediately
 		tryInjectSettingsUI();
+		setInterval(tryInjectSettingsUI, 1000);
 
-		// Check every 2 seconds
-		setInterval(() => {
+		setTimeout(() => {
 			tryInjectUI();
-			tryInjectSettingsUI();
-		}, 2000);
+			setInterval(tryInjectUI, 1000);
+		}, 5000);
+
 
 		// Also listen for navigation changes
 		let lastPath = window.location.pathname;
@@ -657,5 +660,5 @@
 	}
 
 	// Start the script, wait 5s to ensure the usage tracker itself is also loaded (if present ofc)
-	setTimeout(initialize, 5000);
+	setTimeout(initialize);
 })();

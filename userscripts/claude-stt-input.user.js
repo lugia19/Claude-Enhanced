@@ -108,6 +108,150 @@
 		};
 	}
 
+	// ======== STYLE MAP ========
+	const claudeStyleMap = {
+		// Icon buttons (top bar and message controls)
+		'claude-icon-btn': 'inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none text-text-200 border-transparent transition-colors font-styrene active:bg-bg-400 hover:bg-bg-500/40 hover:text-text-100 h-9 w-9 rounded-md active:scale-95',
+
+		// Modal backdrop
+		'claude-modal-backdrop': 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50',
+
+		// Modal content box
+		'claude-modal': 'bg-bg-100 rounded-lg p-6 shadow-xl max-w-md w-full mx-4 border border-border-300',
+
+		// Primary button (white action buttons)
+		'claude-btn-primary': 'inline-flex items-center justify-center px-4 py-2 font-base-bold bg-text-000 text-bg-000 rounded hover:bg-text-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-w-[5rem] h-9',
+
+		// Secondary button (cancel/neutral buttons)
+		'claude-btn-secondary': 'inline-flex items-center justify-center px-4 py-2 hover:bg-bg-500/40 rounded transition-colors min-w-[5rem] h-9 text-text-000 font-base-bold border-0.5 border-border-200',
+
+		// Select dropdown
+		'claude-select': 'w-full p-2 rounded bg-bg-200 text-text-100 border border-border-300 hover:border-border-200 cursor-pointer',
+
+		// Checkbox
+		'claude-checkbox': 'mr-2 rounded border-border-300 accent-accent-main-100',
+
+		// Text input
+		'claude-input': 'w-full p-2 rounded bg-bg-200 text-text-100 border border-border-300 hover:border-border-200',
+
+		// Tooltip wrapper (positioned absolutely)
+		'claude-tooltip': 'fixed left-0 top-0 min-w-max z-50 pointer-events-none',
+
+		// Tooltip content
+		'claude-tooltip-content': 'px-2 py-1 text-xs font-normal font-ui leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words max-w-[13rem]',
+
+		// Modal section headings
+		'claude-modal-heading': 'text-lg font-semibold mb-4 text-text-100',
+
+		// Modal section text/labels
+		'claude-modal-text': 'text-sm text-text-400',
+
+		// Form label
+		'claude-label': 'block text-sm font-medium text-text-200 mb-1',
+
+		// Radio/checkbox container
+		'claude-check-group': 'flex items-center text-text-100',
+
+		// Small/fine print text
+		'claude-text-sm': 'text-sm text-text-400 sm:text-[0.75rem]',
+
+		// Toggle switch container
+		'claude-toggle': 'group/switch relative select-none cursor-pointer inline-block',
+
+		// Hidden checkbox (screen reader only)
+		'claude-toggle-input': 'peer sr-only',
+
+		// Toggle track/background
+		'claude-toggle-track': 'border-border-300 rounded-full bg-bg-500 transition-colors peer-checked:bg-accent-secondary-100 peer-disabled:opacity-50',
+
+		// Toggle thumb/circle
+		'claude-toggle-thumb': 'absolute flex items-center justify-center rounded-full bg-white transition-transform group-hover/switch:opacity-80',
+	};
+
+	function applyClaudeStyling(element) {
+		// Apply to the element itself if it has claude- classes
+		const elementClasses = Array.from(element.classList || []);
+		elementClasses.forEach(className => {
+			if (className.startsWith('claude-') && claudeStyleMap[className]) {
+				element.classList.remove(className);
+				claudeStyleMap[className].split(' ').forEach(c => {
+					if (c) element.classList.add(c);
+				});
+			}
+		});
+
+		// Find and process all child elements with claude- classes
+		const elements = element.querySelectorAll('[class*="claude-"]');
+		elements.forEach(el => {
+			const classes = Array.from(el.classList);
+			classes.forEach(className => {
+				if (className.startsWith('claude-') && claudeStyleMap[className]) {
+					el.classList.remove(className);
+					claudeStyleMap[className].split(' ').forEach(c => {
+						if (c) el.classList.add(c);
+					});
+				}
+			});
+		});
+	}
+
+	function createClaudeToggle(labelText = '', checked = false, onChange = null) {
+		// Container for toggle + label
+		const container = document.createElement('div');
+		container.className = 'flex items-center gap-2';
+
+		// Toggle wrapper
+		const toggleWrapper = document.createElement('label');
+
+		const toggleContainer = document.createElement('div');
+		toggleContainer.className = 'group/switch relative select-none cursor-pointer inline-block';
+
+		const input = document.createElement('input');
+		input.type = 'checkbox';
+		input.className = 'peer sr-only';
+		input.role = 'switch';
+		input.checked = checked;
+		input.style.width = '36px';
+		input.style.height = '20px';
+
+		const track = document.createElement('div');
+		track.className = 'border-border-300 rounded-full bg-bg-500 transition-colors peer-checked:bg-accent-secondary-100 peer-disabled:opacity-50';
+		track.style.width = '36px';
+		track.style.height = '20px';
+
+		const thumb = document.createElement('div');
+		thumb.className = 'absolute flex items-center justify-center rounded-full bg-white transition-transform group-hover/switch:opacity-80';
+		thumb.style.width = '16px';
+		thumb.style.height = '16px';
+		thumb.style.left = '2px';
+		thumb.style.top = '2px';
+		thumb.style.transform = checked ? 'translateX(16px)' : 'translateX(0)';
+
+		input.addEventListener('change', (e) => {
+			thumb.style.transform = e.target.checked ? 'translateX(16px)' : 'translateX(0)';
+			if (onChange) onChange(e.target.checked);
+		});
+
+		toggleContainer.appendChild(input);
+		toggleContainer.appendChild(track);
+		toggleContainer.appendChild(thumb);
+		toggleWrapper.appendChild(toggleContainer);
+
+		container.appendChild(toggleWrapper);
+
+		// Add label text if provided
+		if (labelText) {
+			const label = document.createElement('span');
+			label.className = 'text-text-100 select-none cursor-pointer';
+			label.style.transform = 'translateY(-3px)'; // Slight upward adjustment
+			label.textContent = labelText;
+			label.onclick = () => input.click(); // Make label clickable
+			container.appendChild(label);
+		}
+
+		return { container, input, toggle: toggleContainer };
+	}
+
 	// ======== STATE AND SETTINGS ========
 	let mediaRecorder = null;
 	let audioChunks = [];
@@ -122,49 +266,39 @@
 		const sttEnabled = await getStorageValue('stt_enabled', false);
 
 		const modal = document.createElement('div');
-		modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+		modal.className = 'claude-modal-backdrop';
 
 		modal.innerHTML = `
-            <div class="bg-bg-100 rounded-lg p-6 shadow-xl max-w-md w-full mx-4 border border-border-300">
-                <h3 class="text-lg font-semibold mb-4 text-text-100">STT Settings</h3>
+    	<div class="claude-modal">
+        <h3 class="claude-modal-heading">STT Settings</h3>
 
-                <div class="mb-4">
-					<label class="flex items-center text-text-100">
-						<input type="checkbox" 
-							id="sttEnabled" 
-							${sttEnabled ? 'checked' : ''} 
-							class="mr-2">
-						Enable Speech-to-Text
-					</label>
-				</div>
-
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-text-200 mb-1">Groq API Key</label>
-                    <input type="password" 
-                           id="groqApiKey" 
-                           value="${apiKey}"
-                           placeholder="gsk_..." 
-                           class="w-full p-2 rounded bg-bg-200 text-text-100 border border-border-300">
-                </div>
-                
-                <div class="mb-4">
-                    <label class="flex items-center text-text-100">
-                        <input type="checkbox" 
-                               id="autoSendCheck" 
-                               ${autoSend ? 'checked' : ''} 
-                               class="mr-2">
-                        Auto-send after transcription
-                    </label>
-                </div>
-                
-                <div class="flex justify-end gap-2">
-                    <button class="px-4 py-2 text-text-200 hover:bg-bg-500/40 rounded" id="cancelSettings">Cancel</button>
-                    <button class="px-4 py-2 bg-accent-main-100 text-oncolor-100 rounded" id="saveSettings">Save</button>
-                </div>
-            </div>
+        <div class="mb-4" id="sttEnabledContainer"></div>
+			<div class="mb-4">
+				<label class="claude-label">Groq API Key</label>
+				<input type="password" 
+					id="groqApiKey" 
+					value="${apiKey}"
+					placeholder="gsk_..." 
+					class="claude-input">
+			</div>
+			
+			<div class="mb-4" id="autoSendContainer"></div>
+			
+			<div class="flex justify-end gap-2">
+				<button class="claude-btn-secondary" id="cancelSettings">Cancel</button>
+				<button class="claude-btn-primary" id="saveSettings">Save</button>
+			</div>
+		</div>
         `;
 
 		document.body.appendChild(modal);
+		// Create and insert toggles
+		const sttEnabledToggle = createClaudeToggle('Enable Speech-to-Text', sttEnabled);
+		modal.querySelector('#sttEnabledContainer').appendChild(sttEnabledToggle.container);
+
+		const autoSendToggle = createClaudeToggle('Auto-send after transcription', autoSend);
+		modal.querySelector('#autoSendContainer').appendChild(autoSendToggle.container);
+		applyClaudeStyling(modal);
 
 		return new Promise((resolve) => {
 			modal.querySelector('#cancelSettings').onclick = () => {
@@ -174,8 +308,8 @@
 
 			modal.querySelector('#saveSettings').onclick = async () => {
 				const newKey = modal.querySelector('#groqApiKey').value.trim();
-				const newAutoSend = modal.querySelector('#autoSendCheck').checked;
-				const newEnabled = modal.querySelector('#sttEnabled').checked;
+				const newAutoSend = autoSendToggle.input.checked;
+				const newEnabled = sttEnabledToggle.input.checked;
 
 				if (newKey && newKey !== apiKey) {
 					// Validate the API key
@@ -361,11 +495,7 @@
 	// ======== UI CREATION ========
 	function createSettingsButton() {
 		const button = document.createElement('button');
-		button.className = `inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 
-            ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none 
-            disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none text-text-200 border-transparent 
-            transition-colors font-styrene active:bg-bg-400 hover:bg-bg-500/40 hover:text-text-100 h-9 w-9 
-            rounded-md active:scale-95 shrink-0`;
+		button.className = 'claude-icon-btn';
 
 		button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
@@ -376,18 +506,12 @@
 
 		// Add tooltip
 		const tooltipWrapper = document.createElement('div');
+		tooltipWrapper.className = 'claude-tooltip';
 		tooltipWrapper.setAttribute('data-radix-popper-content-wrapper', '');
-		tooltipWrapper.style.cssText = `
-            position: fixed;
-            left: 0px;
-            top: 0px;
-            min-width: max-content;
-            z-index: 50;
-            display: none;
-        `;
+		tooltipWrapper.style.display = 'none';
 
 		tooltipWrapper.innerHTML = `
-            <div class="px-2 py-1 text-xs font-normal font-ui leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words z-tooltip max-w-[13rem]">
+            <div class="claude-tooltip-content">
                 STT Settings
             </div>
         `;
@@ -407,6 +531,9 @@
 		button.onclick = showSettingsModal;
 
 		document.body.appendChild(tooltipWrapper);
+		applyClaudeStyling(button);
+		applyClaudeStyling(tooltipWrapper);
+
 		return button;
 	}
 
@@ -468,6 +595,7 @@
 		}
 
 		container.appendChild(button);
+		applyClaudeStyling(button);
 	}
 
 	// ======== BUTTON INSERTION ========
