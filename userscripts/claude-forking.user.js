@@ -11,8 +11,65 @@
 (function () {
 	'use strict';
 
-	//#region Style map and helper
-	// ======== STYLE MAP ========
+	//#region Polyglot Setup
+	const isUserscript = typeof unsafeWindow === 'undefined';
+	if (typeof unsafeWindow === 'undefined') unsafeWindow = window;
+
+	let setStorageValue, getStorageValue, deleteStorageValue;
+
+	if (typeof GM_setValue !== 'undefined') {
+		// Running as userscript
+		setStorageValue = async (key, value) => {
+			GM_setValue(key, value);
+		};
+
+		getStorageValue = async (key, defaultValue) => {
+			return GM_getValue(key, defaultValue);
+		};
+
+		deleteStorageValue = async (key) => {
+			GM_deleteValue(key);
+		};
+	} else {
+		// Running as extension
+		setStorageValue = async (key, value) => {
+			window.postMessage({
+				type: 'GM_setValue',
+				key: key,
+				value: value
+			}, '*');
+		};
+
+		getStorageValue = async (key, defaultValue) => {
+			return new Promise((resolve) => {
+				const requestId = Math.random().toString(36).substr(2, 9);
+				const listener = (event) => {
+					if (event.data.type === 'GM_getValue_response' &&
+						event.data.requestId === requestId) {
+						window.removeEventListener('message', listener);
+						resolve(event.data.value !== undefined ? event.data.value : defaultValue);
+					}
+				};
+				window.addEventListener('message', listener);
+
+				window.postMessage({
+					type: 'GM_getValue',
+					key: key,
+					requestId: requestId
+				}, '*');
+			});
+		};
+
+		deleteStorageValue = async (key) => {
+			window.postMessage({
+				type: 'GM_deleteValue',
+				key: key
+			}, '*');
+		};
+	}
+	//#endregion
+
+	//#region Style System
 	const claudeStyleMap = {
 		// Icon buttons (top bar and message controls)
 		'claude-icon-btn': 'inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none text-text-200 border-transparent transition-colors font-styrene active:bg-bg-400 hover:bg-bg-500/40 hover:text-text-100 h-9 w-9 rounded-md active:scale-95',
@@ -155,6 +212,128 @@
 
 		return { container, input, toggle: toggleContainer };
 	}
+
+	function createClaudeTooltip(element, tooltipText) {
+		// Create tooltip wrapper
+		const tooltipWrapper = document.createElement('div');
+		tooltipWrapper.className = 'claude-tooltip';
+		tooltipWrapper.style.display = 'none';
+		tooltipWrapper.setAttribute('data-radix-popper-content-wrapper', '');
+
+		// Add tooltip content
+		const tooltipContent = document.createElement('div');
+		tooltipContent.className = 'claude-tooltip-content tooltip-content';
+		tooltipContent.setAttribute('data-side', 'bottom');
+		tooltipContent.setAttribute('data-align', 'center');
+		tooltipContent.setAttribute('data-state', 'delayed-open');
+		tooltipContent.innerHTML = `
+            ${tooltipText}
+            <span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
+                ${tooltipText}
+            </span>
+        `;
+		tooltipWrapper.appendChild(tooltipContent);
+
+		// Apply styling
+		applyClaudeStyling(tooltipWrapper);
+
+		// Add hover events to element
+		element.addEventListener('mouseenter', () => {
+			tooltipWrapper.style.display = 'block';
+			const rect = element.getBoundingClientRect();
+			const tooltipRect = tooltipWrapper.getBoundingClientRect();
+			const centerX = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+			tooltipWrapper.style.transform = `translate(${centerX}px, ${rect.bottom + 5}px)`;
+		});
+
+		element.addEventListener('mouseleave', () => {
+			tooltipWrapper.style.display = 'none';
+		});
+
+		// Hide on click if element is clickable
+		const originalOnclick = element.onclick;
+		if (originalOnclick) {
+			element.onclick = (e) => {
+				tooltipWrapper.style.display = 'none';
+				return originalOnclick.call(element, e);
+			};
+		}
+
+		// Add tooltip to document body
+		document.body.appendChild(tooltipWrapper);
+
+		// Clean up tooltip when element is removed
+		const originalRemove = element.remove.bind(element);
+		element.remove = () => {
+			tooltipWrapper.remove();
+			originalRemove();
+		};
+
+		// Return wrapper in case manual control is needed
+		return tooltipWrapper;
+	}
+	//#endregion
+
+
+	function createClaudeTooltip(element, tooltipText) {
+		// Create tooltip wrapper
+		const tooltipWrapper = document.createElement('div');
+		tooltipWrapper.className = 'claude-tooltip';
+		tooltipWrapper.style.display = 'none';
+		tooltipWrapper.setAttribute('data-radix-popper-content-wrapper', '');
+
+		// Add tooltip content
+		const tooltipContent = document.createElement('div');
+		tooltipContent.className = 'claude-tooltip-content tooltip-content';
+		tooltipContent.setAttribute('data-side', 'bottom');
+		tooltipContent.setAttribute('data-align', 'center');
+		tooltipContent.setAttribute('data-state', 'delayed-open');
+		tooltipContent.innerHTML = `
+        ${tooltipText}
+        <span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
+            ${tooltipText}
+        </span>
+    `;
+		tooltipWrapper.appendChild(tooltipContent);
+
+		// Apply styling
+		applyClaudeStyling(tooltipWrapper);
+
+		// Add hover events to element
+		element.addEventListener('mouseenter', () => {
+			tooltipWrapper.style.display = 'block';
+			const rect = element.getBoundingClientRect();
+			const tooltipRect = tooltipWrapper.getBoundingClientRect();
+			const centerX = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+			tooltipWrapper.style.transform = `translate(${centerX}px, ${rect.bottom + 5}px)`;
+		});
+
+		element.addEventListener('mouseleave', () => {
+			tooltipWrapper.style.display = 'none';
+		});
+
+		// Hide on click if element is clickable
+		const originalOnclick = element.onclick;
+		if (originalOnclick) {
+			element.onclick = (e) => {
+				tooltipWrapper.style.display = 'none';
+				return originalOnclick.call(element, e);
+			};
+		}
+
+		// Add tooltip to document body
+		document.body.appendChild(tooltipWrapper);
+
+		// Clean up tooltip when element is removed
+		const originalRemove = element.remove.bind(element);
+		element.remove = () => {
+			tooltipWrapper.remove();
+			originalRemove();
+		};
+
+		// Return wrapper in case manual control is needed
+		return tooltipWrapper;
+	}
 	//#endregion
 
 	let pendingForkModel = null;
@@ -178,52 +357,13 @@
         </div>
     `;
 
-		// Create tooltip wrapper
-		const tooltipWrapper = document.createElement('div');
-		tooltipWrapper.className = 'claude-tooltip';
-		tooltipWrapper.style.display = 'none';
-		tooltipWrapper.setAttribute('data-radix-popper-content-wrapper', '');
-
-		// Add tooltip content
-		const tooltipContent = document.createElement('div');
-		tooltipContent.className = 'claude-tooltip-content';
-		tooltipContent.setAttribute('data-side', 'bottom');
-		tooltipContent.setAttribute('data-align', 'center');
-		tooltipContent.setAttribute('data-state', 'delayed-open');
-		tooltipContent.innerHTML = `
-			Fork from here
-			<span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
-				Fork from here
-			</span>
-		`;
-		tooltipWrapper.appendChild(tooltipContent);
-
-		// Apply styles to button and tooltip
+		// Apply styles to button
 		applyClaudeStyling(button);
-		applyClaudeStyling(tooltipWrapper);
-
-		// Add hover events
-		button.addEventListener('mouseenter', () => {
-			tooltipWrapper.style.display = 'block';
-			const rect = button.getBoundingClientRect();
-			const tooltipRect = tooltipWrapper.getBoundingClientRect();
-			const centerX = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
-			tooltipWrapper.style.transform = `translate(${centerX}px, ${rect.bottom + 5}px)`;
-		});
-
-		button.addEventListener('mouseleave', () => {
-			tooltipWrapper.style.display = 'none';
-		});
-
-		// Add tooltip to document body
-		document.body.appendChild(tooltipWrapper);
+		createClaudeTooltip(button, 'Fork from here');
 
 		button.onclick = async (e) => {
 			e.preventDefault();
 			e.stopPropagation();
-
-			// Hide tooltip when clicked
-			tooltipWrapper.style.display = 'none';
 
 			const modal = await createModal();
 			document.body.appendChild(modal);
