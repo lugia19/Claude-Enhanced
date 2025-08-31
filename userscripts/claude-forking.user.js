@@ -12,8 +12,9 @@
 	'use strict';
 
 	//#region Polyglot Setup
+	let targetWindow = window;
 	const isUserscript = typeof unsafeWindow === 'undefined';
-	if (typeof unsafeWindow === 'undefined') unsafeWindow = window;
+	if (typeof unsafeWindow !== 'undefined') targetWindow = unsafeWindow;
 
 	let setStorageValue, getStorageValue, deleteStorageValue, makeHttpRequest;
 

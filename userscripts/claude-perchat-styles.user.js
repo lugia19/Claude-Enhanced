@@ -15,8 +15,9 @@
 (function () {
 	'use strict';
 	//#region Polyglot Setup
+	let targetWindow = window;
 	const isUserscript = typeof unsafeWindow === 'undefined';
-	if (typeof unsafeWindow === 'undefined') unsafeWindow = window;
+	if (typeof unsafeWindow !== 'undefined') targetWindow = unsafeWindow;
 
 	let setStorageValue, getStorageValue, deleteStorageValue, makeHttpRequest;
 
@@ -570,8 +571,8 @@
 	}
 
 	// ======== FETCH PATCHING ========
-	const originalFetch = unsafeWindow.fetch;
-	unsafeWindow.fetch = async (...args) => {
+	const originalFetch = targetWindow.fetch;
+	targetWindow.fetch = async (...args) => {
 		const [input, config] = args;
 
 		// Get the URL string

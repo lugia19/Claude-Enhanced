@@ -15,8 +15,9 @@
 (function () {
 	'use strict';
 	//#region Polyglot Setup
+	let targetWindow = window;
 	const isUserscript = typeof unsafeWindow === 'undefined';
-	if (typeof unsafeWindow === 'undefined') unsafeWindow = window;
+	if (typeof unsafeWindow !== 'undefined') targetWindow = unsafeWindow;
 
 	let setStorageValue, getStorageValue, deleteStorageValue, makeHttpRequest;
 
@@ -314,9 +315,9 @@
 
 	// ======== FETCH INTERCEPTOR ========
 	function setupFetchInterceptor() {
-		const originalFetch = unsafeWindow.fetch;
+		const originalFetch = targetWindow.fetch;
 
-		unsafeWindow.fetch = async function (...args) {
+		targetWindow.fetch = async function (...args) {
 			const [input, options, config] = args;
 			let url = undefined
 			if (input instanceof URL) {
@@ -330,7 +331,7 @@
 			// Check if this is a PUT to the account_profile endpoint
 			if (typeof url === 'string' &&
 				url.includes('/api/account_profile') &&
-				options.method === 'PUT') {
+				options?.method === 'PUT') {
 
 				// Check if it's our own call (has our query param)
 				const isOurCall = url.includes('source=preset-manager');
@@ -360,7 +361,9 @@
 	// ======== API FUNCTIONS ========
 	async function getCurrentPreferences() {
 		try {
-			const response = await fetch('https://claude.ai/api/account_profile');
+			const response = await fetch('https://claude.ai/api/account_profile', {
+				method: 'GET'
+			});
 			const data = await response.json();
 			return data.conversation_preferences || '';
 		} catch (error) {
@@ -791,7 +794,7 @@
 	// New function to set preferences without the source param (triggers sidebar update)
 	async function setPreferencesWithoutSource(preferencesText) {
 		try {
-			const response = await unsafeWindow.fetch('https://claude.ai/api/account_profile', {
+			const response = await targetWindow.fetch('https://claude.ai/api/account_profile', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',

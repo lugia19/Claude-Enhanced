@@ -14,8 +14,9 @@
 	'use strict';
 
 	//#region Polyglot Setup
+	let targetWindow = window;
 	const isUserscript = typeof unsafeWindow === 'undefined';
-	if (typeof unsafeWindow === 'undefined') unsafeWindow = window;
+	if (typeof unsafeWindow !== 'undefined') targetWindow = unsafeWindow;
 
 	let setStorageValue, getStorageValue, deleteStorageValue, makeHttpRequest;
 
@@ -679,8 +680,8 @@
 	//#endregion
 
 	//#region Request Tracking
-	const originalFetch = unsafeWindow.fetch;
-	unsafeWindow.fetch = async (...args) => {
+	const originalFetch = targetWindow.fetch;
+	targetWindow.fetch = async (...args) => {
 		const [input, config] = args;
 
 		let url = undefined;
@@ -789,14 +790,14 @@
             <div class="mb-4">
                 <label class="claude-label">Voice</label>
                 <select class="claude-select" id="voiceSelect" ${!settings.apiKey ? 'disabled' : ''}>
-                    <option value="">Loading voices...</option>
+                    <option value="">Set an API key...</option>
                 </select>
             </div>
 
             <div class="mb-4">
                 <label class="claude-label">Model</label>
-                <select class="claude-select" id="modelSelect">
-                    <option value="">Loading models...</option>
+                <select class="claude-select" id="modelSelect" ${!settings.apiKey ? 'disabled' : ''}>
+                    <option value="">Set an API key...</option>
                 </select>
             </div>
 
@@ -848,9 +849,6 @@
 				loadVoices(modal, settings),
 				loadModels(modal, settings)
 			]);
-		} else {
-			// Just load models with defaults if no API key
-			await loadModels(modal, settings);
 		}
 
 		// Handle API key changes
@@ -991,7 +989,7 @@
 
 			// Clear and populate model select
 			modelSelect.innerHTML = '';
-
+			modelSelect.disabled = false;
 			// Filter for TTS-capable models and add them
 			models
 				.filter(model => model.can_do_text_to_speech)

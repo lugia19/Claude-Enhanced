@@ -26,8 +26,11 @@
 			],
 			"js": [
 				"userscripts/claude-exporter.user.js",
-				"userscripts/claude-typing-replacement.user.js",
-				"userscripts/claude-forking.user.js"
+				"userscripts/claude-perchat-styles.user.js",
+				"userscripts/claude-forking.user.js",
+				"claude-pref-switcher.user",
+				"claude-stt-input.user",
+				"claude-tts.user"
 			],
 			"world": "MAIN",
 			"run_at": "document_idle"
