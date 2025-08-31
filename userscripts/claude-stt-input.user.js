@@ -19,7 +19,7 @@
 	const isUserscript = typeof unsafeWindow === 'undefined';
 	if (typeof unsafeWindow === 'undefined') unsafeWindow = window;
 
-	let setStorageValue, getStorageValue, deleteStorageValue;
+	let setStorageValue, getStorageValue, deleteStorageValue, makeHttpRequest;
 
 	if (typeof GM_setValue !== 'undefined') {
 		// Running as userscript
@@ -34,6 +34,7 @@
 		deleteStorageValue = async (key) => {
 			GM_deleteValue(key);
 		};
+		makeHttpRequest = GM_xmlhttpRequest;
 	} else {
 		// Running as extension
 		setStorageValue = async (key, value) => {
@@ -69,6 +70,40 @@
 				type: 'GM_deleteValue',
 				key: key
 			}, '*');
+		};
+
+		// Polyfill for GM_xmlhttpRequest in extension mode
+		makeHttpRequest = (details) => {
+			return new Promise((resolve) => {
+				const requestId = Math.random().toString(36).substr(2, 9);
+
+				const listener = (event) => {
+					if (event.data.type === 'GM_xmlhttpRequest_response' &&
+						event.data.requestId === requestId) {
+						window.removeEventListener('message', listener);
+
+						if (event.data.error) {
+							details.onerror && details.onerror(new Error(event.data.error));
+						} else {
+							details.onload && details.onload({
+								responseText: event.data.responseText,
+								status: event.data.status,
+								statusText: event.data.statusText,
+								responseHeaders: event.data.responseHeaders
+							});
+						}
+						resolve();
+					}
+				};
+
+				window.addEventListener('message', listener);
+
+				window.postMessage({
+					type: 'GM_xmlhttpRequest',
+					requestId: requestId,
+					details: details  // FormData passes through as-is
+				}, '*');
+			});
 		};
 	}
 	//#endregion
