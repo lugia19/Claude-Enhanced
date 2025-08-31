@@ -277,25 +277,14 @@
 	//#endregion
 
 	//#region SVG Icons
-	const SPEAKER_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-        <path d="M11.536 14.01A8.473 8.473 0 0 0 14.026 8a8.473 8.473 0 0 0-2.49-6.01l-.708.707A7.476 7.476 0 0 1 13.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/>
-        <path d="M10.121 12.596A6.48 6.48 0 0 0 12.025 8a6.48 6.48 0 0 0-1.904-4.596l-.707.707A5.483 5.483 0 0 1 11.025 8a5.483 5.483 0 0 1-1.61 3.89l.706.706z"/>
-        <path d="M8.707 11.182A4.486 4.486 0 0 0 10.025 8a4.486 4.486 0 0 0-1.318-3.182L8 5.525A3.489 3.489 0 0 1 9.025 8 3.49 3.49 0 0 1 8 10.475l.707.707zM6.717 3.55A.5.5 0 0 1 7 4v8a.5.5 0 0 1-.812.39L3.825 10.5H1.5A.5.5 0 0 1 1 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06z"/>
-    </svg>`;
+	const SPEAKER_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+		<path d="M10 2.5L5.5 5.5H2v5h3.5L10 13.5v-11z" stroke-linejoin="round"/>
+		<path d="M13 5c1.5 1 1.5 5 0 6" stroke-linecap="round"/>
+	</svg>`;
 
-	const LOADING_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-        <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
-        <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
-    </svg>`;
-
-	const PAUSE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-        <path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z"/>
-    </svg>`;
-
-	const SETTINGS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-        <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
-        <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/>
-    </svg>`;
+	const PAUSE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#2c84db" viewBox="0 0 16 16" class="pause-icon">
+		<path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z"/>
+	</svg>`;
 	//#endregion
 
 	//#region Global State
@@ -490,24 +479,16 @@
 			if (this.playbackState === 'loading') {
 				// Show pause icon with spinning segmented circle
 				button.innerHTML = `
-                <div class="relative w-5 h-5">
-                    <style>
-                        @keyframes spin {
-                            to { transform: rotate(360deg); }
-                        }
-                        .spinner-segment {
-                            animation: spin 1s linear infinite;
-                        }
-                    </style>
-                    <svg class="spinner-segment absolute inset-0" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 20 20">
-                        <path d="M10 2a8 8 0 0 1 0 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
-                        <path d="M10 2a8 8 0 0 1 5.66 2.34" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <div class="absolute inset-0 flex items-center justify-center">
-                        ${PAUSE_ICON}
-                    </div>
-                </div>
-            `;
+					<div class="relative w-5 h-5">
+						<svg class="spinner-segment absolute inset-0" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 20 20">
+							<path d="M10 2a8 8 0 0 1 0 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+							<path d="M10 2a8 8 0 0 1 5.66 2.34" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+						</svg>
+						<div class="absolute inset-0 flex items-center justify-center">
+							${PAUSE_ICON}
+						</div>
+					</div>
+				`;
 				if (tooltip) {
 					tooltip.querySelector('.tooltip-content').textContent = 'Loading audio...';
 				}
@@ -517,7 +498,7 @@
 					tooltip.querySelector('.tooltip-content').textContent = 'Stop playback';
 				}
 			} else {
-				button.innerHTML = SETTINGS_ICON;
+				button.innerHTML = SPEAKER_ICON;
 				if (tooltip) {
 					tooltip.querySelector('.tooltip-content').textContent = 'TTS Settings';
 				}
@@ -550,29 +531,35 @@
 			e.preventDefault();
 			e.stopPropagation();
 
-			const settings = await loadSettings();
-
 			// Get text from message
-			const text = await captureMessageText(button, settings.quotesOnly);
+			const text = await captureMessageText(button);
 			if (!text) {
 				alert('Failed to capture message text');
 				return;
 			}
 
 			// Get settings
+			const settings = await loadSettings();
 			const conversationId = getConversationId();
 			const voiceOverride = conversationId ? await getStorageValue(`chatVoice_${conversationId}`, '') : '';
 			const voiceId = voiceOverride || settings.voice;
+			const quotesOnly = conversationId ? await getStorageValue(`chatQuotesOnly_${conversationId}`, false) : false;
 
 			if (!settings.apiKey || !voiceId) {
 				alert('Please configure TTS settings first');
 				return;
 			}
 
+			// Process text with per-chat quotes setting
+			const finalText = cleanupText(text, quotesOnly);
+			if (!finalText) {
+				alert('No text to speak' + (quotesOnly ? ' (no quoted text found)' : ''));
+				return;
+			}
 
 			// Start playback (will handle stopping existing playback internally)
 			try {
-				await playbackManager.play(text, voiceId, settings.model, settings.apiKey);
+				await playbackManager.play(finalText, voiceId, settings.model, settings.apiKey);
 			} catch (error) {
 				alert('Failed to play audio: ' + error.message);
 			}
@@ -644,10 +631,8 @@
 			const controls = findMessageControls(message);
 			if (controls && !controls.querySelector('.tts-speak-button')) {
 				const speakBtn = createSpeakButton();
-				const copyButton = controls.querySelector('[data-testid="action-bar-copy"]');
-				if (copyButton) {
-					controls.insertBefore(speakBtn, copyButton.parentElement);
-				}
+				// Use the priority function instead of direct insertion
+				addMessageButtonWithPriority(controls, speakBtn, 'tts-speak-button');
 			}
 		});
 	}
@@ -746,6 +731,10 @@
 		modal.className = 'claude-modal-backdrop';
 
 		const settings = await loadSettings();
+		const conversationId = getConversationId();
+
+		// Load per-chat settings
+		const chatQuotesOnly = conversationId ? await getStorageValue(`chatQuotesOnly_${conversationId}`, false) : false;
 
 		modal.innerHTML = `
         <div class="claude-modal">
@@ -780,15 +769,20 @@
                 <div id="autoSpeakToggleContainer"></div>
             </div>
 
-            <div class="mb-4">
-                <div id="quotesOnlyToggleContainer"></div>
-            </div>
+            <!-- Per-Chat Settings Section -->
+            <div class="border-t border-border-300 pt-4 mt-4">
+                <h4 class="text-sm font-semibold text-text-200 mb-3">Per-Chat Settings</h4>
+                
+                <div class="mb-4">
+                    <div id="quotesOnlyToggleContainer"></div>
+                </div>
 
-            <div class="mb-4">
-                <label class="claude-label">Voice Override (Current Chat)</label>
-                <select class="claude-select" id="chatVoiceOverride" ${!settings.apiKey ? 'disabled' : ''}>
-                    <option value="">Use default voice</option>
-                </select>
+                <div class="mb-4">
+                    <label class="claude-label">Voice Override</label>
+                    <select class="claude-select" id="chatVoiceOverride" ${!settings.apiKey ? 'disabled' : ''}>
+                        <option value="">Use default voice</option>
+                    </select>
+                </div>
             </div>
 
             <div class="flex justify-end gap-2">
@@ -810,7 +804,7 @@
 		const autoSpeakToggle = createClaudeToggle('Auto-speak new messages', settings.autoSpeak, null);
 		modal.querySelector('#autoSpeakToggleContainer').appendChild(autoSpeakToggle.container);
 
-		const quotesOnlyToggle = createClaudeToggle('Only speak quoted text', settings.quotesOnly, null);
+		const quotesOnlyToggle = createClaudeToggle('Only speak quoted text', chatQuotesOnly, null);
 		modal.querySelector('#quotesOnlyToggleContainer').appendChild(quotesOnlyToggle.container);
 
 		// Load voices and models if API key exists
@@ -819,6 +813,9 @@
 				loadVoices(modal, settings),
 				loadModels(modal, settings)
 			]);
+		} else {
+			// Just load models with defaults if no API key
+			await loadModels(modal, settings);
 		}
 
 		// Handle API key changes
@@ -846,20 +843,23 @@
 				apiKey: modal.querySelector('#apiKeyInput').value.trim(),
 				voice: modal.querySelector('#voiceSelect').value,
 				model: modal.querySelector('#modelSelect').value,
-				autoSpeak: autoSpeakToggle.input.checked,
-				quotesOnly: quotesOnlyToggle.input.checked
+				autoSpeak: autoSpeakToggle.input.checked
 			};
 
-			// Handle per-chat override
-			const chatOverride = modal.querySelector('#chatVoiceOverride').value;
-			if (chatOverride) {
-				const conversationId = getConversationId();
-				if (conversationId) {
-					await setStorageValue(`chatVoice_${conversationId}`, chatOverride);
+			// Handle per-chat settings
+			if (conversationId) {
+				// Save quotes-only setting
+				if (quotesOnlyToggle.input.checked) {
+					await setStorageValue(`chatQuotesOnly_${conversationId}`, true);
+				} else {
+					await deleteStorageValue(`chatQuotesOnly_${conversationId}`);
 				}
-			} else {
-				const conversationId = getConversationId();
-				if (conversationId) {
+
+				// Save voice override
+				const chatOverride = modal.querySelector('#chatVoiceOverride').value;
+				if (chatOverride) {
+					await setStorageValue(`chatVoice_${conversationId}`, chatOverride);
+				} else {
 					await deleteStorageValue(`chatVoice_${conversationId}`);
 				}
 			}
@@ -887,6 +887,7 @@
 
 		return modal;
 	}
+
 
 	async function loadVoices(modal, settings) {
 		const voiceSelect = modal.querySelector('#voiceSelect');
@@ -993,8 +994,8 @@
 			apiKey: await getStorageValue('tts_apiKey', ''),
 			voice: await getStorageValue('tts_voice', ''),
 			model: await getStorageValue('tts_model', 'eleven_multilingual_v2'),
-			autoSpeak: await getStorageValue('tts_autoSpeak', false),
-			quotesOnly: await getStorageValue('tts_quotesOnly', false)
+			autoSpeak: await getStorageValue('tts_autoSpeak', false)
+			// Note: quotesOnly is now per-chat, not global
 		};
 	}
 
@@ -1004,7 +1005,7 @@
 		await setStorageValue('tts_voice', settings.voice);
 		await setStorageValue('tts_model', settings.model);
 		await setStorageValue('tts_autoSpeak', settings.autoSpeak);
-		await setStorageValue('tts_quotesOnly', settings.quotesOnly);
+		// quotesOnly is saved per-chat in the save handler
 	}
 
 	function getConversationId() {
@@ -1017,7 +1018,7 @@
 	function createSettingsButton() {
 		const button = document.createElement('button');
 		button.className = 'claude-icon-btn tts-settings-button';
-		button.innerHTML = SETTINGS_ICON;
+		button.innerHTML = SPEAKER_ICON;
 
 		applyClaudeStyling(button);
 		const tooltip = createClaudeTooltip(button, 'TTS Settings');
@@ -1033,42 +1034,95 @@
 
 		return button;
 	}
+	//#endregion
 
-	function tryAddSettingsButton() {
-		const BUTTON_PRIORITY = [
-			'style-selector-button',
-			'stt-settings-button',
-			'tts-settings-button',
-			'export-button'
+	//#region Message Button Ordering
+	function addMessageButtonWithPriority(container, button, buttonClass) {
+		const MESSAGE_BUTTON_PRIORITY = [
+			'tts-speak-button',
+			'fork-button',
 		];
 
-		const buttonClass = 'tts-settings-button';
-
-		const container = document.querySelector(".right-3.flex.gap-2");
-		if (!container || container.querySelector('.' + buttonClass) || container.querySelectorAll("button").length == 0) {
-			return; // Either container not found or button already exists
+		// Add button if it doesn't exist
+		button.classList.add(buttonClass);
+		if (!container.querySelector('.' + buttonClass)) {
+			container.appendChild(button);
 		}
 
-		const button = createSettingsButton();
-		button.classList.add(buttonClass);
-
-		const myIndex = BUTTON_PRIORITY.indexOf(buttonClass);
-
-		// Look for the button that should come right before us
-		for (let i = myIndex - 1; i >= 0; i--) {
-			const previousButton = container.querySelector('.' + BUTTON_PRIORITY[i]);
-			if (previousButton) {
-				if (previousButton.nextSibling) {
-					container.insertBefore(button, previousButton.nextSibling);
-				} else {
-					container.appendChild(button);
-				}
-				return;
+		// Get all priority buttons that exist
+		const priorityButtons = [];
+		for (const className of MESSAGE_BUTTON_PRIORITY) {
+			const btn = container.querySelector('.' + className);
+			if (btn) {
+				priorityButtons.push(btn);
 			}
 		}
 
-		// No previous buttons found, we go first
-		container.insertBefore(button, container.firstChild);
+		// Special handling for copy button group - should stay at the end
+		const copyButtonParent = container.querySelector('[data-testid="action-bar-copy"]')?.parentElement;
+
+		// Get all other elements (non-priority buttons/elements)
+		const allElements = Array.from(container.children);
+		const otherElements = allElements.filter(elem =>
+			!MESSAGE_BUTTON_PRIORITY.some(className => elem.classList.contains(className)) &&
+			elem !== copyButtonParent
+		);
+
+		// Clear and rebuild: priority buttons, other elements, copy button last
+		while (container.firstChild) {
+			container.removeChild(container.firstChild);
+		}
+
+		[...priorityButtons, ...otherElements].forEach(elem => {
+			container.appendChild(elem);
+		});
+
+		if (copyButtonParent) {
+			container.appendChild(copyButtonParent);
+		}
+	}
+
+	function tryAddTopRightButton() {
+		const BUTTON_PRIORITY = [
+			'tts-settings-button',
+			'style-selector-button',
+			'stt-settings-button',
+			'export-button'
+		];
+
+		const buttonClass = 'tts-settings-button'; // Or whichever button this script handles
+
+		const container = document.querySelector(".right-3.flex.gap-2");
+		if (!container || container.querySelectorAll("button").length == 0) {
+			return; // Container not found or no buttons present
+		}
+
+		// Add button if it doesn't exist
+		if (!container.querySelector('.' + buttonClass)) {
+			const button = createSettingsButton();
+			button.classList.add(buttonClass);
+			container.appendChild(button);
+		}
+
+		// Reorder all buttons according to priority
+		const priorityButtons = [];
+		for (const className of BUTTON_PRIORITY) {
+			const button = container.querySelector('.' + className);
+			if (button) {
+				priorityButtons.push(button);
+			}
+		}
+
+		// Get all non-priority buttons (native Claude buttons)
+		const allButtons = Array.from(container.querySelectorAll('button'));
+		const nonPriorityButtons = allButtons.filter(btn =>
+			!BUTTON_PRIORITY.some(className => btn.classList.contains(className))
+		);
+
+		// Rebuild in order: priority buttons first, then native buttons
+		[...priorityButtons, ...nonPriorityButtons].forEach(button => {
+			container.appendChild(button); // appendChild moves existing elements
+		});
 	}
 	//#endregion
 
@@ -1085,12 +1139,35 @@
 		}
 	}, 100);
 
+	function addTTSStyles() {
+		if (document.querySelector('#tts-styles')) return; // Don't add twice
+
+		const style = document.createElement('style');
+		style.id = 'tts-styles';
+		style.textContent = `
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spinner-segment {
+            animation: spin 1s linear infinite;
+        }
+        .tts-settings-button:hover .pause-icon {
+            fill: #2573c4 !important;
+        }
+        .tts-settings-button .pause-icon {
+            transition: fill 0.2s ease;
+        }
+    `;
+		document.head.appendChild(style);
+	}
+
 	function initialize() {
+		addTTSStyles();
 		// Try to add the settings button immediately
-		tryAddSettingsButton();
+		tryAddTopRightButton();
 
 		// Check every 5 seconds
-		setInterval(tryAddSettingsButton, 5000);
+		setInterval(tryAddTopRightButton, 5000);
 
 		// Add message buttons every 3 seconds
 		setInterval(addSpeakButtons, 3000);

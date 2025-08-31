@@ -604,53 +604,55 @@
 	};
 
 	// ======== INITIALIZATION ========
-	function tryAddButton() {
-		// Configuration for this specific script
-		const buttonCreationFunction = createStyleButton;
-		const buttonClass = 'style-selector-button';
-
+	function tryAddTopRightButton() {
 		const BUTTON_PRIORITY = [
+			'tts-settings-button',
 			'style-selector-button',
 			'stt-settings-button',
 			'export-button'
 		];
 
-		// Generic logic from here on
+		const buttonClass = 'style-selector-button';
+
 		const container = document.querySelector(".right-3.flex.gap-2");
-		if (!container || container.querySelector('.' + buttonClass) || container.querySelectorAll("button").length == 0) {
-			return; // Either container not found or button already exists
+		if (!container || container.querySelectorAll("button").length == 0) {
+			return; // Container not found or no buttons present
 		}
 
-		const button = buttonCreationFunction();
-		button.classList.add(buttonClass);
+		// Add button if it doesn't exist
+		if (!container.querySelector('.' + buttonClass)) {
+			const button = createStyleButton();
+			button.classList.add(buttonClass);
+			container.appendChild(button);
+		}
 
-		const myIndex = BUTTON_PRIORITY.indexOf(buttonClass);
-
-		// Look for the button that should come right before us
-		for (let i = myIndex - 1; i >= 0; i--) {
-			const previousButton = container.querySelector('.' + BUTTON_PRIORITY[i]);
-			if (previousButton) {
-				if (previousButton.nextSibling) {
-					container.insertBefore(button, previousButton.nextSibling);
-				} else {
-					container.appendChild(button);
-				}
-				return;
+		// Reorder all buttons according to priority
+		const priorityButtons = [];
+		for (const className of BUTTON_PRIORITY) {
+			const button = container.querySelector('.' + className);
+			if (button) {
+				priorityButtons.push(button);
 			}
 		}
 
-		// No previous buttons found, we go first
-		container.insertBefore(button, container.firstChild);
-		// Update appearance based on current conversation
-		updateButtonAppearance();
+		// Get all non-priority buttons (native Claude buttons)
+		const allButtons = Array.from(container.querySelectorAll('button'));
+		const nonPriorityButtons = allButtons.filter(btn =>
+			!BUTTON_PRIORITY.some(className => btn.classList.contains(className))
+		);
+
+		// Rebuild in order: priority buttons first, then native buttons
+		[...priorityButtons, ...nonPriorityButtons].forEach(button => {
+			container.appendChild(button); // appendChild moves existing elements
+		});
 	}
 
 	function initialize() {
 		// Try to add the button immediately
-		tryAddButton();
+		tryAddTopRightButton();
 
 		// Check every 5 seconds for SPA navigation
-		setInterval(tryAddButton, 5000);
+		setInterval(tryAddTopRightButton, 5000);
 
 		// Also update button appearance when URL changes (conversation switch)
 		let lastUrl = window.location.href;

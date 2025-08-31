@@ -477,6 +477,51 @@
 		return retryButton?.closest('.justify-between');
 	}
 
+	function addMessageButtonWithPriority(container, button, buttonClass) {
+		const MESSAGE_BUTTON_PRIORITY = [
+			'tts-speak-button',
+			'fork-button',
+		];
+
+		// Add button if it doesn't exist
+		button.classList.add(buttonClass);
+		if (!container.querySelector('.' + buttonClass)) {
+			container.appendChild(button);
+		}
+
+		// Get all priority buttons that exist
+		const priorityButtons = [];
+		for (const className of MESSAGE_BUTTON_PRIORITY) {
+			const btn = container.querySelector('.' + className);
+			if (btn) {
+				priorityButtons.push(btn);
+			}
+		}
+
+		// Special handling for copy button group - should stay at the end
+		const copyButtonParent = container.querySelector('[data-testid="action-bar-copy"]')?.parentElement;
+
+		// Get all other elements (non-priority buttons/elements)
+		const allElements = Array.from(container.children);
+		const otherElements = allElements.filter(elem =>
+			!MESSAGE_BUTTON_PRIORITY.some(className => elem.classList.contains(className)) &&
+			elem !== copyButtonParent
+		);
+
+		// Clear and rebuild: priority buttons, other elements, copy button last
+		while (container.firstChild) {
+			container.removeChild(container.firstChild);
+		}
+
+		[...priorityButtons, ...otherElements].forEach(elem => {
+			container.appendChild(elem);
+		});
+
+		if (copyButtonParent) {
+			container.appendChild(copyButtonParent);
+		}
+	}
+
 	function addBranchButtons() {
 		if (isProcessing) return;
 		try {
@@ -484,17 +529,11 @@
 			const messages = document.querySelectorAll('.font-claude-response');
 			messages.forEach((message) => {
 				const controls = findMessageControls(message);
-				if (controls && !controls.querySelector('[aria-label="Fork conversation"]')) {
+				if (controls && !controls.querySelector('.fork-button')) {
 					const branchBtn = createBranchButton();
 					branchBtn.setAttribute('aria-label', 'Fork conversation');
-
-					// Insert the button directly without container or separator
-					const copyButton = controls.querySelector('[data-testid="action-bar-copy"]');
-					if (copyButton) {
-						controls.insertBefore(branchBtn, copyButton.parentElement);
-					} else {
-						controls.insertBefore(branchBtn, controls.firstChild);
-					}
+					// Use the priority function instead of direct insertion
+					addMessageButtonWithPriority(controls, branchBtn, 'fork-button');
 				}
 			});
 		} catch (error) {

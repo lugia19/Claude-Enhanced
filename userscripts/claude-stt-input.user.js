@@ -601,39 +601,47 @@
 	}
 
 	// ======== BUTTON INSERTION ========
-	function tryAddTopButton() {
-		const buttonCreationFunction = createSettingsButton;
-		const buttonClass = 'stt-settings-button';
-
+	function tryAddTopRightButton() {
 		const BUTTON_PRIORITY = [
+			'tts-settings-button',
 			'style-selector-button',
-			'export-button',
-			'stt-settings-button'
+			'stt-settings-button',
+			'export-button'
 		];
 
+		const buttonClass = 'stt-settings-button';
+
 		const container = document.querySelector(".right-3.flex.gap-2");
-		if (!container || container.querySelector('.' + buttonClass) || container.querySelectorAll("button").length == 0) {
-			return;
+		if (!container || container.querySelectorAll("button").length == 0) {
+			return; // Container not found or no buttons present
 		}
 
-		const button = buttonCreationFunction();
-		button.classList.add(buttonClass);
+		// Add button if it doesn't exist
+		if (!container.querySelector('.' + buttonClass)) {
+			const button = createSettingsButton();
+			button.classList.add(buttonClass);
+			container.appendChild(button);
+		}
 
-		const myIndex = BUTTON_PRIORITY.indexOf(buttonClass);
-
-		for (let i = myIndex - 1; i >= 0; i--) {
-			const previousButton = container.querySelector('.' + BUTTON_PRIORITY[i]);
-			if (previousButton) {
-				if (previousButton.nextSibling) {
-					container.insertBefore(button, previousButton.nextSibling);
-				} else {
-					container.appendChild(button);
-				}
-				return;
+		// Reorder all buttons according to priority
+		const priorityButtons = [];
+		for (const className of BUTTON_PRIORITY) {
+			const button = container.querySelector('.' + className);
+			if (button) {
+				priorityButtons.push(button);
 			}
 		}
 
-		container.insertBefore(button, container.firstChild);
+		// Get all non-priority buttons (native Claude buttons)
+		const allButtons = Array.from(container.querySelectorAll('button'));
+		const nonPriorityButtons = allButtons.filter(btn =>
+			!BUTTON_PRIORITY.some(className => btn.classList.contains(className))
+		);
+
+		// Rebuild in order: priority buttons first, then native buttons
+		[...priorityButtons, ...nonPriorityButtons].forEach(button => {
+			container.appendChild(button); // appendChild moves existing elements
+		});
 	}
 
 	async function tryAddMicButton() {
@@ -687,7 +695,7 @@
 
 		// Check every second for both buttons
 		setInterval(async () => {
-			tryAddTopButton();
+			tryAddTopRightButton();
 			await tryAddMicButton();
 		}, 1000);
 	}
