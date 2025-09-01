@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
 	"name": "Claude Toolbox",
-	"version": "1.1",
+	"version": "2.0",
 	"description": "Collection of enhancement scripts for Claude.ai",
 	"permissions": [
 		"storage"
@@ -16,24 +16,28 @@
 				"https://claude.ai/*"
 			],
 			"js": [
-				"content-bridge.js"
+				"content/claude-styles.js",
+				"content/isolated/claude-exporter.js",
+				"content/isolated/claude-pref-switcher.js",
+				"content/isolated/claude-stt.js",
+				"content/isolated/claude-perchat-styles.js",
+				"content/isolated/claude-tts.js"
 			],
-			"run_at": "document_start"
+			"run_at": "document_idle"
 		},
 		{
 			"matches": [
 				"https://claude.ai/*"
 			],
 			"js": [
-				"userscripts/claude-exporter.user.js",
-				"userscripts/claude-perchat-styles.user.js",
-				"userscripts/claude-forking.user.js",
-				"claude-pref-switcher.user",
-				"claude-stt-input.user",
-				"claude-tts.user"
+				"content/claude-styles.js",
+				"content/main/claude-forking.js",
+				"content/main/pref-switcher-fetch-watcher.js",
+				"content/main/perchat-styles-fetch-interceptor.js",
+				"content/main/tts-interceptor.js"
 			],
 			"world": "MAIN",
-			"run_at": "document_idle"
+			"run_at": "document_start"
 		}
 	],
 	"browser_specific_settings": {
