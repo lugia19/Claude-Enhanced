@@ -16,106 +16,311 @@
 	//#region Playback Manager
 	class PlaybackManager {
 		constructor() {
-			this.playbackState = 'none'; // none, loading, playing
-			this.currentAudio = null;
+			this.state = 'idle'; // idle, loading, playing, stopping
+			this.currentSessionId = null;
 			this.audioContext = null;
-			this.currentSource = null;
+			this.abortController = null;
+			this.activeSources = []; // Registry of all active audio sources
+			this.scheduledEndTime = 0; // Track when the last scheduled audio ends
 		}
 
 		async play(text, voiceId, modelId, apiKey) {
-			// Stop any existing playback
-			if (this.isActive()) {
-				this.stop();
-			}
+			// Always stop any existing playback first and wait for cleanup
+			await this.stop();
+
+			// Generate new session ID
+			const sessionId = Date.now() + '_' + Math.random();
+			this.currentSessionId = sessionId;
 
 			// Set loading state
-			this.playbackState = 'loading';
+			this.state = 'loading';
 			this.updateSettingsButton();
 
 			try {
+				// Create fresh AudioContext for this session
+				this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
 				// Chunk the text
-				const chunks = this.chunkText(text, 3000);
-				console.log(`Split text into ${chunks.length} chunks`);
+				const chunks = this.chunkText(text, 9000);
+				console.log(`[Session ${sessionId}] Split text into ${chunks.length} chunks`);
 
-				// Initialize audio context if needed
-				if (!this.audioContext) {
-					this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-				}
-
-				// Fetch all audio chunks
-				const audioBuffers = [];
+				// Play chunks sequentially
 				for (let i = 0; i < chunks.length; i++) {
-					console.log(`Fetching audio for chunk ${i + 1}/${chunks.length}`);
-					const audioData = await this.fetchAudio(chunks[i], voiceId, modelId, apiKey);
-					if (!this.audioContext) {
-						console.log("Audio context removed, likely stopped while fetching");
+					// Check if this session is still valid
+					if (this.currentSessionId !== sessionId) {
+						console.log(`[Session ${sessionId}] Aborted - new session started`);
 						return;
 					}
-					const audioBuffer = await this.audioContext.decodeAudioData(audioData);
-					audioBuffers.push(audioBuffer);
+
+					console.log(`[Session ${sessionId}] Streaming chunk ${i + 1}/${chunks.length}`);
+					await this.streamChunk(chunks[i], voiceId, modelId, apiKey, sessionId);
 				}
 
-				// Set playing state
-				this.playbackState = 'playing';
-				this.updateSettingsButton();
-
-				// Play all chunks sequentially
-				for (let i = 0; i < audioBuffers.length; i++) {
-					if (this.playbackState !== 'playing') break; // Stop if playback was cancelled
-
-					console.log(`Playing chunk ${i + 1}/${audioBuffers.length}`);
-					await this.playAudioBuffer(audioBuffers[i]);
+				// Wait for all scheduled audio to finish
+				if (this.currentSessionId === sessionId && this.scheduledEndTime > 0) {
+					const remainingTime = this.scheduledEndTime - this.audioContext.currentTime;
+					if (remainingTime > 0) {
+						console.log(`[Session ${sessionId}] Waiting ${remainingTime.toFixed(2)}s for playback to complete`);
+						await new Promise(resolve => setTimeout(resolve, remainingTime * 1000 + 100));
+					}
 				}
 
 			} catch (error) {
-				console.error('Playback error:', error);
+				console.error(`[Session ${sessionId}] Playback error:`, error);
 				throw error;
 			} finally {
-				if (this.playbackState !== 'none') { // Only reset if not already stopped
-					this.playbackState = 'none';
+				// Only clean up if this is still the current session
+				if (this.currentSessionId === sessionId) {
+					this.state = 'idle';
+					this.currentSessionId = null;
 					this.updateSettingsButton();
+					this.cleanupAudioContext();
 				}
 			}
 		}
 
-		async fetchAudio(text, voiceId, modelId, apiKey) {
-			const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'xi-api-key': apiKey
-				},
-				body: JSON.stringify({
-					text: text,
-					model_id: modelId
-				})
-			});
-
-			if (!response.ok) {
-				const error = await response.text();
-				throw new Error(`ElevenLabs API error: ${response.status} - ${error}`);
-			}
-
-			return await response.arrayBuffer();
-		}
-
-		playAudioBuffer(audioBuffer) {
-			return new Promise((resolve, reject) => {
+		async streamChunk(text, voiceId, modelId, apiKey, sessionId) {
+			return new Promise(async (resolve, reject) => {
 				try {
-					this.currentSource = this.audioContext.createBufferSource();
-					this.currentSource.buffer = audioBuffer;
-					this.currentSource.connect(this.audioContext.destination);
-
-					this.currentSource.onended = () => {
-						this.currentSource = null;
+					// Verify session is still valid
+					if (this.currentSessionId !== sessionId) {
 						resolve();
-					};
+						return;
+					}
 
-					this.currentSource.start(0);
+					// Create abort controller for this chunk
+					this.abortController = new AbortController();
+
+					// Make API request
+					const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=pcm_24000`;
+					const response = await fetch(url, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'xi-api-key': apiKey,
+						},
+						body: JSON.stringify({
+							text: text,
+							model_id: modelId,
+							apply_text_normalization: (modelId.includes("turbo") || modelId.includes("flash")) ? "off" : "on"
+						}),
+						signal: this.abortController.signal
+					});
+
+					if (!response.ok) {
+						const error = await response.text();
+						throw new Error(`ElevenLabs API error: ${response.status} - ${error}`);
+					}
+
+					const reader = response.body.getReader();
+					let nextStartTime = Math.max(
+						this.audioContext.currentTime + 0.1,
+						this.scheduledEndTime
+					);
+					let leftoverBytes = new Uint8Array(0);
+					let firstChunk = true;
+
+					while (true) {
+						// Check session validity before processing each chunk
+						if (this.currentSessionId !== sessionId) {
+							reader.cancel();
+							resolve();
+							return;
+						}
+
+						const { done, value } = await reader.read();
+						if (done) break;
+
+						// Update state on first audio chunk
+						if (firstChunk && this.state === 'loading') {
+							this.state = 'playing';
+							this.updateSettingsButton();
+							firstChunk = false;
+						}
+
+						// Combine leftover with new chunk
+						const combinedData = new Uint8Array(leftoverBytes.length + value.length);
+						combinedData.set(leftoverBytes);
+						combinedData.set(value, leftoverBytes.length);
+
+						// Process complete 16-bit samples only
+						const completeSamples = Math.floor(combinedData.length / 2);
+						const bytesToProcess = completeSamples * 2;
+
+						if (completeSamples > 0) {
+							// Check session again before scheduling audio
+							if (this.currentSessionId !== sessionId) {
+								reader.cancel();
+								resolve();
+								return;
+							}
+
+							const pcmData = new Int16Array(combinedData.buffer, combinedData.byteOffset, completeSamples);
+
+							// Create audio buffer
+							const audioBuffer = this.audioContext.createBuffer(1, pcmData.length, 24000);
+							const channelData = audioBuffer.getChannelData(0);
+							for (let i = 0; i < pcmData.length; i++) {
+								channelData[i] = pcmData[i] / 32768.0;
+							}
+
+							// Create and schedule source
+							const source = this.audioContext.createBufferSource();
+							source.buffer = audioBuffer;
+							source.connect(this.audioContext.destination);
+
+							// Schedule playback
+							source.start(nextStartTime);
+							const endTime = nextStartTime + audioBuffer.duration;
+
+							// Register this source
+							this.registerSource(source, sessionId, endTime);
+
+							// Update timing for next chunk
+							nextStartTime = endTime;
+							this.scheduledEndTime = Math.max(this.scheduledEndTime, endTime);
+						}
+
+						// Save leftover bytes
+						leftoverBytes = combinedData.slice(bytesToProcess);
+					}
+
+					resolve();
+
 				} catch (error) {
-					reject(error);
+					if (error.name === 'AbortError') {
+						console.log(`[Session ${sessionId}] Fetch aborted`);
+						resolve();
+					} else {
+						reject(error);
+					}
 				}
 			});
+		}
+
+		registerSource(source, sessionId, endTime) {
+			const sourceInfo = {
+				source,
+				sessionId,
+				endTime,
+				stopped: false
+			};
+
+			// Add to registry
+			this.activeSources.push(sourceInfo);
+
+			// Set up cleanup when source naturally ends
+			source.onended = () => {
+				sourceInfo.stopped = true;
+				this.activeSources = this.activeSources.filter(s => s !== sourceInfo);
+				console.log(`[Session ${sessionId}] Source ended naturally, ${this.activeSources.length} remaining`);
+			};
+
+			console.log(`[Session ${sessionId}] Registered source, ${this.activeSources.length} active`);
+		}
+
+		async stop() {
+			if (this.state === 'idle') {
+				return;
+			}
+
+			console.log('Stopping playback, state:', this.state);
+
+			// Set stopping state to prevent new operations
+			this.state = 'stopping';
+			this.updateSettingsButton();
+
+			// Invalidate current session
+			const oldSessionId = this.currentSessionId;
+			this.currentSessionId = null;
+
+			// Abort any ongoing fetch
+			if (this.abortController) {
+				this.abortController.abort();
+				this.abortController = null;
+			}
+
+			// Stop all active sources immediately
+			const sourcesToStop = [...this.activeSources];
+			console.log(`Stopping ${sourcesToStop.length} active sources`);
+
+			for (const sourceInfo of sourcesToStop) {
+				if (!sourceInfo.stopped) {
+					try {
+						sourceInfo.source.stop(0); // Stop immediately
+						sourceInfo.stopped = true;
+					} catch (e) {
+						// Source may have already ended naturally
+						console.log('Source already stopped:', e);
+					}
+				}
+			}
+
+			// Clear the registry
+			this.activeSources = [];
+			this.scheduledEndTime = 0;
+
+			// Clean up audio context
+			this.cleanupAudioContext();
+
+			// Reset to idle state
+			this.state = 'idle';
+			this.updateSettingsButton();
+
+			console.log(`Playback stopped${oldSessionId ? ` (was session ${oldSessionId})` : ''}`);
+		}
+
+		cleanupAudioContext() {
+			if (this.audioContext) {
+				try {
+					if (this.audioContext.state !== 'closed') {
+						this.audioContext.close();
+					}
+				} catch (e) {
+					console.error('Error closing AudioContext:', e);
+				}
+				this.audioContext = null;
+			}
+		}
+
+		isActive() {
+			return this.state !== 'idle';
+		}
+
+		updateSettingsButton() {
+			const button = document.querySelector('.tts-settings-button');
+			if (!button) return;
+
+			const tooltip = document.querySelector('.tts-settings-tooltip');
+
+			if (this.state === 'loading' || this.state === 'stopping') {
+				// Show pause icon with spinning segmented circle
+				button.innerHTML = `
+                <div class="relative w-5 h-5">
+                    <svg class="spinner-segment absolute inset-0" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 20 20">
+                        <path d="M10 2a8 8 0 0 1 0 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+                        <path d="M10 2a8 8 0 0 1 5.66 2.34" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        ${PAUSE_ICON}
+                    </div>
+                </div>
+            `;
+				if (tooltip) {
+					const text = this.state === 'loading' ? 'Loading audio...' : 'Stopping...';
+					tooltip.querySelector('.tooltip-content').textContent = text;
+				}
+			} else if (this.state === 'playing') {
+				button.innerHTML = PAUSE_ICON;
+				if (tooltip) {
+					tooltip.querySelector('.tooltip-content').textContent = 'Stop playback';
+				}
+			} else {
+				button.innerHTML = SPEAKER_ICON;
+				if (tooltip) {
+					tooltip.querySelector('.tooltip-content').textContent = 'TTS Settings';
+				}
+			}
 		}
 
 		chunkText(text, maxLength) {
@@ -162,69 +367,6 @@
 
 			return chunks;
 		}
-
-		stop() {
-			console.log('Stopping playback');
-
-			// Stop current audio source
-			if (this.currentSource) {
-				try {
-					this.currentSource.stop();
-					this.currentSource.disconnect();
-				} catch (e) {
-					// Already stopped
-				}
-				this.currentSource = null;
-			}
-
-			// Close audio context
-			if (this.audioContext && this.audioContext.state !== 'closed') {
-				this.audioContext.close();
-				this.audioContext = null;
-			}
-
-			this.playbackState = 'none';
-			this.updateSettingsButton();
-		}
-
-		isActive() {
-			return this.playbackState !== 'none';
-		}
-
-		updateSettingsButton() {
-			const button = document.querySelector('.tts-settings-button');
-			if (!button) return;
-
-			const tooltip = document.querySelector('.tts-settings-tooltip');
-
-			if (this.playbackState === 'loading') {
-				// Show pause icon with spinning segmented circle
-				button.innerHTML = `
-                    <div class="relative w-5 h-5">
-                        <svg class="spinner-segment absolute inset-0" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 20 20">
-                            <path d="M10 2a8 8 0 0 1 0 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
-                            <path d="M10 2a8 8 0 0 1 5.66 2.34" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <div class="absolute inset-0 flex items-center justify-center">
-                            ${PAUSE_ICON}
-                        </div>
-                    </div>
-                `;
-				if (tooltip) {
-					tooltip.querySelector('.tooltip-content').textContent = 'Loading audio...';
-				}
-			} else if (this.playbackState === 'playing') {
-				button.innerHTML = PAUSE_ICON;
-				if (tooltip) {
-					tooltip.querySelector('.tooltip-content').textContent = 'Stop playback';
-				}
-			} else {
-				button.innerHTML = SPEAKER_ICON;
-				if (tooltip) {
-					tooltip.querySelector('.tooltip-content').textContent = 'TTS Settings';
-				}
-			}
-		}
 	}
 
 	const playbackManager = new PlaybackManager();
@@ -252,7 +394,7 @@
 					const voiceResult = await chrome.storage.local.get(`chatVoice_${conversationId}`);
 					const voiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
 					const voiceId = voiceOverride || settings.voice;
-
+					console.log("Autoplaying text:", messageText);
 					if (settings.apiKey && voiceId) {
 						// Small delay to let UI settle
 						setTimeout(() => {
@@ -385,6 +527,8 @@
 			.join('\n');
 		// Clean up multiple newlines
 		text = text.replace(/\n{3,}/g, '\n\n').trim();
+		// Clean up symbols
+		text = text.replace("*", "").replace("_", "").replace("#", "").trim();
 
 		if (quotesOnly) {
 			const quotes = text.match(/"([^"]*)"/g);
