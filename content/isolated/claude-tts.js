@@ -642,10 +642,25 @@
 
 		// Handle artifact buttons
 		const buttonsRow = findArtifactButtonsRow();
-		if (buttonsRow && !buttonsRow.querySelector('.tts-artifact-speak-button')) {
-			const speakButtonContainer = createArtifactSpeakButton();
-			// Insert as first item in the buttons row
-			buttonsRow.insertBefore(speakButtonContainer, buttonsRow.firstChild);
+
+		if (buttonsRow) {
+			// Artifact exists - add button if not present
+			if (!buttonsRow.querySelector('.tts-artifact-speak-button')) {
+				const speakButtonContainer = createArtifactSpeakButton();
+				buttonsRow.insertBefore(speakButtonContainer, buttonsRow.firstChild);
+			}
+		} else {
+			// No artifact found - remove any existing artifact speak buttons
+			const existingArtifactButtons = document.querySelectorAll('.tts-artifact-speak-button');
+			existingArtifactButtons.forEach(btn => {
+				// Remove the container div that wraps the button
+				const container = btn.closest('.flex.h-8.whitespace-nowrap');
+				if (container) {
+					container.remove();
+				} else {
+					btn.remove();
+				}
+			});
 		}
 	}
 
