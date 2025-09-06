@@ -32,6 +32,7 @@
 			"js": [
 				"content/claude-styles.js",
 				"content/main/claude-forking.js",
+				"content/main/typing-lag-fix.js",
 				"content/main/pref-switcher-fetch-watcher.js",
 				"content/main/perchat-styles-fetch-interceptor.js",
 				"content/main/tts-interceptor.js"
