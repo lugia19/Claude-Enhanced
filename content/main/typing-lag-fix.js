@@ -16,7 +16,7 @@
 	let currentTextarea = null;
 	let draftSaveTimer;
 	let draftDebounce = 300; // 0.3 seconds debounce for draft saving
-	const messageCountThreshold = 50; // Threshold for long conversations
+	const messageCountThreshold = 30; // Threshold for long conversations
 
 	document.addEventListener('keydown', (e) => {
 		// Blacklist: elements where typing SHOULD work normally
