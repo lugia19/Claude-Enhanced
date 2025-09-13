@@ -4,7 +4,6 @@
 
 	let pendingForkModel = null;
 	let includeAttachments = true;
-	let isProcessing = false;
 	let pendingUseSummary = false;
 	let originalSettings = null;
 
@@ -137,23 +136,10 @@
 	}
 
 	function addBranchButtons() {
-		if (isProcessing) return;
 		try {
-			isProcessing = true;
-			const messages = document.querySelectorAll('.font-claude-response');
-			messages.forEach((message) => {
-				const controls = findMessageControls(message);
-				if (controls && !controls.querySelector('.fork-button')) {
-					const branchBtn = createBranchButton();
-					branchBtn.setAttribute('aria-label', 'Fork conversation');
-					// Use the priority function instead of direct insertion
-					addMessageButtonWithPriority(controls, branchBtn, 'fork-button');
-				}
-			});
+			addMessageButtonWithPriority(createBranchButton, 'fork-button');
 		} catch (error) {
 			console.error('Error adding branch buttons:', error);
-		} finally {
-			isProcessing = false;
 		}
 	}
 	//#endregion

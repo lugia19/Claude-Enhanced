@@ -52,7 +52,6 @@
 						return;
 					}
 
-					console.log(`[Session ${sessionId}] Streaming chunk ${i + 1}/${chunks.length}`);
 					await this.streamChunk(chunks[i], voiceId, modelId, apiKey, sessionId);
 				}
 
@@ -60,7 +59,6 @@
 				if (this.currentSessionId === sessionId && this.scheduledEndTime > 0) {
 					const remainingTime = this.scheduledEndTime - this.audioContext.currentTime;
 					if (remainingTime > 0) {
-						console.log(`[Session ${sessionId}] Waiting ${remainingTime.toFixed(2)}s for playback to complete`);
 						await new Promise(resolve => setTimeout(resolve, remainingTime * 1000 + 100));
 					}
 				}
@@ -213,10 +211,8 @@
 			source.onended = () => {
 				sourceInfo.stopped = true;
 				this.activeSources = this.activeSources.filter(s => s !== sourceInfo);
-				console.log(`[Session ${sessionId}] Source ended naturally, ${this.activeSources.length} remaining`);
 			};
 
-			console.log(`[Session ${sessionId}] Registered source, ${this.activeSources.length} active`);
 		}
 
 		async stop() {
@@ -372,6 +368,182 @@
 	const playbackManager = new PlaybackManager();
 	//#endregion
 
+	//#region Actor Mode Implementation
+	async function attributeDialogueToCharacters(text, characters) {
+		// Get the Anthropic API key from storage
+		const result = await chrome.storage.local.get('tts_anthropicApiKey');
+		const anthropicApiKey = result.tts_anthropicApiKey;
+
+		if (!anthropicApiKey) {
+			throw new Error('No Anthropic API key configured for actor mode');
+		}
+
+		// Check if narrator has a voice assigned
+		const narratorChar = characters.find(c => c.name.toLowerCase() === 'narrator');
+		const includeNarration = narratorChar && narratorChar.voice;
+
+		// Build character description for the prompt
+		const dialogueCharacters = characters.filter(c => c.name.toLowerCase() !== 'narrator');
+		const characterList = dialogueCharacters.map(c =>
+			`${c.name} (${c.gender})`
+		).join(', ');
+
+		let systemPrompt, userPrompt;
+
+		if (includeNarration) {
+			// Include narration in the extraction
+			systemPrompt = `You are a dialogue attribution system. Your task is to analyze text and identify which character is speaking each part, including narration.
+
+Characters available: ${characterList}, narrator (for non-dialogue/descriptive text)
+
+Important rules:
+- Attribute quoted dialogue to the appropriate character based on context
+- Non-dialogue/descriptive text should be attributed to "narrator"
+- If dialogue attribution is unclear, attribute it to "narrator"
+- Character names are case-insensitive
+- Every piece of text must be attributed to someone`;
+
+			userPrompt = `Please analyze this text and segment it by speaker. Include both dialogue and narration. Return a JSON array where each element has "character" (string) and "text" (string) fields.
+
+Text to analyze:
+${text}
+
+Return ONLY a valid JSON array, no other text.`;
+		} else {
+			// Only extract dialogue
+			systemPrompt = `You are a dialogue extraction system. Your task is to extract ONLY the spoken dialogue from text and identify which character is speaking.
+
+Characters available: ${characterList}
+
+Important rules:
+- ONLY extract dialogue (typically in quotes)
+- Ignore all narration, descriptions, and non-dialogue text
+- Attribute each piece of dialogue to the appropriate character based on context
+- If dialogue attribution is unclear, skip that dialogue
+- Character names are case-insensitive`;
+
+			userPrompt = `Please extract ONLY the dialogue from this text and identify the speaker. Ignore all narration and descriptive text. Return a JSON array where each element has "character" (string) and "text" (string) fields.
+
+Text to analyze:
+${text}
+
+Return ONLY a valid JSON array containing dialogue, no narration.`;
+		}
+
+		try {
+			const response = await chrome.runtime.sendMessage({
+				type: 'anthropic-api',
+				apiKey: anthropicApiKey,
+				payload: {
+					model: 'claude-sonnet-4-20250514',
+					max_tokens: 4096,
+					temperature: 0.3,
+					system: systemPrompt,
+					messages: [{ role: 'user', content: userPrompt }]
+				}
+			});
+
+			if (!response.success) {
+				throw new Error(`Anthropic API error: ${response.error}`);
+			}
+
+			const responseText = response.data.content[0].text;
+
+			// Parse the JSON response
+			const segments = JSON.parse(responseText);
+
+			// Validate and normalize the segments
+			const validatedSegments = segments
+				.filter(s => s.character && s.text)
+				.map(s => ({
+					character: s.character.toLowerCase(),
+					text: s.text.trim()
+				}))
+				.filter(s => s.text.length > 0);
+
+			if (validatedSegments.length === 0) {
+				throw new Error('No valid segments returned from dialogue attribution');
+			}
+
+			return validatedSegments;
+
+		} catch (error) {
+			console.error('Failed to attribute dialogue:', error);
+			throw error;
+		}
+	}
+
+	// Updated playback function that uses actor mode
+	async function playText(text, settings, conversationId) {
+		// Check if actor mode is enabled for this conversation
+		const actorModeResult = await chrome.storage.local.get(`chatActorMode_${conversationId}`);
+		const actorModeEnabled = actorModeResult[`chatActorMode_${conversationId}`] === true;
+
+		// Get the voice for this chat (either override or default)
+		const voiceResult = await chrome.storage.local.get(`chatVoice_${conversationId}`);
+		const voiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
+		const defaultVoiceId = voiceOverride || settings.voice;
+
+		if (!actorModeEnabled) {
+			// Actor mode not enabled - use regular voice
+			return playbackManager.play(text, defaultVoiceId, settings.model, settings.apiKey);
+		}
+
+		// Actor mode is enabled - get character configurations
+		const charactersResult = await chrome.storage.local.get(`chatCharacters_${conversationId}`);
+		const characters = charactersResult[`chatCharacters_${conversationId}`] || [];
+
+		if (characters.length === 0) {
+			// No characters configured - fall back to regular playback
+			console.log('Actor mode enabled but no characters configured, using default voice');
+			return playbackManager.play(text, defaultVoiceId, settings.model, settings.apiKey);
+		}
+
+		try {
+			// Try to get dialogue attribution from Claude
+			console.log('Getting dialogue attribution for actor mode...');
+			const segments = await attributeDialogueToCharacters(text, characters);
+
+			// Create a voice map
+			const voiceMap = {};
+			characters.forEach(char => {
+				if (char.voice) {
+					voiceMap[char.name.toLowerCase()] = char.voice;
+				}
+			});
+
+			// Play each segment with the appropriate voice
+			for (const segment of segments) {
+				const characterName = segment.character.toLowerCase();
+
+				// Use character's voice if available, otherwise use default voice
+				// "narrator" segments will use the default voice
+				const voice = voiceMap[characterName] || defaultVoiceId;
+
+				if (!voice) {
+					console.warn(`No voice available for ${segment.character}, skipping segment`);
+					continue;
+				}
+
+				console.log(`Playing "${segment.text.substring(0, 50)}..." as ${segment.character} with voice ${voice}`);
+
+				await playbackManager.play(segment.text, voice, settings.model, settings.apiKey);
+			}
+		} catch (error) {
+			// Actor mode failed - fall back to regular playback with default voice
+			console.error('Actor mode failed, falling back to regular playback:', error);
+
+			// Optionally alert the user about the failure
+			if (error.message.includes('No Anthropic API key')) {
+				alert('Actor mode requires an Anthropic API key. Please configure it in the character settings.');
+			}
+
+			// Play the entire text with the default voice
+			return playbackManager.play(text, defaultVoiceId, settings.model, settings.apiKey);
+		}
+	}
+	//#endregion
+
 	//#region Message Listener
 	let isCapturingText = false;
 	let capturedText = null;
@@ -384,21 +556,17 @@
 
 				// Get quotes-only setting for this chat
 				const result = await chrome.storage.local.get(`chatQuotesOnly_${conversationId}`);
-				const quotesOnly = result[`chatQuotesOnly_${conversationId}`] || false;
+				const quotesOnly = result[`chatQuotesOnly_${conversationId}`] === true;
 
 				// Clean up the text
 				const messageText = cleanupText(text, quotesOnly);
 
 				if (messageText) {
-					// Get voice settings
-					const voiceResult = await chrome.storage.local.get(`chatVoice_${conversationId}`);
-					const voiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
-					const voiceId = voiceOverride || settings.voice;
 					console.log("Autoplaying text:", messageText);
-					if (settings.apiKey && voiceId) {
+					if (settings.apiKey) {
 						// Small delay to let UI settle
 						setTimeout(() => {
-							playbackManager.play(messageText, voiceId, settings.model, settings.apiKey)
+							playText(messageText, settings, conversationId)
 								.catch(err => console.error('Auto-speak failed:', err));
 						}, 100);
 					}
@@ -465,12 +633,11 @@
 
 			const voiceResult = await chrome.storage.local.get(`chatVoice_${conversationId}`);
 			const voiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
-			const voiceId = voiceOverride || settings.voice;
 
 			const quotesResult = await chrome.storage.local.get(`chatQuotesOnly_${conversationId}`);
-			const quotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] || false;
+			const quotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] === true; // Explicitly check for true
 
-			if (!settings.apiKey || !voiceId) {
+			if (!settings.apiKey) {
 				alert('Please configure TTS settings first');
 				return;
 			}
@@ -484,7 +651,7 @@
 
 			// Start playback (will handle stopping existing playback internally)
 			try {
-				await playbackManager.play(finalText, voiceId, settings.model, settings.apiKey);
+				await playText(finalText, settings, conversationId);
 			} catch (error) {
 				alert('Failed to play audio: ' + error.message);
 			}
@@ -554,12 +721,11 @@
 
 			const voiceResult = await chrome.storage.local.get(`chatVoice_${conversationId}`);
 			const voiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
-			const voiceId = voiceOverride || settings.voice;
 
 			const quotesResult = await chrome.storage.local.get(`chatQuotesOnly_${conversationId}`);
-			const quotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] || false;
+			const quotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] === true;
 
-			if (!settings.apiKey || !voiceId) {
+			if (!settings.apiKey) {
 				alert('Please configure TTS settings first');
 				return;
 			}
@@ -571,7 +737,7 @@
 			}
 
 			try {
-				await playbackManager.play(finalText, voiceId, settings.model, settings.apiKey);
+				await playText(finalText, settings, conversationId);
 			} catch (error) {
 				alert('Failed to play audio: ' + error.message);
 			}
@@ -629,16 +795,7 @@
 	async function addSpeakButtons() {
 		const settings = await loadSettings();
 		if (!settings.enabled) return;
-
-		// Handle regular message buttons (existing code)
-		const messages = document.querySelectorAll('.font-claude-response');
-		messages.forEach((message) => {
-			const controls = findMessageControls(message);
-			if (controls && !controls.querySelector('.tts-speak-button')) {
-				const speakBtn = createSpeakButton();
-				addMessageButtonWithPriority(controls, speakBtn, 'tts-speak-button');
-			}
-		});
+		addMessageButtonWithPriority(createSpeakButton, 'tts-speak-button');
 
 		// Handle artifact buttons
 		const buttonsRow = findArtifactButtonsRow();
@@ -681,7 +838,13 @@
 
 		// Load per-chat settings
 		const quotesResult = await chrome.storage.local.get(`chatQuotesOnly_${conversationId}`);
-		const chatQuotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] || false;
+		const chatQuotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] === true;
+
+		const voiceResult = await chrome.storage.local.get(`chatVoice_${conversationId}`);
+		const chatVoiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
+
+		const actorResult = await chrome.storage.local.get(`chatActorMode_${conversationId}`);
+		const actorModeEnabled = actorResult[`chatActorMode_${conversationId}`] === true;
 
 		modal.innerHTML = `
         <div class="claude-modal">
@@ -730,6 +893,16 @@
                         <option value="">Use default voice</option>
                     </select>
                 </div>
+                
+                <div class="mb-4">
+                    <div class="flex items-center justify-between">
+                        <div id="actorModeToggleContainer" class="flex-1"></div>
+                        <button type="button" class="claude-btn-secondary ml-2" id="configureActorsBtn" 
+                                style="display: ${actorModeEnabled ? 'block' : 'none'};">
+                            Configure Characters
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div class="flex justify-end gap-2">
@@ -740,8 +913,6 @@
     `;
 
 		document.body.appendChild(modal);
-
-		// Apply styling
 		applyClaudeStyling(modal);
 
 		// Add toggles
@@ -754,31 +925,88 @@
 		const quotesOnlyToggle = createClaudeToggle('Only speak quoted text', chatQuotesOnly, null);
 		modal.querySelector('#quotesOnlyToggleContainer').appendChild(quotesOnlyToggle.container);
 
-		// Load voices and models if API key exists
+		// Add actor mode toggle
+		const actorModeToggle = createClaudeToggle('Actor mode', actorModeEnabled, null);
+		modal.querySelector('#actorModeToggleContainer').appendChild(actorModeToggle.container);
+
+		// Handle actor mode toggle
+		actorModeToggle.input.addEventListener('change', (e) => {
+			const configBtn = modal.querySelector('#configureActorsBtn');
+			configBtn.style.display = e.target.checked ? 'block' : 'none';
+		});
+
+		// Configure actors button
+		modal.querySelector('#configureActorsBtn').onclick = async () => {
+			await createActorConfigModal(settings.apiKey);
+		};
+
+
+		// Load and populate voices/models if API key exists
 		if (settings.apiKey) {
-			await Promise.all([
-				loadVoices(modal, settings),
-				loadModels(modal, settings)
+			const [voices, models] = await Promise.all([
+				getVoices(settings.apiKey),
+				getModels(settings.apiKey)
 			]);
+
+			// Populate voice selects
+			const voiceOptions = voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }))
+			populateSelect(modal.querySelector('#voiceSelect'), voiceOptions, settings.voice);
+
+			// Populate chat override with "Use default" option
+			const overrideSelect = modal.querySelector('#chatVoiceOverride');
+			overrideSelect.innerHTML = '<option value="">Use default voice</option>';
+			voiceOptions.forEach(opt => {
+				const option = document.createElement('option');
+				option.value = opt.value;
+				option.textContent = opt.label;
+				overrideSelect.appendChild(option);
+			});
+			overrideSelect.value = chatVoiceOverride;
+			overrideSelect.disabled = false;
+
+			// Populate models
+			const modelOptions = models.map(m => ({ value: m.model_id, label: m.name }));
+			populateSelect(modal.querySelector('#modelSelect'), modelOptions, settings.model);
 		}
 
 		// Handle API key changes
 		modal.querySelector('#apiKeyInput').addEventListener('change', async (e) => {
 			const newKey = e.target.value.trim();
 			if (newKey) {
-				// Test the API key
 				const isValid = await testApiKey(newKey);
 				if (isValid) {
-					await Promise.all([
-						loadVoices(modal, { ...settings, apiKey: newKey }),
-						loadModels(modal, { ...settings, apiKey: newKey })
+					const [voices, models] = await Promise.all([
+						getVoices(newKey),
+						getModels(newKey)
 					]);
+
+					const voiceOptions = voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }))
+					populateSelect(modal.querySelector('#voiceSelect'), voiceOptions);
+
+					const overrideSelect = modal.querySelector('#chatVoiceOverride');
+					overrideSelect.innerHTML = '<option value="">Use default voice</option>';
+					voiceOptions.forEach(opt => {
+						const option = document.createElement('option');
+						option.value = opt.value;
+						option.textContent = opt.label;
+						overrideSelect.appendChild(option);
+					});
+					overrideSelect.disabled = voiceOptions.length === 0;
+
+					const modelOptions = models.map(m => ({ value: m.model_id, label: m.name }));
+					populateSelect(modal.querySelector('#modelSelect'), modelOptions);
 				} else {
 					alert('Invalid ElevenLabs API key');
 					e.target.value = settings.apiKey || '';
 				}
 			}
 		});
+
+		// Configure actors button
+		modal.querySelector('#configureActorsBtn').onclick = async () => {
+			const currentApiKey = modal.querySelector('#apiKeyInput').value.trim();
+			await createActorConfigModal(currentApiKey || settings.apiKey);
+		};
 
 		// Save button
 		modal.querySelector('#saveSettings').onclick = async () => {
@@ -790,22 +1018,27 @@
 				autoSpeak: autoSpeakToggle.input.checked
 			};
 
-			// Handle per-chat settings
+			// Handle per-chat settings - always save the state, don't remove
 			if (conversationId) {
-				// Save quotes-only setting
-				if (quotesOnlyToggle.input.checked) {
-					await chrome.storage.local.set({ [`chatQuotesOnly_${conversationId}`]: true });
-				} else {
-					await chrome.storage.local.remove(`chatQuotesOnly_${conversationId}`);
-				}
+				// Save quotes-only setting (always save true/false)
+				await chrome.storage.local.set({
+					[`chatQuotesOnly_${conversationId}`]: quotesOnlyToggle.input.checked
+				});
 
-				// Save voice override
+				// Save voice override (only remove if explicitly cleared)
 				const chatOverride = modal.querySelector('#chatVoiceOverride').value;
 				if (chatOverride) {
 					await chrome.storage.local.set({ [`chatVoice_${conversationId}`]: chatOverride });
 				} else {
+					// Only remove if user explicitly selected "Use default voice"
 					await chrome.storage.local.remove(`chatVoice_${conversationId}`);
 				}
+
+				// Save actor mode setting (always save true/false)
+				await chrome.storage.local.set({
+					[`chatActorMode_${conversationId}`]: actorModeToggle.input.checked
+				});
+				// Note: Character data is preserved regardless of actor mode state
 			}
 
 			await saveSettings(newSettings);
@@ -832,93 +1065,326 @@
 		return modal;
 	}
 
-	async function loadVoices(modal, settings) {
-		const voiceSelect = modal.querySelector('#voiceSelect');
-		const chatOverrideSelect = modal.querySelector('#chatVoiceOverride');
+	async function createActorConfigModal(apiKey) {
+		const modal = document.createElement('div');
+		modal.className = 'claude-modal-backdrop';
+
+		const conversationId = getConversationId();
+		const charactersResult = await chrome.storage.local.get(`chatCharacters_${conversationId}`);
+		let characters = charactersResult[`chatCharacters_${conversationId}`] || [];
+
+		// Ensure narrator exists in the characters list
+		if (!characters.find(c => c.name.toLowerCase() === 'narrator')) {
+			characters = [{ name: 'Narrator', gender: 'other', voice: '' }, ...characters];
+		}
+
+		modal.innerHTML = `
+			<div class="claude-modal" style="max-width: 700px; width: 90%;">
+				<h3 class="claude-modal-heading">Character Voice Configuration</h3>
+				
+				<!-- Anthropic API Key field -->
+				<div class="mb-4 p-3 bg-bg-100 rounded-lg border border-border-200">
+					<label class="claude-label">Anthropic API Key (for dialogue attribution)</label>
+					<input type="password" class="claude-input" id="anthropicApiKeyInput" 
+						placeholder="sk-ant-api...">
+					<p class="text-xs text-text-400 mt-1">
+						Required for automatic dialogue attribution. Get your key from 
+						<a href="https://console.anthropic.com/" target="_blank" class="text-accent-300 hover:underline">console.anthropic.com</a>
+					</p>
+				</div>
+				
+				<div class="mb-4">
+					<div class="flex items-center justify-between mb-3">
+						<p class="text-sm text-text-300">
+							Assign voices to character names. If Narrator is set to "None", only dialogue will be spoken.
+						</p>
+					</div>
+					
+					<!-- Control buttons -->
+					<div class="flex justify-end gap-2 mb-3">
+						<button type="button" class="claude-btn-secondary" id="addCharacterBtn">
+							<span class="flex items-center gap-1">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16">
+									<path d="M8 3v10M3 8h10" stroke-linecap="round"/>
+								</svg>
+								Add Character
+							</span>
+						</button>
+						<button type="button" class="claude-btn-secondary" id="removeCharacterBtn">
+							<span class="flex items-center gap-1">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16">
+									<path d="M3 8h10" stroke-linecap="round"/>
+								</svg>
+								Remove Last
+							</span>
+						</button>
+					</div>
+					
+					<!-- Table container with border -->
+					<div class="border border-border-300 rounded-lg overflow-hidden">
+						<!-- Table header -->
+						<div class="grid grid-cols-3 gap-4 p-3 bg-bg-100 border-b border-border-300 font-medium text-sm">
+							<div>Character Name</div>
+							<div>Gender</div>
+							<div>Voice</div>
+						</div>
+						
+						<!-- Characters list container -->
+						<div id="charactersList" class="max-h-96 overflow-y-auto">
+							<!-- Character rows will be added here -->
+						</div>
+					</div>
+					
+					<div class="mt-3 text-xs text-text-400">
+						Tip: Set Narrator to "None" to only speak dialogue. Set it to a voice to include narration.
+					</div>
+				</div>
+
+				<div class="flex justify-end gap-2">
+					<button class="claude-btn-secondary" id="cancelActorConfig">Cancel</button>
+					<button class="claude-btn-primary" id="saveActorConfig">Save</button>
+				</div>
+			</div>
+		`;
+
+		document.body.appendChild(modal);
+		applyClaudeStyling(modal);
+
+		// Load available voices
+		const voices = await getVoices(apiKey);
+		const voiceOptions = [
+			{ value: '', label: 'None' },
+			...voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }))
+		];
+
+		if (voices.length === 0 && apiKey) {
+			// Add a warning message to the modal
+			const warningDiv = document.createElement('div');
+			warningDiv.className = 'mb-3 p-2 bg-accent-100 border border-accent-200 rounded text-sm text-accent-600';
+			warningDiv.textContent = 'Could not load voices. Please check your ElevenLabs API key.';
+			const tableContainer = modal.querySelector('.border.border-border-300.rounded-lg');
+			tableContainer.parentElement.insertBefore(warningDiv, tableContainer);
+		}
+
+		// Function to create a character row
+		function createCharacterRow(character = {}, isNarrator = false) {
+			const row = document.createElement('div');
+			row.className = 'grid grid-cols-3 gap-4 p-3 border-b border-border-200 character-row hover:bg-bg-50';
+			if (isNarrator) {
+				row.classList.add('narrator-row', 'bg-bg-50');
+			}
+
+			const nameInput = document.createElement('input');
+			nameInput.type = 'text';
+			nameInput.className = 'claude-input character-name';
+			nameInput.placeholder = 'e.g., Alice';
+			nameInput.value = character.name || '';
+			if (isNarrator) {
+				nameInput.disabled = true;
+				nameInput.className += ' opacity-60';
+			}
+
+			const genderSelect = document.createElement('select');
+			genderSelect.className = 'claude-select character-gender';
+			genderSelect.innerHTML = `
+            <option value="male" ${character.gender === 'male' ? 'selected' : ''}>Male</option>
+            <option value="female" ${character.gender === 'female' ? 'selected' : ''}>Female</option>
+            <option value="other" ${character.gender === 'other' ? 'selected' : ''}>Other</option>
+        `;
+			if (isNarrator) {
+				genderSelect.disabled = true;
+				genderSelect.className += ' opacity-60';
+			}
+
+			const voiceSelect = document.createElement('select');
+			voiceSelect.className = 'claude-select character-voice';
+
+			// Use populateSelect here too
+			populateSelect(voiceSelect, voiceOptions, character.voice || '');
+
+			row.appendChild(nameInput);
+			row.appendChild(genderSelect);
+			row.appendChild(voiceSelect);
+
+			applyClaudeStyling(row);
+
+			return row;
+		}
+
+		// Populate existing characters
+		const charactersList = modal.querySelector('#charactersList');
+
+		// Always add Narrator first
+		const narratorChar = characters.find(c => c.name.toLowerCase() === 'narrator') ||
+			{ name: 'Narrator', gender: 'other', voice: '' };
+		charactersList.appendChild(createCharacterRow(narratorChar, true));
+
+		// Add other characters
+		characters.filter(c => c.name.toLowerCase() !== 'narrator').forEach(character => {
+			charactersList.appendChild(createCharacterRow(character, false));
+		});
+
+		// If no non-narrator characters, add one empty row
+		if (characters.filter(c => c.name.toLowerCase() !== 'narrator').length === 0) {
+			charactersList.appendChild(createCharacterRow());
+		}
+
+		// Load existing Anthropic API key if available
+		const anthropicResult = await chrome.storage.local.get('tts_anthropicApiKey');
+		if (anthropicResult.tts_anthropicApiKey) {
+			modal.querySelector('#anthropicApiKeyInput').value = anthropicResult.tts_anthropicApiKey;
+		}
+
+		// Add character button
+		modal.querySelector('#addCharacterBtn').onclick = () => {
+			charactersList.appendChild(createCharacterRow());
+		};
+
+		// Remove character button - never remove narrator
+		modal.querySelector('#removeCharacterBtn').onclick = () => {
+			const rows = charactersList.querySelectorAll('.character-row:not(.narrator-row)');
+			if (rows.length > 1) {
+				rows[rows.length - 1].remove();
+			} else if (rows.length === 1) {
+				// If only one non-narrator row, clear it instead of removing
+				rows[0].querySelector('.character-name').value = '';
+				rows[0].querySelector('.character-gender').value = 'male';
+				rows[0].querySelector('.character-voice').value = '';
+			}
+		};
+
+		// Save button
+		modal.querySelector('#saveActorConfig').onclick = async () => {
+			// Save Anthropic API key
+			const anthropicKey = modal.querySelector('#anthropicApiKeyInput').value.trim();
+			if (anthropicKey) {
+				await chrome.storage.local.set({ 'tts_anthropicApiKey': anthropicKey });
+			}
+
+			// Collect character data - always include narrator
+			const characterRows = modal.querySelectorAll('.character-row');
+			const charactersData = Array.from(characterRows)
+				.map(row => ({
+					name: row.querySelector('.character-name').value.trim(),
+					gender: row.querySelector('.character-gender').value,
+					voice: row.querySelector('.character-voice').value
+				}))
+				.filter(char => char.name);
+
+			if (charactersData.length > 0) {
+				await chrome.storage.local.set({ [`chatCharacters_${conversationId}`]: charactersData });
+			}
+
+			modal.remove();
+		};
+
+		// Cancel button and backdrop click handlers remain the same
+		modal.querySelector('#cancelActorConfig').onclick = () => modal.remove();
+		modal.onclick = (e) => {
+			if (e.target === modal) modal.remove();
+		};
+
+		return modal;
+	}
+
+	async function getVoices(apiKey) {
+		if (!apiKey) {
+			return [];
+		}
+
+		const allVoices = [];
+		let hasMore = true;
+		let nextPageToken = null;
 
 		try {
-			// Use the new search endpoint with pagination
-			const response = await fetch('https://api.elevenlabs.io/v1/voices?page_size=100', {
-				headers: {
-					'xi-api-key': settings.apiKey
+			while (hasMore) {
+				// Build URL with pagination
+				let url = 'https://api.elevenlabs.io/v2/voices?page_size=100';
+				if (nextPageToken) {
+					url += `&next_page_token=${nextPageToken}`;
 				}
-			});
 
-			if (!response.ok) {
-				throw new Error('Failed to fetch voices');
+				const response = await fetch(url, {
+					headers: {
+						'xi-api-key': apiKey
+					}
+				});
+
+				if (!response.ok) {
+					console.error('Failed to fetch voices:', response.status);
+					return allVoices; // Return what we have so far
+				}
+
+				const data = await response.json();
+
+				if (data.voices && data.voices.length > 0) {
+					allVoices.push(...data.voices);
+					nextPageToken = data.next_page_token;
+					hasMore = data.has_more === true;
+				} else {
+					hasMore = false;
+				}
 			}
 
-			const data = await response.json();
-			const voices = data.voices;
+			// Sort voices alphabetically by name for consistent ordering
+			allVoices.sort((a, b) => a.name.localeCompare(b.name));
 
-			// Clear and populate voice selects
-			voiceSelect.innerHTML = '';
-			chatOverrideSelect.innerHTML = '<option value="">Use default voice</option>';
-
-			voices.forEach(voice => {
-				const option = new Option(`${voice.name} (${voice.voice_id})`, voice.voice_id);
-				voiceSelect.add(option.cloneNode(true));
-				chatOverrideSelect.add(option.cloneNode(true));
-			});
-
-			// Set selected values
-			voiceSelect.value = settings.voice || (voices[0]?.voice_id || '');
-
-			// Set chat override if exists
-			const conversationId = getConversationId();
-			if (conversationId) {
-				const result = await chrome.storage.local.get(`chatVoice_${conversationId}`);
-				const override = result[`chatVoice_${conversationId}`] || '';
-				chatOverrideSelect.value = override;
-			}
-
-			// Enable selects
-			voiceSelect.disabled = false;
-			chatOverrideSelect.disabled = false;
+			return allVoices;
 
 		} catch (error) {
-			alert('Failed to load voices from ElevenLabs');
-			console.error('Voice loading error:', error);
+			console.error('Error fetching voices:', error);
+			return allVoices; // Return what we have so far
 		}
 	}
 
-	async function loadModels(modal, settings) {
-		const modelSelect = modal.querySelector('#modelSelect');
+	async function getModels(apiKey) {
+		if (!apiKey) {
+			return [];
+		}
 
 		try {
 			const response = await fetch('https://api.elevenlabs.io/v1/models', {
-				headers: {
-					'xi-api-key': settings.apiKey
-				}
+				headers: { 'xi-api-key': apiKey }
 			});
 
 			if (!response.ok) {
-				throw new Error('Failed to fetch models');
+				console.error('Failed to fetch models:', response.status);
+				return [];
 			}
 
 			const models = await response.json();
-
-			// Clear and populate model select
-			modelSelect.innerHTML = '';
-			modelSelect.disabled = false;
-
-			// Filter for TTS-capable models and add them
-			models
-				.filter(model => model.can_do_text_to_speech)
-				.forEach(model => {
-					const option = new Option(model.name, model.model_id);
-					modelSelect.add(option);
-				});
-
-			// Set selected value
-			modelSelect.value = settings.model || models.find(m => m.can_do_text_to_speech)?.model_id || '';
+			return models.filter(model => model.can_do_text_to_speech);
 
 		} catch (error) {
-			// Fall back to hardcoded models if API fails
-			console.error('Failed to load models.', error);
-			modelSelect.innerHTML = '<option value="eleven_multilingual_v2">Multilingual v2</option>';
-			modelSelect.value = settings.model || 'eleven_multilingual_v2';
+			console.error('Failed to load models:', error);
+			// Return fallback models
+			return [{
+				model_id: 'eleven_multilingual_v2',
+				name: 'Multilingual v2',
+				can_do_text_to_speech: true
+			}];
 		}
+	}
+
+	// Simple UI population function
+	function populateSelect(selectElement, options, currentValue = '') {
+		selectElement.innerHTML = '';
+
+		if (options.length === 0) {
+			selectElement.innerHTML = '<option value="">None available</option>';
+			selectElement.disabled = true;
+			return;
+		}
+
+		options.forEach(option => {
+			const optionElement = document.createElement('option');
+			optionElement.value = option.value;
+			optionElement.textContent = option.label;
+			selectElement.appendChild(optionElement);
+		});
+
+		selectElement.disabled = false;
+		selectElement.value = currentValue || options[0]?.value || '';
 	}
 
 	async function testApiKey(apiKey) {

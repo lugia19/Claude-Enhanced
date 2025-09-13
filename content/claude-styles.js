@@ -214,7 +214,7 @@ function tryAddTopRightButton(buttonClass, createButtonFn) {
 		'export-button'
 	];
 
-	const container = document.querySelector(".right-3.flex.gap-2");
+	const container = document.querySelector('.md\\:absolute.md\\:right-0.md\\:top-0.z-20')
 	if (!container || container.querySelectorAll("button").length == 0) {
 		return false;
 	}
@@ -261,48 +261,61 @@ function tryAddTopRightButton(buttonClass, createButtonFn) {
 	return madeChanges;
 }
 
+function findMessageControls(messageElement) {
+	const group = messageElement.closest('.group');
+	const buttons = group?.querySelectorAll('button');
+	if (!buttons) return null;
+	const copyButton = group.querySelector('[data-testid="action-bar-copy"]');
+	return copyButton?.closest('.justify-between');
+}
 
-function addMessageButtonWithPriority(container, button, buttonClass) {
+function addMessageButtonWithPriority(buttonGenerator, buttonClass) {
 	const MESSAGE_BUTTON_PRIORITY = [
 		'tts-speak-button',
 		'fork-button',
 	];
 
-	// Add class to button
-	button.classList.add(buttonClass);
-
-	// Check if button already exists
-	if (container.querySelector('.' + buttonClass)) {
-		return; // Already added
-	}
-
-	// Find where to insert the button based on priority
-	let insertBefore = null;
-
-	// Look for the first existing button with lower priority
-	const currentPriority = MESSAGE_BUTTON_PRIORITY.indexOf(buttonClass);
-
-	for (let i = currentPriority + 1; i < MESSAGE_BUTTON_PRIORITY.length; i++) {
-		const lowerPriorityButton = container.querySelector('.' + MESSAGE_BUTTON_PRIORITY[i]);
-		if (lowerPriorityButton) {
-			insertBefore = lowerPriorityButton;
-			break;
+	const messages = document.querySelectorAll('.font-claude-response');
+	messages.forEach((message) => {
+		const container = findMessageControls(message);
+		if (!container) {
+			console.error('Message controls container not found');
+			return;
 		}
-	}
-
-	// If no lower priority custom button found, try to insert before the copy button group
-	if (!insertBefore) {
-		const copyButtonParent = container.querySelector('[data-testid="action-bar-copy"]')?.parentElement;
-		if (copyButtonParent) {
-			insertBefore = copyButtonParent;
+		if (container.querySelector('.' + buttonClass)) {
+			return; // Already added
 		}
-	}
+		const button = buttonGenerator();
+		button.classList.add(buttonClass);
 
-	// Insert the button
-	if (insertBefore) {
-		container.insertBefore(button, insertBefore);
-	} else {
-		// If no reference point found, just append at the end
-		container.appendChild(button);
-	}
+		// Find where to insert the button based on priority
+		let insertBefore = null;
+
+		// Look for the first existing button with lower priority
+		const currentPriority = MESSAGE_BUTTON_PRIORITY.indexOf(buttonClass);
+
+		for (let i = currentPriority + 1; i < MESSAGE_BUTTON_PRIORITY.length; i++) {
+			const lowerPriorityButton = container.querySelector('.' + MESSAGE_BUTTON_PRIORITY[i]);
+			if (lowerPriorityButton) {
+				insertBefore = lowerPriorityButton;
+				break;
+			}
+		}
+
+		// If no lower priority custom button found, try to insert before the copy button group
+		if (!insertBefore) {
+			const copyButtonParent = container.querySelector('[data-testid="action-bar-copy"]')?.parentElement;
+			if (copyButtonParent) {
+				insertBefore = copyButtonParent;
+			}
+		}
+
+		// Insert the button
+		if (insertBefore) {
+			container.insertBefore(button, insertBefore);
+		} else {
+			// If no reference point found, just append at the end
+			container.appendChild(button);
+		}
+	});
 }

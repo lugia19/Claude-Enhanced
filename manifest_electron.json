@@ -8,7 +8,9 @@
 	],
 	"host_permissions": [
 		"https://claude.ai/*",
-		"https://api.groq.com/*"
+		"https://api.groq.com/*",
+		"https://api.elevenlabs.io/*",
+		"https://api.anthropic.com/*"
 	],
 	"content_scripts": [
 		{
