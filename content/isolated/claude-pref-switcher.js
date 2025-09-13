@@ -229,8 +229,9 @@
 		header.style.zIndex = '9999';
 
 		const title = document.createElement('h3');
-		title.textContent = 'Preferences';
+		title.textContent = 'Preferences Switcher';
 		title.className = 'text-text-300 flex items-center gap-1.5 text-xs select-none z-10';
+		createClaudeTooltip(title, 'Changing preferences will reset the caching status of the conversation');
 
 		header.appendChild(title);
 
