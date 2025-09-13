@@ -370,103 +370,26 @@
 
 	//#region Actor Mode Implementation
 	async function attributeDialogueToCharacters(text, characters) {
-		// Get the Anthropic API key from storage
 		const result = await chrome.storage.local.get('tts_anthropicApiKey');
-		const anthropicApiKey = result.tts_anthropicApiKey;
+		const apiKey = result.tts_anthropicApiKey;
 
-		if (!anthropicApiKey) {
+		if (!apiKey) {
 			throw new Error('No Anthropic API key configured for actor mode');
-		}
-
-		// Check if narrator has a voice assigned
-		const narratorChar = characters.find(c => c.name.toLowerCase() === 'narrator');
-		const includeNarration = narratorChar && narratorChar.voice;
-
-		// Build character description for the prompt
-		const dialogueCharacters = characters.filter(c => c.name.toLowerCase() !== 'narrator');
-		const characterList = dialogueCharacters.map(c =>
-			`${c.name} (${c.gender})`
-		).join(', ');
-
-		let systemPrompt, userPrompt;
-
-		if (includeNarration) {
-			// Include narration in the extraction
-			systemPrompt = `You are a dialogue attribution system. Your task is to analyze text and identify which character is speaking each part, including narration.
-
-Characters available: ${characterList}, narrator (for non-dialogue/descriptive text)
-
-Important rules:
-- Attribute quoted dialogue to the appropriate character based on context
-- Non-dialogue/descriptive text should be attributed to "narrator"
-- If dialogue attribution is unclear, attribute it to "narrator"
-- Character names are case-insensitive
-- Every piece of text must be attributed to someone`;
-
-			userPrompt = `Please analyze this text and segment it by speaker. Include both dialogue and narration. Return a JSON array where each element has "character" (string) and "text" (string) fields.
-
-Text to analyze:
-${text}
-
-Return ONLY a valid JSON array, no other text.`;
-		} else {
-			// Only extract dialogue
-			systemPrompt = `You are a dialogue extraction system. Your task is to extract ONLY the spoken dialogue from text and identify which character is speaking.
-
-Characters available: ${characterList}
-
-Important rules:
-- ONLY extract dialogue (typically in quotes)
-- Ignore all narration, descriptions, and non-dialogue text
-- Attribute each piece of dialogue to the appropriate character based on context
-- If dialogue attribution is unclear, skip that dialogue
-- Character names are case-insensitive`;
-
-			userPrompt = `Please extract ONLY the dialogue from this text and identify the speaker. Ignore all narration and descriptive text. Return a JSON array where each element has "character" (string) and "text" (string) fields.
-
-Text to analyze:
-${text}
-
-Return ONLY a valid JSON array containing dialogue, no narration.`;
 		}
 
 		try {
 			const response = await chrome.runtime.sendMessage({
-				type: 'anthropic-api',
-				apiKey: anthropicApiKey,
-				payload: {
-					model: 'claude-sonnet-4-20250514',
-					max_tokens: 4096,
-					temperature: 0.3,
-					system: systemPrompt,
-					messages: [{ role: 'user', content: userPrompt }]
-				}
+				type: 'analyze-dialogue',
+				text,
+				characters,
+				apiKey
 			});
 
 			if (!response.success) {
-				throw new Error(`Anthropic API error: ${response.error}`);
+				throw new Error(response.error);
 			}
 
-			const responseText = response.data.content[0].text;
-
-			// Parse the JSON response
-			const segments = JSON.parse(responseText);
-
-			// Validate and normalize the segments
-			const validatedSegments = segments
-				.filter(s => s.character && s.text)
-				.map(s => ({
-					character: s.character.toLowerCase(),
-					text: s.text.trim()
-				}))
-				.filter(s => s.text.length > 0);
-
-			if (validatedSegments.length === 0) {
-				throw new Error('No valid segments returned from dialogue attribution');
-			}
-
-			return validatedSegments;
-
+			return response.data;
 		} catch (error) {
 			console.error('Failed to attribute dialogue:', error);
 			throw error;

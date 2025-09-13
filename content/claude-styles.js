@@ -279,7 +279,6 @@ function addMessageButtonWithPriority(buttonGenerator, buttonClass) {
 	messages.forEach((message) => {
 		const container = findMessageControls(message);
 		if (!container) {
-			console.error('Message controls container not found');
 			return;
 		}
 		if (container.querySelector('.' + buttonClass)) {
