@@ -22,66 +22,150 @@
 			this.abortController = null;
 			this.activeSources = []; // Registry of all active audio sources
 			this.scheduledEndTime = 0; // Track when the last scheduled audio ends
+
+			// New queue management properties
+			this.pendingQueue = [];
+			this.isProcessing = false;
+			this.isGenerating = false;
+
+			this.completionPromise = null;
+			this.completionResolve = null;
 		}
 
-		async play(text, voiceId, modelId, apiKey) {
-			// Always stop any existing playback first and wait for cleanup
+		async queue(text, voiceId, modelId, apiKey) {
+			const sessionId = this.currentSessionId;
+
+			// Handle chunking for very long texts
+			const chunks = this.chunkText(text, 9000);
+
+			for (const chunk of chunks) {
+				this.pendingQueue.push({
+					text: chunk,
+					voiceId,
+					modelId,
+					apiKey,
+					sessionId
+				});
+			}
+
+			// Create completion promise if it doesn't exist
+			if (!this.completionPromise) {
+				console.log('Creating new completion promise');
+				this.completionPromise = new Promise(resolve => {
+					this.completionResolve = resolve;
+				});
+			}
+
+			// Start processing if not already running
+			if (!this.isProcessing) {
+				this.processNextSegment();
+			}
+		}
+
+		async processNextSegment() {
+			this.isProcessing = true;
+
+			while (this.pendingQueue.length > 0 || this.isGenerating) {
+				// Check if session is still valid
+				if (!this.currentSessionId) {
+					// Session was invalidated, clean up
+					this.pendingQueue = [];
+					break;
+				}
+
+				// Only start next generation if:
+				// 1. We have pending items
+				// 2. We're not currently generating
+				if (this.pendingQueue.length > 0 && !this.isGenerating) {
+					// Pull next item and start generating
+					const next = this.pendingQueue.shift();
+
+					// Only process if session is still valid
+					if (next.sessionId === this.currentSessionId) {
+						// Start generation (don't await - let it run in parallel)
+						this.streamChunk(
+							next.text,
+							next.voiceId,
+							next.modelId,
+							next.apiKey,
+							next.sessionId
+						).catch(error => {
+							console.error('Generation error:', error);
+						});
+					}
+				}
+
+				// Small delay to prevent tight loop
+				await new Promise(r => setTimeout(r, 100));
+			}
+
+			// Wait for all scheduled audio to finish playing
+			if (this.currentSessionId && this.scheduledEndTime > 0) {
+				const remainingTime = this.scheduledEndTime - this.audioContext.currentTime;
+				if (remainingTime > 0) {
+					await new Promise(resolve => setTimeout(resolve, remainingTime * 1000 + 100));
+				}
+			}
+
+			this.isProcessing = false;
+			this.state = 'idle';
+			this.updateSettingsButton();  // Update button when everything is done
+
+			// Resolve completion promise
+			if (this.completionResolve) {
+				this.completionResolve();
+				this.completionPromise = null;
+				this.completionResolve = null;
+			}
+		}
+
+		// New method to wait for queue completion
+		async waitForCompletion() {
+			if (this.completionPromise) {
+				return this.completionPromise;
+			}
+			// If not processing, resolve immediately
+			return Promise.resolve();
+		}
+
+		async startSession() {
+			// Stop any existing playback
 			await this.stop();
 
 			// Generate new session ID
 			const sessionId = Date.now() + '_' + Math.random();
 			this.currentSessionId = sessionId;
 
-			// Set loading state
+			// Set loading state and ensure button shows it
 			this.state = 'loading';
 			this.updateSettingsButton();
 
-			try {
-				// Create fresh AudioContext for this session
-				this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+			// Create fresh AudioContext
+			this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+		}
 
-				// Chunk the text
-				const chunks = this.chunkText(text, 9000);
-				console.log(`[Session ${sessionId}] Split text into ${chunks.length} chunks`);
+		// Keep existing play method for non-actor mode as a wrapper
+		async play(text, voiceId, modelId, apiKey) {
+			// Start a new session (stops any existing playback)
+			await this.startSession();
 
-				// Play chunks sequentially
-				for (let i = 0; i < chunks.length; i++) {
-					// Check if this session is still valid
-					if (this.currentSessionId !== sessionId) {
-						console.log(`[Session ${sessionId}] Aborted - new session started`);
-						return;
-					}
+			// Queue the single item
+			await this.queue(text, voiceId, modelId, apiKey);
 
-					await this.streamChunk(chunks[i], voiceId, modelId, apiKey, sessionId);
-				}
+			// Wait for completion
+			await this.waitForCompletion();
 
-				// Wait for all scheduled audio to finish
-				if (this.currentSessionId === sessionId && this.scheduledEndTime > 0) {
-					const remainingTime = this.scheduledEndTime - this.audioContext.currentTime;
-					if (remainingTime > 0) {
-						await new Promise(resolve => setTimeout(resolve, remainingTime * 1000 + 100));
-					}
-				}
-
-			} catch (error) {
-				console.error(`[Session ${sessionId}] Playback error:`, error);
-				throw error;
-			} finally {
-				// Only clean up if this is still the current session
-				if (this.currentSessionId === sessionId) {
-					this.state = 'idle';
-					this.currentSessionId = null;
-					this.updateSettingsButton();
-					this.cleanupAudioContext();
-				}
-			}
+			console.log('Playback completed');
 		}
 
 		async streamChunk(text, voiceId, modelId, apiKey, sessionId) {
+			this.isGenerating = true;
 			return new Promise(async (resolve, reject) => {
 				try {
 					// Verify session is still valid
 					if (this.currentSessionId !== sessionId) {
+						console.log(`[Session ${sessionId}] Generation aborted before start`);
+						this.isGenerating = false;
 						resolve();
 						return;
 					}
@@ -122,18 +206,24 @@
 						// Check session validity before processing each chunk
 						if (this.currentSessionId !== sessionId) {
 							reader.cancel();
+							this.isGenerating = false;
 							resolve();
 							return;
 						}
 
 						const { done, value } = await reader.read();
-						if (done) break;
+						if (done) {
+							this.isGenerating = false;
+							console.log(`[Session ${sessionId}] Audio stream fully read`);
+							break;
+						}
 
-						// Update state on first audio chunk
+						// Update state on first audio chunk received
 						if (firstChunk && this.state === 'loading') {
 							this.state = 'playing';
 							this.updateSettingsButton();
 							firstChunk = false;
+							console.log(`[Session ${sessionId}] Audio started playing`);
 						}
 
 						// Combine leftover with new chunk
@@ -149,6 +239,7 @@
 							// Check session again before scheduling audio
 							if (this.currentSessionId !== sessionId) {
 								reader.cancel();
+								this.isGenerating = false;
 								resolve();
 								return;
 							}
@@ -186,37 +277,21 @@
 					resolve();
 
 				} catch (error) {
+					this.isGenerating = false;
 					if (error.name === 'AbortError') {
 						console.log(`[Session ${sessionId}] Fetch aborted`);
 						resolve();
 					} else {
 						reject(error);
 					}
+				} finally {
+					console.log(`[Session ${sessionId}] Generation completed or aborted`);
 				}
 			});
 		}
 
-		registerSource(source, sessionId, endTime) {
-			const sourceInfo = {
-				source,
-				sessionId,
-				endTime,
-				stopped: false
-			};
-
-			// Add to registry
-			this.activeSources.push(sourceInfo);
-
-			// Set up cleanup when source naturally ends
-			source.onended = () => {
-				sourceInfo.stopped = true;
-				this.activeSources = this.activeSources.filter(s => s !== sourceInfo);
-			};
-
-		}
-
 		async stop() {
-			if (this.state === 'idle') {
+			if (this.state === 'idle' && !this.isProcessing) {
 				return;
 			}
 
@@ -229,6 +304,9 @@
 			// Invalidate current session
 			const oldSessionId = this.currentSessionId;
 			this.currentSessionId = null;
+
+			// Clear pending queue
+			this.pendingQueue = [];
 
 			// Abort any ongoing fetch
 			if (this.abortController) {
@@ -256,14 +334,40 @@
 			this.activeSources = [];
 			this.scheduledEndTime = 0;
 
+			// Resolve completion promise if it exists
+			if (this.completionResolve) {
+				this.completionResolve();
+				this.completionPromise = null;
+				this.completionResolve = null;
+			}
+
 			// Clean up audio context
 			this.cleanupAudioContext();
 
 			// Reset to idle state
 			this.state = 'idle';
+			this.isProcessing = false;
 			this.updateSettingsButton();
 
 			console.log(`Playback stopped${oldSessionId ? ` (was session ${oldSessionId})` : ''}`);
+		}
+
+		registerSource(source, sessionId, endTime) {
+			const sourceInfo = {
+				source,
+				sessionId,
+				endTime,
+				stopped: false
+			};
+
+			// Add to registry
+			this.activeSources.push(sourceInfo);
+
+			// Set up cleanup when source naturally ends
+			source.onended = () => {
+				sourceInfo.stopped = true;
+				this.activeSources = this.activeSources.filter(s => s !== sourceInfo);
+			};
 		}
 
 		cleanupAudioContext() {
@@ -280,7 +384,7 @@
 		}
 
 		isActive() {
-			return this.state !== 'idle';
+			return this.state !== 'idle' || this.isProcessing;
 		}
 
 		updateSettingsButton() {
@@ -306,7 +410,7 @@
 					const text = this.state === 'loading' ? 'Loading audio...' : 'Stopping...';
 					tooltip.querySelector('.tooltip-content').textContent = text;
 				}
-			} else if (this.state === 'playing') {
+			} else if (this.state === 'playing' || this.isProcessing) {
 				button.innerHTML = PAUSE_ICON;
 				if (tooltip) {
 					tooltip.querySelector('.tooltip-content').textContent = 'Stop playback';
@@ -423,9 +527,32 @@
 		}
 
 		try {
-			// Try to get dialogue attribution from Claude
+			// Start actor mode immediately (stops existing playback and gets session ID)
+			await playbackManager.startSession();
+			const currentSessionId = playbackManager.currentSessionId;
+
 			console.log('Getting dialogue attribution for actor mode...');
-			const segments = await attributeDialogueToCharacters(text, characters);
+
+			// Start the attribution request but DON'T await it yet
+			const attributionPromise = attributeDialogueToCharacters(text, characters);
+
+			// Check periodically if we've been interrupted while waiting
+			const checkInterval = setInterval(() => {
+				if (playbackManager.currentSessionId !== currentSessionId) {
+					clearInterval(checkInterval);
+					console.log('Attribution cancelled - user interrupted');
+				}
+			}, 100);
+
+			// Now await the attribution
+			const segments = await attributionPromise;
+			clearInterval(checkInterval);
+
+			// Check if we should still use these results
+			if (playbackManager.currentSessionId !== currentSessionId) {
+				console.log('Ignoring attribution results - session was interrupted');
+				return;
+			}
 
 			// Create a voice map
 			const voiceMap = {};
@@ -435,23 +562,57 @@
 				}
 			});
 
-			// Play each segment with the appropriate voice
+			// Merge consecutive segments from the same character
+			const mergedSegments = [];
+			let currentSegment = null;
+
 			for (const segment of segments) {
 				const characterName = segment.character.toLowerCase();
 
-				// Use character's voice if available, otherwise use default voice
-				// "narrator" segments will use the default voice
-				const voice = voiceMap[characterName] || defaultVoiceId;
+				if (currentSegment && currentSegment.character === characterName) {
+					// Same character - merge the text
+					currentSegment.text += ' ' + segment.text;
+				} else {
+					// Different character - save current and start new
+					if (currentSegment) {
+						mergedSegments.push(currentSegment);
+					}
+					currentSegment = {
+						character: characterName,
+						text: segment.text
+					};
+				}
+			}
+
+			// Don't forget the last segment
+			if (currentSegment) {
+				mergedSegments.push(currentSegment);
+			}
+
+			console.log(`Merged ${segments.length} segments into ${mergedSegments.length} segments`);
+
+			// Queue all merged segments
+			for (const segment of mergedSegments) {
+				const voice = voiceMap[segment.character] || defaultVoiceId;
 
 				if (!voice) {
 					console.warn(`No voice available for ${segment.character}, skipping segment`);
 					continue;
 				}
 
-				console.log(`Playing "${segment.text.substring(0, 50)}..." as ${segment.character} with voice ${voice}`);
+				console.log(`Queueing "${segment.text.substring(0, 50)}..." as ${segment.character} with voice ${voice}`);
 
-				await playbackManager.play(segment.text, voice, settings.model, settings.apiKey);
+				await playbackManager.queue(
+					segment.text,
+					voice,
+					settings.model,
+					settings.apiKey
+				);
 			}
+
+			// Wait for all segments to complete
+			await playbackManager.waitForCompletion();
+
 		} catch (error) {
 			// Actor mode failed - fall back to regular playback with default voice
 			console.error('Actor mode failed, falling back to regular playback:', error);
@@ -486,13 +647,7 @@
 
 				if (messageText) {
 					console.log("Autoplaying text:", messageText);
-					if (settings.apiKey) {
-						// Small delay to let UI settle
-						setTimeout(() => {
-							playText(messageText, settings, conversationId)
-								.catch(err => console.error('Auto-speak failed:', err));
-						}, 100);
-					}
+					if (settings.apiKey) await playText(messageText, settings, conversationId);
 				}
 			}
 		} else if (event.data.type === 'tts-clipboard-request') {
@@ -642,8 +797,6 @@
 			const settings = await loadSettings();
 			const conversationId = getConversationId();
 
-			const voiceResult = await chrome.storage.local.get(`chatVoice_${conversationId}`);
-			const voiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
 
 			const quotesResult = await chrome.storage.local.get(`chatQuotesOnly_${conversationId}`);
 			const quotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] === true;
