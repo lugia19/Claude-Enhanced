@@ -9,13 +9,7 @@
 
 	//#region UI elements creation
 	function createBranchButton() {
-		const button = document.createElement('button');
-		button.className = 'claude-icon-btn h-8 w-8';
-		button.type = 'button';
-		button.setAttribute('data-state', 'closed');
-		button.setAttribute('aria-label', 'Fork from here');
-
-		button.innerHTML = `
+		const svgContent = `
         <div class="flex items-center justify-center" style="width: 16px; height: 16px;">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 22 22" class="shrink-0" aria-hidden="true">
                 <path d="M7 5C7 3.89543 7.89543 3 9 3C10.1046 3 11 3.89543 11 5C11 5.74028 10.5978 6.38663 10 6.73244V14.0396H11.7915C12.8961 14.0396 13.7915 13.1441 13.7915 12.0396V10.7838C13.1823 10.4411 12.7708 9.78837 12.7708 9.03955C12.7708 7.93498 13.6662 7.03955 14.7708 7.03955C15.8753 7.03955 16.7708 7.93498 16.7708 9.03955C16.7708 9.77123 16.3778 10.4111 15.7915 10.7598V12.0396C15.7915 14.2487 14.0006 16.0396 11.7915 16.0396H10V17.2676C10.5978 17.6134 11 18.2597 11 19C11 20.1046 10.1046 21 9 21C7.89543 21 7 20.1046 7 19C7 18.2597 7.4022 17.6134 8 17.2676V6.73244C7.4022 6.38663 7 5.74028 7 5Z"/>
@@ -23,8 +17,15 @@
         </div>
     `;
 
-		// Apply styles to button
-		applyClaudeStyling(button);
+		const button = createClaudeButton(svgContent, 'icon');
+		button.type = 'button';
+		button.setAttribute('data-state', 'closed');
+		button.setAttribute('aria-label', 'Fork from here');
+
+		// Override default size if needed
+		button.classList.remove('h-9', 'w-9');
+		button.classList.add('h-8', 'w-8');
+
 		createClaudeTooltip(button, 'Fork from here');
 
 		button.onclick = async (e) => {
@@ -62,58 +63,109 @@
 	}
 
 	async function createModal() {
-		const modal = document.createElement('div');
-		modal.className = 'claude-modal-backdrop';
+		// Create the content programmatically
+		const content = document.createElement('div');
 
-		modal.innerHTML = `
-		  <div class="claude-modal">
-			<h3 class="claude-modal-heading">Choose Model for Fork</h3>
-			<select class="claude-select mb-4">
-			  <option value="claude-sonnet-4-20250514">Sonnet 4</option>
-			  <option value="claude-opus-4-1-20250805">Opus 4.1</option>
-			  <option value="claude-opus-4-20250514">Opus 4</option>
-			  <option value="claude-3-7-sonnet-20250219">Sonnet 3.7</option>
-			  <option value="claude-3-opus-20240229">Opus 3</option>
-			  <option value="claude-3-5-haiku-20241022">Haiku 3.5</option>
-			</select>
-			
-			<div class="mb-4 space-y-2">
-			  <div class="flex items-center justify-between mb-3 p-2 bg-bg-200 rounded">
-				<span class="text-text-100 font-medium">Fork Type:</span>
-				<div class="flex items-center gap-4">
-				  <label class="claude-check-group space-x-2">
-					<input type="radio" id="fullChatlog" name="forkType" value="full" checked class="accent-accent-main-100">
-					<span>Full Chatlog</span>
-				  </label>
-				  <label class="claude-check-group space-x-2">
-					<input type="radio" id="summaryMode" name="forkType" value="summary" class="accent-accent-main-100">
-					<span>Summary</span>
-				  </label>
-				</div>
-			  </div>
-			
-			  <div id="includeFilesContainer"></div>
-			</div>
-			
-			<p class="claude-text-sm">Note: Should you choose a slow model such as Opus, you may need to wait and refresh the page for the response to appear.</p>
-			<div class="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
-			  <button class="claude-btn-primary inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none bg-gradient-to-r from-accent-main-100 via-accent-main-200/50 to-accent-main-200 bg-[length:200%_100%] hover:bg-right active:bg-accent-main-000 border-0.5 border-border-300 font-medium font-styrene drop-shadow-sm shadow-[inset_0_0.5px_0px_rgba(255,255,0,0.15)] [text-shadow:_0_1px_2px_rgb(0_0_0_/_10%)] active:shadow-[inset_0_1px_6px_rgba(0,0,0,0.2)] hover:from-accent-main-200 hover:to-accent-main-200 rounded-lg active:scale-[0.985] whitespace-nowrap" id="confirmFork">
-				Fork Chat
-			  </button>
-			  <button class="claude-btn-secondary bg-[radial-gradient(ellipse,_var(--tw-gradient-stops))] from-bg-500/10 from-50% to-bg-500/30 border-0.5 border-border-400 font-medium font-styrene text-text-100/90 active:bg-bg-500/50 hover:text-text-000 hover:bg-bg-500/60 rounded-lg active:scale-[0.985] whitespace-nowrap" id="cancelFork">
-				Cancel
-			  </button>
-			</div>
-		  </div>
-		`;
+		// Model select
+		const selectOptions = [
+			{ value: 'claude-sonnet-4-20250514', label: 'Sonnet 4' },
+			{ value: 'claude-opus-4-1-20250805', label: 'Opus 4.1' },
+			{ value: 'claude-opus-4-20250514', label: 'Opus 4' },
+			{ value: 'claude-3-7-sonnet-20250219', label: 'Sonnet 3.7' },
+			{ value: 'claude-3-opus-20240229', label: 'Opus 3' },
+			{ value: 'claude-3-5-haiku-20241022', label: 'Haiku 3.5' }
+		];
+		const modelSelect = createClaudeSelect(selectOptions, 'claude-sonnet-4-20250514');
+		modelSelect.classList.add('mb-4');
+		content.appendChild(modelSelect);
 
-		// Apply styling to modal
-		applyClaudeStyling(modal);
+		// Fork type section
+		const forkTypeContainer = document.createElement('div');
+		forkTypeContainer.className = 'mb-4 space-y-2';
 
-		// Add the toggle for include files
+		const forkTypeBox = document.createElement('div');
+		forkTypeBox.className = 'flex items-center justify-between mb-3 p-2 bg-bg-200 rounded';
+
+		const forkTypeLabel = document.createElement('span');
+		forkTypeLabel.className = 'text-text-100 font-medium';
+		forkTypeLabel.textContent = 'Fork Type:';
+
+		const radioContainer = document.createElement('div');
+		radioContainer.className = 'flex items-center gap-4';
+
+		// Full chatlog radio
+		const fullLabel = document.createElement('label');
+		fullLabel.className = CLAUDE_STYLES.FLEX_GAP_2 + ' space-x-2';
+		const fullRadio = document.createElement('input');
+		fullRadio.type = 'radio';
+		fullRadio.id = 'fullChatlog';
+		fullRadio.name = 'forkType';
+		fullRadio.value = 'full';
+		fullRadio.checked = true;
+		fullRadio.className = 'accent-accent-main-100';
+		const fullSpan = document.createElement('span');
+		fullSpan.textContent = 'Full Chatlog';
+		fullLabel.appendChild(fullRadio);
+		fullLabel.appendChild(fullSpan);
+
+		// Summary radio
+		const summaryLabel = document.createElement('label');
+		summaryLabel.className = CLAUDE_STYLES.FLEX_GAP_2 + ' space-x-2';
+		const summaryRadio = document.createElement('input');
+		summaryRadio.type = 'radio';
+		summaryRadio.id = 'summaryMode';
+		summaryRadio.name = 'forkType';
+		summaryRadio.value = 'summary';
+		summaryRadio.className = 'accent-accent-main-100';
+		const summarySpan = document.createElement('span');
+		summarySpan.textContent = 'Summary';
+		summaryLabel.appendChild(summaryRadio);
+		summaryLabel.appendChild(summarySpan);
+
+		radioContainer.appendChild(fullLabel);
+		radioContainer.appendChild(summaryLabel);
+		forkTypeBox.appendChild(forkTypeLabel);
+		forkTypeBox.appendChild(radioContainer);
+		forkTypeContainer.appendChild(forkTypeBox);
+
+		// Include files container
+		const includeFilesContainer = document.createElement('div');
+		includeFilesContainer.id = 'includeFilesContainer';
 		const includeFilesToggle = createClaudeToggle('Include files', true);
-		includeFilesToggle.input.id = 'includeFiles'; // Keep the ID for the querySelector
-		modal.querySelector('#includeFilesContainer').appendChild(includeFilesToggle.container);
+		includeFilesToggle.input.id = 'includeFiles';
+		includeFilesContainer.appendChild(includeFilesToggle.container);
+		forkTypeContainer.appendChild(includeFilesContainer);
+
+		content.appendChild(forkTypeContainer);
+
+		// Note text
+		const note = document.createElement('p');
+		note.className = CLAUDE_STYLES.TEXT_SM;
+		note.textContent = 'Note: Should you choose a slow model such as Opus, you may need to wait and refresh the page for the response to appear.';
+		content.appendChild(note);
+
+		// Create modal
+		const modal = createClaudeModal({
+			title: 'Choose Model for Fork',
+			content: content,
+			confirmText: 'Fork Chat',
+			cancelText: 'Cancel',
+			onConfirm: null,  // Will be set by the caller
+			onCancel: null    // Will be set by the caller
+		});
+
+		// Add IDs to buttons for external reference
+		const buttons = modal.querySelectorAll('button');
+		buttons.forEach(btn => {
+			if (btn.textContent === 'Fork Chat') {
+				btn.id = 'confirmFork';
+			} else if (btn.textContent === 'Cancel') {
+				btn.id = 'cancelFork';
+			}
+		});
+
+		// Store reference to select for easy access
+		modal.modelSelect = modelSelect;
 
 		try {
 			const accountData = await fetchAccountSettings();
@@ -123,16 +175,6 @@
 		}
 
 		return modal;
-	}
-
-	function findMessageControls(messageElement) {
-		const group = messageElement.closest('.group');
-		const buttons = group?.querySelectorAll('button');
-		if (!buttons) return null;
-		const retryButton = Array.from(buttons).find(button =>
-			button.textContent.includes('Retry')
-		);
-		return retryButton?.closest('.justify-between');
 	}
 
 	function addBranchButtons() {

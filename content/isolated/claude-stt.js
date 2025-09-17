@@ -16,78 +16,78 @@
 		const autoSend = storage.stt_auto_send || false;
 		const sttEnabled = storage.stt_enabled || false;
 
-		const modal = document.createElement('div');
-		modal.className = 'claude-modal-backdrop';
-
-		modal.innerHTML = `
-        <div class="claude-modal">
-            <h3 class="claude-modal-heading">STT Settings</h3>
-
-            <div class="mb-4" id="sttEnabledContainer"></div>
-            <div class="mb-4">
-                <label class="claude-label">Groq API Key</label>
-                <input type="password" 
-                    id="groqApiKey" 
-                    value="${apiKey}"
-                    placeholder="gsk_..." 
-                    class="claude-input">
-            </div>
-            
-            <div class="mb-4" id="autoSendContainer"></div>
-            
-            <div class="flex justify-end gap-2">
-                <button class="claude-btn-secondary" id="cancelSettings">Cancel</button>
-                <button class="claude-btn-primary" id="saveSettings">Save</button>
-            </div>
-        </div>
-        `;
-
-		document.body.appendChild(modal);
-
-		// Create and insert toggles
-		const sttEnabledToggle = createClaudeToggle('Enable Speech-to-Text', sttEnabled);
-		modal.querySelector('#sttEnabledContainer').appendChild(sttEnabledToggle.container);
-
-		const autoSendToggle = createClaudeToggle('Auto-send after transcription', autoSend);
-		modal.querySelector('#autoSendContainer').appendChild(autoSendToggle.container);
-		applyClaudeStyling(modal);
-
 		return new Promise((resolve) => {
-			modal.querySelector('#cancelSettings').onclick = () => {
-				modal.remove();
-				resolve(false);
-			};
+			// Build modal content
+			const contentDiv = document.createElement('div');
 
-			modal.querySelector('#saveSettings').onclick = async () => {
-				const newKey = modal.querySelector('#groqApiKey').value.trim();
-				const newAutoSend = autoSendToggle.input.checked;
-				const newEnabled = sttEnabledToggle.input.checked;
+			// STT Enabled toggle
+			const sttEnabledContainer = document.createElement('div');
+			sttEnabledContainer.className = 'mb-4';
+			const sttEnabledToggle = createClaudeToggle('Enable Speech-to-Text', sttEnabled);
+			sttEnabledContainer.appendChild(sttEnabledToggle.container);
+			contentDiv.appendChild(sttEnabledContainer);
 
-				if (newKey && newKey !== apiKey) {
-					// Validate the API key
-					const isValid = await validateApiKey(newKey);
-					if (!isValid) {
-						alert('Invalid API key. Please check and try again.');
-						return;
-					}
-				}
+			// API Key input
+			const apiKeyContainer = document.createElement('div');
+			apiKeyContainer.className = 'mb-4';
 
-				await chrome.storage.local.set({
-					groq_api_key: newKey,
-					stt_auto_send: newAutoSend,
-					stt_enabled: newEnabled
-				});
+			const apiKeyLabel = document.createElement('label');
+			apiKeyLabel.className = CLAUDE_STYLES.LABEL;
+			apiKeyLabel.textContent = 'Groq API Key';
+			apiKeyContainer.appendChild(apiKeyLabel);
 
-				modal.remove();
-				resolve(true);
-			};
+			const apiKeyInput = createClaudeInput({
+				type: 'password',
+				placeholder: 'gsk_...',
+				value: apiKey
+			});
+			apiKeyInput.id = 'groqApiKey';
+			apiKeyContainer.appendChild(apiKeyInput);
+			contentDiv.appendChild(apiKeyContainer);
 
-			modal.onclick = (e) => {
-				if (e.target === modal) {
-					modal.remove();
+			// Auto-send toggle
+			const autoSendContainer = document.createElement('div');
+			autoSendContainer.className = 'mb-4';
+			const autoSendToggle = createClaudeToggle('Auto-send after transcription', autoSend);
+			autoSendContainer.appendChild(autoSendToggle.container);
+			contentDiv.appendChild(autoSendContainer);
+
+			// Create modal with custom handling
+			const modal = createClaudeModal({
+				title: 'STT Settings',
+				content: contentDiv,
+				confirmText: 'Save',
+				cancelText: 'Cancel',
+				onCancel: () => {
 					resolve(false);
+				},
+				onConfirm: async () => {
+					const newKey = apiKeyInput.value.trim();
+					const newAutoSend = autoSendToggle.input.checked;
+					const newEnabled = sttEnabledToggle.input.checked;
+
+					if (newKey && newKey !== apiKey) {
+						// Validate the API key
+						const isValid = await validateApiKey(newKey);
+						if (!isValid) {
+							alert('Invalid API key. Please check and try again.');
+							// Don't close modal - re-add it since onConfirm removes it
+							document.body.appendChild(modal);
+							return;
+						}
+					}
+
+					await chrome.storage.local.set({
+						groq_api_key: newKey,
+						stt_auto_send: newAutoSend,
+						stt_enabled: newEnabled
+					});
+
+					resolve(true);
 				}
-			};
+			});
+
+			document.body.appendChild(modal);
 		});
 	}
 
@@ -239,20 +239,15 @@
 
 	// ======== UI CREATION ========
 	function createSettingsButton() {
-		const button = document.createElement('button');
-		button.className = 'claude-icon-btn';
+		const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+        <line x1="8" y1="23" x2="16" y2="23"></line>
+    </svg>`;
 
-		button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-            <line x1="12" y1="19" x2="12" y2="23"></line>
-            <line x1="8" y1="23" x2="16" y2="23"></line>
-        </svg>`;
-
-		applyClaudeStyling(button);
+		const button = createClaudeButton(svgContent, 'icon', showSettingsModal);
 		createClaudeTooltip(button, 'STT Settings');
-
-		button.onclick = showSettingsModal;
 
 		return button;
 	}
@@ -315,7 +310,6 @@
 		}
 
 		container.appendChild(button);
-		applyClaudeStyling(button);
 	}
 
 	// ======== BUTTON INSERTION ========

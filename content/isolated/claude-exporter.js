@@ -144,98 +144,84 @@
 	}
 
 	async function showFormatModal() {
-		const modal = document.createElement('div');
-		modal.className = 'claude-modal-backdrop';
-
 		// Get last used format from Chrome storage
 		const result = await chrome.storage.local.get(['lastExportFormat']);
 		const lastFormat = result.lastExportFormat || 'txt_txt';
 
-		const modalContent = document.createElement('div');
-		modalContent.className = 'claude-modal';
-		modalContent.style.maxWidth = '24rem';
-		modalContent.innerHTML = `
-			<h3 class="claude-modal-heading">Export Format</h3>
-			<select class="claude-select mb-4">
-				<option value="txt_txt">Text (.txt)</option>
-				<option value="jsonl_jsonl">JSONL (.jsonl)</option>
-				<option value="librechat_json">Librechat (.json)</option>
-				<option value="raw_json">Raw JSON (.json)</option>
-			</select>
-			<div id="treeOption" class="mb-4 hidden flex items-center gap-2">
-			</div>
-			<div class="flex justify-end gap-2">
-				<button class="claude-btn-secondary" id="cancelExport">Cancel</button>
-				<button class="claude-btn-primary" id="confirmExport">Export</button>
-			</div>
-		`;
+		// Build the modal content
+		const content = document.createElement('div');
 
-		modal.appendChild(modalContent);
-		document.body.appendChild(modal);
+		// Format select
+		const formatSelect = createClaudeSelect([
+			{ value: 'txt_txt', label: 'Text (.txt)' },
+			{ value: 'jsonl_jsonl', label: 'JSONL (.jsonl)' },
+			{ value: 'librechat_json', label: 'Librechat (.json)' },
+			{ value: 'raw_json', label: 'Raw JSON (.json)' }
+		], lastFormat);
+		formatSelect.classList.add('mb-4');
+		content.appendChild(formatSelect);
 
-		// Apply styling using global ClaudeStyles
-		applyClaudeStyling(modal);
+		// Tree option container
+		const treeOption = document.createElement('div');
+		treeOption.id = 'treeOption';
+		treeOption.className = 'mb-4 hidden flex items-center gap-2';
 
 		// Create and insert the toggle
-		const treeOption = modal.querySelector('#treeOption');
 		const { container: toggleContainer, input: toggleInput } = createClaudeToggle('Export entire tree', false);
 		treeOption.appendChild(toggleContainer);
+		content.appendChild(treeOption);
+
+		// Show/hide tree option based on initial value
+		const initialFormat = lastFormat.split('_')[0];
+		treeOption.classList.toggle('hidden', !['librechat', 'raw'].includes(initialFormat));
+
+		// Update tree option visibility on select change
+		formatSelect.onchange = () => {
+			const format = formatSelect.value.split('_')[0];
+			treeOption.classList.toggle('hidden', !['librechat', 'raw'].includes(format));
+		};
 
 		return new Promise((resolve) => {
-			const select = modal.querySelector('select');
-			const treeOption = modal.querySelector('#treeOption');
-			const checkbox = toggleInput;
+			const modal = createClaudeModal({
+				title: 'Export Format',
+				content: content,
+				confirmText: 'Export',
+				cancelText: 'Cancel',
+				onConfirm: async () => {
+					// Save the selected format to Chrome storage
+					await chrome.storage.local.set({ lastExportFormat: formatSelect.value });
 
-			// Set the last used format
-			select.value = lastFormat;
-
-			// Show/hide tree option based on initial value
-			const initialFormat = lastFormat.split('_')[0];
-			treeOption.classList.toggle('hidden', !['librechat', 'raw'].includes(initialFormat));
-
-			select.onchange = () => {
-				const format = select.value.split('_')[0];
-				treeOption.classList.toggle('hidden', !['librechat', 'raw'].includes(format));
-			};
-
-			modal.querySelector('#cancelExport').onclick = () => {
-				modal.remove();
-				resolve(null);
-			};
-
-			modal.querySelector('#confirmExport').onclick = async () => {
-				// Save the selected format to Chrome storage
-				await chrome.storage.local.set({ lastExportFormat: select.value });
-
-				const parts = select.value.split("_");
-				modal.remove();
-				resolve({
-					format: parts[0],
-					extension: parts[1],
-					exportTree: checkbox.checked
-				});
-			};
-
-			modal.onclick = (e) => {
-				if (e.target === modal) {
-					modal.remove();
+					const parts = formatSelect.value.split("_");
+					resolve({
+						format: parts[0],
+						extension: parts[1],
+						exportTree: toggleInput.checked
+					});
+				},
+				onCancel: () => {
 					resolve(null);
 				}
-			};
+			});
+
+			// Override max width
+			const modalContainer = modal.querySelector('.' + CLAUDE_STYLES.MODAL_CONTAINER.split(' ')[0]);
+			if (modalContainer) {
+				modalContainer.style.maxWidth = '24rem';
+			}
+
+			document.body.appendChild(modal);
 		});
 	}
 
 	function createExportButton() {
-		const button = document.createElement('button');
-		button.className = 'claude-icon-btn';
+		const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 16 16">
+        <path d="M8 12V2m0 10 5-5m-5 5L3 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+        <path opacity="0.4" d="M2 15h12v-3H2v3Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+    </svg>`;
 
-		button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 16 16">
-			<path d="M8 12V2m0 10 5-5m-5 5L3 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-			<path opacity="0.4" d="M2 15h12v-3H2v3Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-		</svg>`;
+		const button = createClaudeButton(svgContent, 'icon');
 
-		// Apply styling and tooltip using global ClaudeStyles
-		applyClaudeStyling(button);
+		// Add tooltip
 		createClaudeTooltip(button, 'Export chatlog');
 
 		button.onclick = async () => {

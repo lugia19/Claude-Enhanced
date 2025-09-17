@@ -676,25 +676,8 @@
 	//#endregion
 
 	//#region Message Buttons
-	function findMessageControls(messageElement) {
-		const group = messageElement.closest('.group');
-		const buttons = group?.querySelectorAll('button');
-		if (!buttons) return null;
-		const retryButton = Array.from(buttons).find(button =>
-			button.textContent.includes('Retry')
-		);
-		return retryButton?.closest('.justify-between');
-	}
-
 	function createSpeakButton() {
-		const button = document.createElement('button');
-		button.className = 'claude-icon-btn h-8 w-8 tts-speak-button';
-		button.innerHTML = SPEAKER_ICON;
-
-		applyClaudeStyling(button);
-		createClaudeTooltip(button, 'Read aloud');
-
-		button.onclick = async (e) => {
+		const button = createClaudeButton(SPEAKER_ICON, 'icon', async (e) => {
 			e.preventDefault();
 			e.stopPropagation();
 
@@ -709,8 +692,6 @@
 			const settings = await loadSettings();
 			const conversationId = getConversationId();
 
-			const voiceResult = await chrome.storage.local.get(`chatVoice_${conversationId}`);
-			const voiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
 
 			const quotesResult = await chrome.storage.local.get(`chatQuotesOnly_${conversationId}`);
 			const quotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] === true; // Explicitly check for true
@@ -733,7 +714,12 @@
 			} catch (error) {
 				alert('Failed to play audio: ' + error.message);
 			}
-		};
+		});
+
+		// Add additional classes for sizing and identification
+		button.classList.add('h-8', 'w-8', 'tts-speak-button');
+
+		createClaudeTooltip(button, 'Read aloud');
 
 		return button;
 	}
@@ -906,9 +892,6 @@
 
 	//#region Settings Modal
 	async function createSettingsModal() {
-		const modal = document.createElement('div');
-		modal.className = 'claude-modal-backdrop';
-
 		const settings = await loadSettings();
 		const conversationId = getConversationId();
 
@@ -922,100 +905,181 @@
 		const actorResult = await chrome.storage.local.get(`chatActorMode_${conversationId}`);
 		const actorModeEnabled = actorResult[`chatActorMode_${conversationId}`] === true;
 
-		modal.innerHTML = `
-        <div class="claude-modal">
-            <h3 class="claude-modal-heading">TTS Settings</h3>
-            
-            <div class="mb-4">
-                <div id="enabledToggleContainer"></div>
-            </div>
+		// Build content
+		const content = document.createElement('div');
 
-            <div class="mb-4">
-                <label class="claude-label">ElevenLabs API Key</label>
-                <input type="password" class="claude-input" id="apiKeyInput" 
-                       value="${settings.apiKey || ''}" 
-                       placeholder="Enter your API key">
-            </div>
-
-            <div class="mb-4">
-                <label class="claude-label">Voice</label>
-                <select class="claude-select" id="voiceSelect" ${!settings.apiKey ? 'disabled' : ''}>
-                    <option value="">Set an API key...</option>
-                </select>
-            </div>
-
-            <div class="mb-4">
-                <label class="claude-label">Model</label>
-                <select class="claude-select" id="modelSelect" ${!settings.apiKey ? 'disabled' : ''}>
-                    <option value="">Set an API key...</option>
-                </select>
-            </div>
-
-            <div class="mb-4">
-                <div id="autoSpeakToggleContainer"></div>
-            </div>
-
-            <!-- Per-Chat Settings Section -->
-            <div class="border-t border-border-300 pt-4 mt-4">
-                <h4 class="text-sm font-semibold text-text-200 mb-3">Per-Chat Settings</h4>
-                
-                <div class="mb-4">
-                    <div id="quotesOnlyToggleContainer"></div>
-                </div>
-
-                <div class="mb-4">
-                    <label class="claude-label">Voice Override</label>
-                    <select class="claude-select" id="chatVoiceOverride" ${!settings.apiKey ? 'disabled' : ''}>
-                        <option value="">Use default voice</option>
-                    </select>
-                </div>
-                
-                <div class="mb-4">
-                    <div class="flex items-center justify-between">
-                        <div id="actorModeToggleContainer" class="flex-1"></div>
-                        <button type="button" class="claude-btn-secondary ml-2" id="configureActorsBtn" 
-                                style="display: ${actorModeEnabled ? 'block' : 'none'};">
-                            Configure Characters
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex justify-end gap-2">
-                <button class="claude-btn-secondary" id="cancelSettings">Cancel</button>
-                <button class="claude-btn-primary" id="saveSettings">Save</button>
-            </div>
-        </div>
-    `;
-
-		document.body.appendChild(modal);
-		applyClaudeStyling(modal);
-
-		// Add toggles
+		// Enable TTS toggle
+		const enableSection = document.createElement('div');
+		enableSection.className = 'mb-4';
 		const enabledToggle = createClaudeToggle('Enable TTS', settings.enabled, null);
-		modal.querySelector('#enabledToggleContainer').appendChild(enabledToggle.container);
+		enableSection.appendChild(enabledToggle.container);
+		content.appendChild(enableSection);
 
+		// API Key input
+		const apiKeySection = document.createElement('div');
+		apiKeySection.className = 'mb-4';
+		const apiKeyLabel = document.createElement('label');
+		apiKeyLabel.className = CLAUDE_STYLES.LABEL;
+		apiKeyLabel.textContent = 'ElevenLabs API Key';
+		apiKeySection.appendChild(apiKeyLabel);
+		const apiKeyInput = createClaudeInput({
+			type: 'password',
+			value: settings.apiKey || '',
+			placeholder: 'Enter your API key'
+		});
+		apiKeyInput.id = 'apiKeyInput';
+		apiKeySection.appendChild(apiKeyInput);
+		content.appendChild(apiKeySection);
+
+		// Voice select
+		const voiceSection = document.createElement('div');
+		voiceSection.className = 'mb-4';
+		const voiceLabel = document.createElement('label');
+		voiceLabel.className = CLAUDE_STYLES.LABEL;
+		voiceLabel.textContent = 'Voice';
+		voiceSection.appendChild(voiceLabel);
+		const voiceSelect = createClaudeSelect(
+			[{ value: '', label: 'Set an API key...' }],
+			settings.voice || ''
+		);
+		voiceSelect.id = 'voiceSelect';
+		voiceSelect.disabled = !settings.apiKey;
+		voiceSection.appendChild(voiceSelect);
+		content.appendChild(voiceSection);
+
+		// Model select
+		const modelSection = document.createElement('div');
+		modelSection.className = 'mb-4';
+		const modelLabel = document.createElement('label');
+		modelLabel.className = CLAUDE_STYLES.LABEL;
+		modelLabel.textContent = 'Model';
+		modelSection.appendChild(modelLabel);
+		const modelSelect = createClaudeSelect(
+			[{ value: '', label: 'Set an API key...' }],
+			settings.model || ''
+		);
+		modelSelect.id = 'modelSelect';
+		modelSelect.disabled = !settings.apiKey;
+		modelSection.appendChild(modelSelect);
+		content.appendChild(modelSection);
+
+		// Auto-speak toggle
+		const autoSpeakSection = document.createElement('div');
+		autoSpeakSection.className = 'mb-4';
 		const autoSpeakToggle = createClaudeToggle('Auto-speak new messages', settings.autoSpeak, null);
-		modal.querySelector('#autoSpeakToggleContainer').appendChild(autoSpeakToggle.container);
+		autoSpeakSection.appendChild(autoSpeakToggle.container);
+		content.appendChild(autoSpeakSection);
 
+		// Per-Chat Settings Section
+		const perChatSection = document.createElement('div');
+		perChatSection.className = 'border-t border-border-300 pt-4 mt-4';
+
+		const perChatHeading = document.createElement('h4');
+		perChatHeading.className = 'text-sm font-semibold text-text-200 mb-3';
+		perChatHeading.textContent = 'Per-Chat Settings';
+		perChatSection.appendChild(perChatHeading);
+
+		// Quotes only toggle
+		const quotesSection = document.createElement('div');
+		quotesSection.className = 'mb-4';
 		const quotesOnlyToggle = createClaudeToggle('Only speak quoted text', chatQuotesOnly, null);
-		modal.querySelector('#quotesOnlyToggleContainer').appendChild(quotesOnlyToggle.container);
+		quotesSection.appendChild(quotesOnlyToggle.container);
+		perChatSection.appendChild(quotesSection);
 
-		// Add actor mode toggle
+		// Voice override select
+		const overrideSection = document.createElement('div');
+		overrideSection.className = 'mb-4';
+		const overrideLabel = document.createElement('label');
+		overrideLabel.className = CLAUDE_STYLES.LABEL;
+		overrideLabel.textContent = 'Voice Override';
+		overrideSection.appendChild(overrideLabel);
+		const chatVoiceOverrideSelect = createClaudeSelect(
+			[{ value: '', label: 'Use default voice' }],
+			chatVoiceOverride
+		);
+		chatVoiceOverrideSelect.id = 'chatVoiceOverride';
+		chatVoiceOverrideSelect.disabled = !settings.apiKey;
+		overrideSection.appendChild(chatVoiceOverrideSelect);
+		perChatSection.appendChild(overrideSection);
+
+		// Actor mode section
+		const actorSection = document.createElement('div');
+		actorSection.className = 'mb-4';
+		const actorContainer = document.createElement('div');
+		actorContainer.className = 'flex items-center justify-between';
+
+		const actorToggleContainer = document.createElement('div');
+		actorToggleContainer.className = 'flex-1';
 		const actorModeToggle = createClaudeToggle('Actor mode', actorModeEnabled, null);
-		modal.querySelector('#actorModeToggleContainer').appendChild(actorModeToggle.container);
+		actorToggleContainer.appendChild(actorModeToggle.container);
+		actorContainer.appendChild(actorToggleContainer);
+
+		const configureActorsBtn = createClaudeButton('Configure Characters', 'secondary');
+		configureActorsBtn.id = 'configureActorsBtn';
+		configureActorsBtn.style.display = actorModeEnabled ? 'block' : 'none';
+		configureActorsBtn.classList.add('ml-2');
+		actorContainer.appendChild(configureActorsBtn);
+
+		actorSection.appendChild(actorContainer);
+		perChatSection.appendChild(actorSection);
+
+		content.appendChild(perChatSection);
+
+		// Create modal with buttons
+		const modal = createClaudeModal({
+			title: 'TTS Settings',
+			content: content,
+			confirmText: 'Save',
+			cancelText: 'Cancel',
+			onConfirm: async () => {
+				const newSettings = {
+					enabled: enabledToggle.input.checked,
+					apiKey: apiKeyInput.value.trim(),
+					voice: voiceSelect.value,
+					model: modelSelect.value,
+					autoSpeak: autoSpeakToggle.input.checked
+				};
+
+				// Handle per-chat settings - always save the state, don't remove
+				if (conversationId) {
+					await chrome.storage.local.set({
+						[`chatQuotesOnly_${conversationId}`]: quotesOnlyToggle.input.checked
+					});
+
+					const chatOverride = chatVoiceOverrideSelect.value;
+					if (chatOverride) {
+						await chrome.storage.local.set({ [`chatVoice_${conversationId}`]: chatOverride });
+					} else {
+						await chrome.storage.local.remove(`chatVoice_${conversationId}`);
+					}
+
+					await chrome.storage.local.set({
+						[`chatActorMode_${conversationId}`]: actorModeToggle.input.checked
+					});
+				}
+
+				await saveSettings(newSettings);
+
+				// Update button visibility based on enabled state
+				if (!newSettings.enabled) {
+					removeAllSpeakButtons();
+				}
+			},
+			onCancel: () => {
+				// Just closes modal
+			}
+		});
 
 		// Handle actor mode toggle
 		actorModeToggle.input.addEventListener('change', (e) => {
-			const configBtn = modal.querySelector('#configureActorsBtn');
-			configBtn.style.display = e.target.checked ? 'block' : 'none';
+			configureActorsBtn.style.display = e.target.checked ? 'block' : 'none';
 		});
 
 		// Configure actors button
-		modal.querySelector('#configureActorsBtn').onclick = async () => {
-			await createActorConfigModal(settings.apiKey);
+		configureActorsBtn.onclick = async () => {
+			const currentApiKey = apiKeyInput.value.trim();
+			await createActorConfigModal(currentApiKey || settings.apiKey);
 		};
-
 
 		// Load and populate voices/models if API key exists
 		if (settings.apiKey) {
@@ -1025,28 +1089,27 @@
 			]);
 
 			// Populate voice selects
-			const voiceOptions = voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }))
-			populateSelect(modal.querySelector('#voiceSelect'), voiceOptions, settings.voice);
+			const voiceOptions = voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }));
+			populateSelect(voiceSelect, voiceOptions, settings.voice);
 
 			// Populate chat override with "Use default" option
-			const overrideSelect = modal.querySelector('#chatVoiceOverride');
-			overrideSelect.innerHTML = '<option value="">Use default voice</option>';
+			chatVoiceOverrideSelect.innerHTML = '<option value="">Use default voice</option>';
 			voiceOptions.forEach(opt => {
 				const option = document.createElement('option');
 				option.value = opt.value;
 				option.textContent = opt.label;
-				overrideSelect.appendChild(option);
+				chatVoiceOverrideSelect.appendChild(option);
 			});
-			overrideSelect.value = chatVoiceOverride;
-			overrideSelect.disabled = false;
+			chatVoiceOverrideSelect.value = chatVoiceOverride;
+			chatVoiceOverrideSelect.disabled = false;
 
 			// Populate models
 			const modelOptions = models.map(m => ({ value: m.model_id, label: m.name }));
-			populateSelect(modal.querySelector('#modelSelect'), modelOptions, settings.model);
+			populateSelect(modelSelect, modelOptions, settings.model);
 		}
 
 		// Handle API key changes
-		modal.querySelector('#apiKeyInput').addEventListener('change', async (e) => {
+		apiKeyInput.addEventListener('change', async (e) => {
 			const newKey = e.target.value.trim();
 			if (newKey) {
 				const isValid = await testApiKey(newKey);
@@ -1056,21 +1119,20 @@
 						getModels(newKey)
 					]);
 
-					const voiceOptions = voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }))
-					populateSelect(modal.querySelector('#voiceSelect'), voiceOptions);
+					const voiceOptions = voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }));
+					populateSelect(voiceSelect, voiceOptions);
 
-					const overrideSelect = modal.querySelector('#chatVoiceOverride');
-					overrideSelect.innerHTML = '<option value="">Use default voice</option>';
+					chatVoiceOverrideSelect.innerHTML = '<option value="">Use default voice</option>';
 					voiceOptions.forEach(opt => {
 						const option = document.createElement('option');
 						option.value = opt.value;
 						option.textContent = opt.label;
-						overrideSelect.appendChild(option);
+						chatVoiceOverrideSelect.appendChild(option);
 					});
-					overrideSelect.disabled = voiceOptions.length === 0;
+					chatVoiceOverrideSelect.disabled = voiceOptions.length === 0;
 
 					const modelOptions = models.map(m => ({ value: m.model_id, label: m.name }));
-					populateSelect(modal.querySelector('#modelSelect'), modelOptions);
+					populateSelect(modelSelect, modelOptions);
 				} else {
 					alert('Invalid ElevenLabs API key');
 					e.target.value = settings.apiKey || '';
@@ -1078,73 +1140,11 @@
 			}
 		});
 
-		// Configure actors button
-		modal.querySelector('#configureActorsBtn').onclick = async () => {
-			const currentApiKey = modal.querySelector('#apiKeyInput').value.trim();
-			await createActorConfigModal(currentApiKey || settings.apiKey);
-		};
-
-		// Save button
-		modal.querySelector('#saveSettings').onclick = async () => {
-			const newSettings = {
-				enabled: enabledToggle.input.checked,
-				apiKey: modal.querySelector('#apiKeyInput').value.trim(),
-				voice: modal.querySelector('#voiceSelect').value,
-				model: modal.querySelector('#modelSelect').value,
-				autoSpeak: autoSpeakToggle.input.checked
-			};
-
-			// Handle per-chat settings - always save the state, don't remove
-			if (conversationId) {
-				// Save quotes-only setting (always save true/false)
-				await chrome.storage.local.set({
-					[`chatQuotesOnly_${conversationId}`]: quotesOnlyToggle.input.checked
-				});
-
-				// Save voice override (only remove if explicitly cleared)
-				const chatOverride = modal.querySelector('#chatVoiceOverride').value;
-				if (chatOverride) {
-					await chrome.storage.local.set({ [`chatVoice_${conversationId}`]: chatOverride });
-				} else {
-					// Only remove if user explicitly selected "Use default voice"
-					await chrome.storage.local.remove(`chatVoice_${conversationId}`);
-				}
-
-				// Save actor mode setting (always save true/false)
-				await chrome.storage.local.set({
-					[`chatActorMode_${conversationId}`]: actorModeToggle.input.checked
-				});
-				// Note: Character data is preserved regardless of actor mode state
-			}
-
-			await saveSettings(newSettings);
-			modal.remove();
-
-			// Update button visibility based on enabled state
-			if (!newSettings.enabled) {
-				removeAllSpeakButtons();
-			}
-		};
-
-		// Cancel button
-		modal.querySelector('#cancelSettings').onclick = () => {
-			modal.remove();
-		};
-
-		// Click backdrop to close
-		modal.onclick = (e) => {
-			if (e.target === modal) {
-				modal.remove();
-			}
-		};
-
+		document.body.appendChild(modal);
 		return modal;
 	}
 
 	async function createActorConfigModal(apiKey) {
-		const modal = document.createElement('div');
-		modal.className = 'claude-modal-backdrop';
-
 		const conversationId = getConversationId();
 		const charactersResult = await chrome.storage.local.get(`chatCharacters_${conversationId}`);
 		let characters = charactersResult[`chatCharacters_${conversationId}`] || [];
@@ -1154,78 +1154,6 @@
 			characters = [{ name: 'Narrator', gender: 'other', voice: '' }, ...characters];
 		}
 
-		modal.innerHTML = `
-			<div class="claude-modal" style="max-width: 700px; width: 90%;">
-				<h3 class="claude-modal-heading">Character Voice Configuration</h3>
-				
-				<!-- Anthropic API Key field -->
-				<div class="mb-4 p-3 bg-bg-100 rounded-lg border border-border-200">
-					<label class="claude-label">Anthropic API Key (for dialogue attribution)</label>
-					<input type="password" class="claude-input" id="anthropicApiKeyInput" 
-						placeholder="sk-ant-api...">
-					<p class="text-xs text-text-400 mt-1">
-						Required for automatic dialogue attribution. Get your key from 
-						<a href="https://console.anthropic.com/" target="_blank" class="text-accent-300 hover:underline">console.anthropic.com</a>
-					</p>
-				</div>
-				
-				<div class="mb-4">
-					<div class="flex items-center justify-between mb-3">
-						<p class="text-sm text-text-300">
-							Assign voices to character names. If Narrator is set to "None", only dialogue will be spoken.
-						</p>
-					</div>
-					
-					<!-- Control buttons -->
-					<div class="flex justify-end gap-2 mb-3">
-						<button type="button" class="claude-btn-secondary" id="addCharacterBtn">
-							<span class="flex items-center gap-1">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16">
-									<path d="M8 3v10M3 8h10" stroke-linecap="round"/>
-								</svg>
-								Add Character
-							</span>
-						</button>
-						<button type="button" class="claude-btn-secondary" id="removeCharacterBtn">
-							<span class="flex items-center gap-1">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16">
-									<path d="M3 8h10" stroke-linecap="round"/>
-								</svg>
-								Remove Last
-							</span>
-						</button>
-					</div>
-					
-					<!-- Table container with border -->
-					<div class="border border-border-300 rounded-lg overflow-hidden">
-						<!-- Table header -->
-						<div class="grid grid-cols-3 gap-4 p-3 bg-bg-100 border-b border-border-300 font-medium text-sm">
-							<div>Character Name</div>
-							<div>Gender</div>
-							<div>Voice</div>
-						</div>
-						
-						<!-- Characters list container -->
-						<div id="charactersList" class="max-h-96 overflow-y-auto">
-							<!-- Character rows will be added here -->
-						</div>
-					</div>
-					
-					<div class="mt-3 text-xs text-text-400">
-						Tip: Set Narrator to "None" to only speak dialogue. Set it to a voice to include narration.
-					</div>
-				</div>
-
-				<div class="flex justify-end gap-2">
-					<button class="claude-btn-secondary" id="cancelActorConfig">Cancel</button>
-					<button class="claude-btn-primary" id="saveActorConfig">Save</button>
-				</div>
-			</div>
-		`;
-
-		document.body.appendChild(modal);
-		applyClaudeStyling(modal);
-
 		// Load available voices
 		const voices = await getVoices(apiKey);
 		const voiceOptions = [
@@ -1233,14 +1161,103 @@
 			...voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }))
 		];
 
+		// Create modal content
+		const contentContainer = document.createElement('div');
+
+		// Anthropic API Key section
+		const apiKeySection = document.createElement('div');
+		apiKeySection.className = 'mb-4 p-3 bg-bg-100 rounded-lg border border-border-200';
+
+		const apiKeyLabel = document.createElement('label');
+		apiKeyLabel.className = CLAUDE_STYLES.LABEL;
+		apiKeyLabel.textContent = 'Anthropic API Key (for dialogue attribution)';
+
+		const apiKeyInput = createClaudeInput({
+			type: 'password',
+			placeholder: 'sk-ant-api...'
+		});
+		apiKeyInput.id = 'anthropicApiKeyInput';
+
+		const apiKeyHelp = document.createElement('p');
+		apiKeyHelp.className = 'text-xs text-text-400 mt-1';
+		apiKeyHelp.innerHTML = 'Required for automatic dialogue attribution. Get your key from <a href="https://console.anthropic.com/" target="_blank" class="text-accent-300 hover:underline">console.anthropic.com</a>';
+
+		apiKeySection.appendChild(apiKeyLabel);
+		apiKeySection.appendChild(apiKeyInput);
+		apiKeySection.appendChild(apiKeyHelp);
+
+		// Characters section
+		const charactersSection = document.createElement('div');
+		charactersSection.className = 'mb-4';
+
+		const headerDiv = document.createElement('div');
+		headerDiv.className = 'flex items-center justify-between mb-3';
+
+		const instructionText = document.createElement('p');
+		instructionText.className = 'text-sm text-text-300';
+		instructionText.textContent = 'Assign voices to character names. If Narrator is set to "None", only dialogue will be spoken.';
+		headerDiv.appendChild(instructionText);
+
+		// Control buttons
+		const controlButtons = document.createElement('div');
+		controlButtons.className = 'flex justify-end gap-2 mb-3';
+
+		const addBtn = createClaudeButton(
+			'<span class="flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>Add Character</span>',
+			'secondary',
+			null,
+			true
+		);
+		addBtn.id = 'addCharacterBtn';
+
+		const removeBtn = createClaudeButton(
+			'<span class="flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16"><path d="M3 8h10" stroke-linecap="round"/></svg>Remove Last</span>',
+			'secondary',
+			null,
+			true
+		);
+		removeBtn.id = 'removeCharacterBtn';
+
+		controlButtons.appendChild(addBtn);
+		controlButtons.appendChild(removeBtn);
+
+		// Table container
+		const tableContainer = document.createElement('div');
+		tableContainer.className = 'border border-border-300 rounded-lg overflow-hidden';
+
+		// Table header
+		const tableHeader = document.createElement('div');
+		tableHeader.className = 'grid grid-cols-3 gap-4 p-3 bg-bg-100 border-b border-border-300 font-medium text-sm';
+		tableHeader.innerHTML = '<div>Character Name</div><div>Gender</div><div>Voice</div>';
+
+		// Characters list container
+		const charactersList = document.createElement('div');
+		charactersList.id = 'charactersList';
+		charactersList.className = 'max-h-96 overflow-y-auto';
+
+		tableContainer.appendChild(tableHeader);
+		tableContainer.appendChild(charactersList);
+
+		const tipText = document.createElement('div');
+		tipText.className = 'mt-3 text-xs text-text-400';
+		tipText.textContent = 'Tip: Set Narrator to "None" to only speak dialogue. Set it to a voice to include narration.';
+
+		charactersSection.appendChild(headerDiv);
+		charactersSection.appendChild(controlButtons);
+
+		// Add warning if voices couldn't load
 		if (voices.length === 0 && apiKey) {
-			// Add a warning message to the modal
 			const warningDiv = document.createElement('div');
 			warningDiv.className = 'mb-3 p-2 bg-accent-100 border border-accent-200 rounded text-sm text-accent-600';
 			warningDiv.textContent = 'Could not load voices. Please check your ElevenLabs API key.';
-			const tableContainer = modal.querySelector('.border.border-border-300.rounded-lg');
-			tableContainer.parentElement.insertBefore(warningDiv, tableContainer);
+			charactersSection.appendChild(warningDiv);
 		}
+
+		charactersSection.appendChild(tableContainer);
+		charactersSection.appendChild(tipText);
+
+		contentContainer.appendChild(apiKeySection);
+		contentContainer.appendChild(charactersSection);
 
 		// Function to create a character row
 		function createCharacterRow(character = {}, isNarrator = false) {
@@ -1250,46 +1267,40 @@
 				row.classList.add('narrator-row', 'bg-bg-50');
 			}
 
-			const nameInput = document.createElement('input');
-			nameInput.type = 'text';
-			nameInput.className = 'claude-input character-name';
-			nameInput.placeholder = 'e.g., Alice';
-			nameInput.value = character.name || '';
+			const nameInput = createClaudeInput({
+				type: 'text',
+				placeholder: 'e.g., Alice',
+				value: character.name || ''
+			});
+			nameInput.classList.add('character-name');
 			if (isNarrator) {
 				nameInput.disabled = true;
 				nameInput.className += ' opacity-60';
 			}
 
-			const genderSelect = document.createElement('select');
-			genderSelect.className = 'claude-select character-gender';
-			genderSelect.innerHTML = `
-            <option value="male" ${character.gender === 'male' ? 'selected' : ''}>Male</option>
-            <option value="female" ${character.gender === 'female' ? 'selected' : ''}>Female</option>
-            <option value="other" ${character.gender === 'other' ? 'selected' : ''}>Other</option>
-        `;
+			const genderOptions = [
+				{ value: 'male', label: 'Male' },
+				{ value: 'female', label: 'Female' },
+				{ value: 'other', label: 'Other' }
+			];
+			const genderSelect = createClaudeSelect(genderOptions, character.gender || 'male');
+			genderSelect.classList.add('character-gender');
 			if (isNarrator) {
 				genderSelect.disabled = true;
 				genderSelect.className += ' opacity-60';
 			}
 
-			const voiceSelect = document.createElement('select');
-			voiceSelect.className = 'claude-select character-voice';
-
-			// Use populateSelect here too
-			populateSelect(voiceSelect, voiceOptions, character.voice || '');
+			const voiceSelect = createClaudeSelect(voiceOptions, character.voice || '');
+			voiceSelect.classList.add('character-voice');
 
 			row.appendChild(nameInput);
 			row.appendChild(genderSelect);
 			row.appendChild(voiceSelect);
 
-			applyClaudeStyling(row);
-
 			return row;
 		}
 
 		// Populate existing characters
-		const charactersList = modal.querySelector('#charactersList');
-
 		// Always add Narrator first
 		const narratorChar = characters.find(c => c.name.toLowerCase() === 'narrator') ||
 			{ name: 'Narrator', gender: 'other', voice: '' };
@@ -1308,16 +1319,16 @@
 		// Load existing Anthropic API key if available
 		const anthropicResult = await chrome.storage.local.get('tts_anthropicApiKey');
 		if (anthropicResult.tts_anthropicApiKey) {
-			modal.querySelector('#anthropicApiKeyInput').value = anthropicResult.tts_anthropicApiKey;
+			apiKeyInput.value = anthropicResult.tts_anthropicApiKey;
 		}
 
 		// Add character button
-		modal.querySelector('#addCharacterBtn').onclick = () => {
+		addBtn.onclick = () => {
 			charactersList.appendChild(createCharacterRow());
 		};
 
 		// Remove character button - never remove narrator
-		modal.querySelector('#removeCharacterBtn').onclick = () => {
+		removeBtn.onclick = () => {
 			const rows = charactersList.querySelectorAll('.character-row:not(.narrator-row)');
 			if (rows.length > 1) {
 				rows[rows.length - 1].remove();
@@ -1329,37 +1340,46 @@
 			}
 		};
 
-		// Save button
-		modal.querySelector('#saveActorConfig').onclick = async () => {
-			// Save Anthropic API key
-			const anthropicKey = modal.querySelector('#anthropicApiKeyInput').value.trim();
-			if (anthropicKey) {
-				await chrome.storage.local.set({ 'tts_anthropicApiKey': anthropicKey });
+		// Create the modal with the custom content
+		const modal = createClaudeModal({
+			title: 'Character Voice Configuration',
+			content: contentContainer,
+			confirmText: 'Save',
+			cancelText: 'Cancel',
+			onConfirm: async () => {
+				// Save Anthropic API key
+				const anthropicKey = apiKeyInput.value.trim();
+				if (anthropicKey) {
+					await chrome.storage.local.set({ 'tts_anthropicApiKey': anthropicKey });
+				}
+
+				// Collect character data - always include narrator
+				const characterRows = charactersList.querySelectorAll('.character-row');
+				const charactersData = Array.from(characterRows)
+					.map(row => ({
+						name: row.querySelector('.character-name').value.trim(),
+						gender: row.querySelector('.character-gender').value,
+						voice: row.querySelector('.character-voice').value
+					}))
+					.filter(char => char.name);
+
+				if (charactersData.length > 0) {
+					await chrome.storage.local.set({ [`chatCharacters_${conversationId}`]: charactersData });
+				}
+			},
+			onCancel: () => {
+				// Modal removes itself
 			}
+		});
 
-			// Collect character data - always include narrator
-			const characterRows = modal.querySelectorAll('.character-row');
-			const charactersData = Array.from(characterRows)
-				.map(row => ({
-					name: row.querySelector('.character-name').value.trim(),
-					gender: row.querySelector('.character-gender').value,
-					voice: row.querySelector('.character-voice').value
-				}))
-				.filter(char => char.name);
+		// Adjust modal max width
+		const modalContent = modal.querySelector('.' + CLAUDE_STYLES.MODAL_CONTAINER.split(' ').join('.'));
+		if (modalContent) {
+			modalContent.style.maxWidth = '700px';
+			modalContent.style.width = '90%';
+		}
 
-			if (charactersData.length > 0) {
-				await chrome.storage.local.set({ [`chatCharacters_${conversationId}`]: charactersData });
-			}
-
-			modal.remove();
-		};
-
-		// Cancel button and backdrop click handlers remain the same
-		modal.querySelector('#cancelActorConfig').onclick = () => modal.remove();
-		modal.onclick = (e) => {
-			if (e.target === modal) modal.remove();
-		};
-
+		document.body.appendChild(modal);
 		return modal;
 	}
 
@@ -1512,21 +1532,18 @@
 
 	//#region Settings Button
 	function createSettingsButton() {
-		const button = document.createElement('button');
-		button.className = 'claude-icon-btn tts-settings-button';
-		button.innerHTML = SPEAKER_ICON;
-
-		applyClaudeStyling(button);
-		const tooltip = createClaudeTooltip(button, 'TTS Settings');
-		tooltip.classList.add('tts-settings-tooltip');
-
-		button.onclick = async () => {
+		const button = createClaudeButton(SPEAKER_ICON, 'icon', async () => {
 			if (playbackManager.isActive()) {
 				playbackManager.stop();
 			} else {
 				await createSettingsModal();
 			}
-		};
+		});
+
+		button.classList.add('tts-settings-button'); // Keep for identification/priority
+
+		const tooltip = createClaudeTooltip(button, 'TTS Settings');
+		tooltip.classList.add('tts-settings-tooltip');
 
 		return button;
 	}

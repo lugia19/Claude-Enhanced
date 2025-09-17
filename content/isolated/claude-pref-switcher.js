@@ -55,6 +55,111 @@
 		}
 	}
 
+	function createPromptModal(title, placeholder = '') {
+		const input = createClaudeInput({
+			type: 'text',
+			placeholder: placeholder
+		});
+		input.classList.add('preset-name-input', 'mb-4');
+
+		const modal = createClaudeModal({
+			title: title,
+			content: input,
+			confirmText: 'OK',
+			cancelText: 'Cancel',
+			onConfirm: null,  // Will be overridden in showPrompt
+			onCancel: null    // Will be overridden in showPrompt
+		});
+
+		// Store reference to input for easy access
+		modal.inputElement = input;
+
+		return modal;
+	}
+
+	function createConfirmModal(message) {
+		const messageEl = document.createElement('p');
+		messageEl.className = 'text-text-100';
+		messageEl.textContent = message;
+
+		const modal = createClaudeModal({
+			title: null,  // No title for confirm modals
+			content: messageEl,
+			confirmText: 'Confirm',
+			cancelText: 'Cancel',
+			onConfirm: null,  // Will be overridden in showConfirm
+			onCancel: null    // Will be overridden in showConfirm
+		});
+
+		return modal;
+	}
+
+	function showPrompt(title, placeholder = '') {
+		return new Promise((resolve) => {
+			const modal = createPromptModal(title, placeholder);
+			document.body.appendChild(modal);
+
+			const input = modal.inputElement;
+			const cancelBtn = modal.querySelector('button.cancel-btn, button:nth-of-type(1)');
+			const confirmBtn = modal.querySelector('button.confirm-btn, button:nth-of-type(2)');
+
+			input.focus();
+
+			const cleanup = (value) => {
+				modal.remove();
+				resolve(value);
+			};
+
+			// Override button handlers
+			cancelBtn.onclick = () => cleanup(null);
+			confirmBtn.onclick = () => cleanup(input.value.trim() || null);
+
+			// Add keyboard handlers
+			input.onkeydown = (e) => {
+				if (e.key === 'Enter') cleanup(input.value.trim() || null);
+				if (e.key === 'Escape') cleanup(null);
+			};
+
+			// Keep backdrop click to close
+			modal.onclick = (e) => {
+				if (e.target === modal) cleanup(null);
+			};
+		});
+	}
+
+	function showConfirm(message) {
+		return new Promise((resolve) => {
+			const modal = createConfirmModal(message);
+			document.body.appendChild(modal);
+
+			const cancelBtn = modal.querySelector('button:first-of-type');
+			const confirmBtn = modal.querySelector('button:last-of-type');
+
+			const cleanup = (value) => {
+				modal.remove();
+				resolve(value);
+			};
+
+			// Override button handlers
+			cancelBtn.onclick = () => cleanup(false);
+			confirmBtn.onclick = () => cleanup(true);
+
+			// Keep backdrop click to cancel
+			modal.onclick = (e) => {
+				if (e.target === modal) cleanup(false);
+			};
+
+			// Add keyboard handler for escape
+			const handleKeydown = (e) => {
+				if (e.key === 'Escape') {
+					cleanup(false);
+					document.removeEventListener('keydown', handleKeydown);
+				}
+			};
+			document.addEventListener('keydown', handleKeydown);
+		});
+	}
+
 
 	// ======== PRESET MANAGEMENT ========
 	async function getStoredPresets() {
@@ -368,7 +473,7 @@
 
 			if (presetName === '__unsaved') {
 				// Prompt for new name
-				const name = prompt('Enter a name for this preset:');
+				const name = await showPrompt('Enter a name for this preset:', 'Preset name');
 				if (!name) return;
 
 				await savePreset(name, content);
@@ -396,7 +501,7 @@
 			const presetName = selector.value;
 			if (presetName === 'None' || presetName === '__unsaved') return;
 
-			if (confirm(`Delete preset "${presetName}"?`)) {
+			if (await showConfirm(`Delete preset "${presetName}"?`)) {
 				const presets = await getStoredPresets();
 				delete presets[presetName];
 				await chrome.storage.local.set({ preference_presets: presets });
@@ -411,7 +516,7 @@
 
 		// New preset button
 		newBtn.addEventListener('click', async () => {
-			const name = prompt('Enter a name for the new preset:');
+			const name = await showPrompt('Enter a name for the new preset:', 'Preset name');
 			if (!name || name === "") return;
 
 			await savePreset(name, '');
