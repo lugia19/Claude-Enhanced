@@ -593,7 +593,7 @@
 
 			// Queue all merged segments
 			for (const segment of mergedSegments) {
-				const voice = voiceMap[segment.character] || defaultVoiceId;
+				const voice = voiceMap[segment.character];
 
 				if (!voice) {
 					console.warn(`No voice available for ${segment.character}, skipping segment`);
