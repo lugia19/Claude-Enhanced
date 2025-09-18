@@ -302,7 +302,7 @@ function tryAddTopRightButton(buttonClass, createButtonFn) {
 		'export-button'
 	];
 
-	const container = document.querySelector('.md\\:absolute.md\\:right-0.md\\:top-0.z-20')
+	const container = document.querySelector('div.right-3:has(> div.flex > button)') || document.querySelector('div.right-3:has(> button)')
 	if (!container || container.querySelectorAll("button").length == 0) {
 		return false;
 	}
