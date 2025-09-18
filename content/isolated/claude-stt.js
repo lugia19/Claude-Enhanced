@@ -11,10 +11,58 @@
 
 	// ======== SETTINGS MANAGEMENT ========
 	async function showSettingsModal() {
-		const storage = await chrome.storage.local.get(['groq_api_key', 'stt_auto_send', 'stt_enabled']);
+		const storage = await chrome.storage.local.get(['groq_api_key', 'stt_auto_send', 'stt_enabled', 'stt_audio_device']);
 		const apiKey = storage.groq_api_key || '';
 		const autoSend = storage.stt_auto_send || false;
 		const sttEnabled = storage.stt_enabled || false;
+		const savedAudioDevice = storage.stt_audio_device || 'default';
+
+		// Get available audio devices - request permission if needed
+		let audioDevices = [];
+		try {
+			// First, enumerate devices to check if we have labels
+			let devices = await navigator.mediaDevices.enumerateDevices();
+			const audioInputs = devices.filter(device => device.kind === 'audioinput');
+
+			// Check if we have permission by seeing if labels are present
+			const hasPermission = audioInputs.some(device => device.label && device.label.length > 0);
+
+			if (!hasPermission && audioInputs.length > 0) {
+				// We don't have permission yet - request it
+				try {
+					console.log('Requesting microphone permission for device list...');
+					const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+					// Immediately stop the stream - we just needed it for permission
+					stream.getTracks().forEach(track => track.stop());
+
+					// Now enumerate again with permission
+					devices = await navigator.mediaDevices.enumerateDevices();
+				} catch (permError) {
+					console.error('User denied microphone permission:', permError);
+					// Continue anyway - we'll just show "Use default"
+				}
+			}
+
+			audioDevices = devices.filter(device => device.kind === 'audioinput');
+		} catch (error) {
+			console.error('Error enumerating devices:', error);
+		}
+
+		// Build device options
+		const deviceOptions = [{ value: 'default', label: 'Use default' }];
+
+		// Only add devices that have labels (meaning we have permission)
+		audioDevices.forEach(device => {
+			if (device.deviceId && device.deviceId !== 'default' && device.label) {
+				deviceOptions.push({
+					value: device.deviceId,
+					label: device.label
+				});
+			}
+		});
+
+		// If we only have "Use default", add a helper message
+		const needsPermission = deviceOptions.length === 1;
 
 		return new Promise((resolve) => {
 			// Build modal content
@@ -45,6 +93,47 @@
 			apiKeyContainer.appendChild(apiKeyInput);
 			contentDiv.appendChild(apiKeyContainer);
 
+			// Audio Device dropdown
+			const audioDeviceContainer = document.createElement('div');
+			audioDeviceContainer.className = 'mb-4';
+
+			const audioDeviceLabel = document.createElement('label');
+			audioDeviceLabel.className = CLAUDE_STYLES.LABEL;
+			audioDeviceLabel.textContent = 'Audio Input Device';
+			audioDeviceContainer.appendChild(audioDeviceLabel);
+
+			const audioDeviceSelect = createClaudeSelect(deviceOptions, savedAudioDevice);
+			audioDeviceContainer.appendChild(audioDeviceSelect);
+
+			// Add permission message if needed
+			if (needsPermission) {
+				const permissionNote = document.createElement('div');
+				permissionNote.className = CLAUDE_STYLES.TEXT_MUTED + ' mt-1';
+				permissionNote.textContent = 'Grant microphone permission to see available devices';
+				audioDeviceContainer.appendChild(permissionNote);
+
+				// Add a button to request permission using the proper helper
+				const requestPermButton = createClaudeButton(
+					'Request Microphone Access',
+					'secondary',
+					async () => {
+						try {
+							const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+							stream.getTracks().forEach(track => track.stop());
+							// Close and reopen the modal to refresh the device list
+							modal.remove();
+							await showSettingsModal();
+						} catch (err) {
+							alert('Microphone permission denied. Please allow microphone access in your browser settings.');
+						}
+					}
+				);
+				requestPermButton.className += ' mt-2'; // Add top margin
+				audioDeviceContainer.appendChild(requestPermButton);
+			}
+
+			contentDiv.appendChild(audioDeviceContainer);
+
 			// Auto-send toggle
 			const autoSendContainer = document.createElement('div');
 			autoSendContainer.className = 'mb-4';
@@ -65,6 +154,7 @@
 					const newKey = apiKeyInput.value.trim();
 					const newAutoSend = autoSendToggle.input.checked;
 					const newEnabled = sttEnabledToggle.input.checked;
+					const newAudioDevice = audioDeviceSelect.value;
 
 					if (newKey && newKey !== apiKey) {
 						// Validate the API key
@@ -80,7 +170,8 @@
 					await chrome.storage.local.set({
 						groq_api_key: newKey,
 						stt_auto_send: newAutoSend,
-						stt_enabled: newEnabled
+						stt_enabled: newEnabled,
+						stt_audio_device: newAudioDevice
 					});
 
 					resolve(true);
@@ -110,7 +201,16 @@
 	// ======== RECORDING FUNCTIONS ========
 	async function startRecording() {
 		try {
-			audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			// Get the saved audio device preference
+			const storage = await chrome.storage.local.get('stt_audio_device');
+			const audioDevice = storage.stt_audio_device || 'default';
+
+			// Build constraints based on selected device
+			const constraints = {
+				audio: audioDevice === 'default' ? true : { deviceId: { exact: audioDevice } }
+			};
+
+			audioStream = await navigator.mediaDevices.getUserMedia(constraints);
 			mediaRecorder = new MediaRecorder(audioStream, {
 				mimeType: 'audio/webm'
 			});
@@ -126,7 +226,35 @@
 			updateMicButton();
 		} catch (error) {
 			console.error('Error starting recording:', error);
-			alert('Failed to access microphone. Please check permissions.');
+
+			// If the exact device fails, try with default
+			if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
+				try {
+					console.log('Selected device not available, falling back to default');
+					audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+					mediaRecorder = new MediaRecorder(audioStream, {
+						mimeType: 'audio/webm'
+					});
+
+					audioChunks = [];
+
+					mediaRecorder.ondataavailable = (event) => {
+						audioChunks.push(event.data);
+					};
+
+					mediaRecorder.start();
+					currentState = 'recording';
+					updateMicButton();
+
+					// Clear the saved device preference since it's not available
+					await chrome.storage.local.set({ stt_audio_device: 'default' });
+				} catch (fallbackError) {
+					console.error('Error with fallback recording:', fallbackError);
+					alert('Failed to access microphone. Please check permissions.');
+				}
+			} else {
+				alert('Failed to access microphone. Please check permissions.');
+			}
 		}
 	}
 
