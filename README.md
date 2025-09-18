@@ -1,5 +1,7 @@
 # Claude Toolbox Extension
 
+This extension adds a bunch of QOL/Utility features to claude.ai, like TTS, STT, forking, exporting, etc.
+
 Available on:
 - [Firefox]() - TBD
 - [Chrome]() - TBD
