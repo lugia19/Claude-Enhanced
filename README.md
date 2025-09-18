@@ -1,11 +1,11 @@
 # Claude Toolbox Extension
 
 Available on:
-[Firefox]() - TBD
-[Chrome]() - TBD
-The desktop client - Via [Claude-WebExtension-Launcher](https://github.com/lugia19/Claude-WebExtension-Launcher)
+- [Firefox]() - TBD
+- [Chrome]() - TBD
+- The desktop client - Via [Claude-WebExtension-Launcher](https://github.com/lugia19/Claude-WebExtension-Launcher)
 
-Features:
+# Features
 
 ## Forking
 <img width="440" height="320" alt="image" src="https://github.com/user-attachments/assets/2d122c5a-fdcf-4197-b036-afa57c108171" />
