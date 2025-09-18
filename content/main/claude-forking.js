@@ -150,8 +150,8 @@
 			content: content,
 			confirmText: 'Fork Chat',
 			cancelText: 'Cancel',
-			onConfirm: null,  // Will be set by the caller
-			onCancel: null    // Will be set by the caller
+			onConfirm: () => { },  // Will be set by the caller
+			onCancel: () => { }    // Will be set by the caller
 		});
 
 		// Add IDs to buttons for external reference

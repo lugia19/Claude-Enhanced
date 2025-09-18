@@ -67,8 +67,8 @@
 			content: input,
 			confirmText: 'OK',
 			cancelText: 'Cancel',
-			onConfirm: null,  // Will be overridden in showPrompt
-			onCancel: null    // Will be overridden in showPrompt
+			onConfirm: () => { },  // Pass dummy function instead of null
+			onCancel: () => { }    // Pass dummy function instead of null
 		});
 
 		// Store reference to input for easy access
@@ -87,8 +87,8 @@
 			content: messageEl,
 			confirmText: 'Confirm',
 			cancelText: 'Cancel',
-			onConfirm: null,  // Will be overridden in showConfirm
-			onCancel: null    // Will be overridden in showConfirm
+			onConfirm: () => { },  // Will be overridden in showConfirm
+			onCancel: () => { }    // Will be overridden in showConfirm
 		});
 
 		return modal;
