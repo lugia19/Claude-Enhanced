@@ -1,37 +1,35 @@
 # Claude Toolbox Extension
 
-Available on the Desktop Client using [Claude-WebExtension-Launcher](https://github.com/lugia19/Claude-WebExtension-Launcher)
+Available on:
+[Firefox]() - TBD
+[Chrome]() - TBD
+The desktop client - Via [Claude-WebExtension-Launcher](https://github.com/lugia19/Claude-WebExtension-Launcher)
 
-I'll be publishing it to the Chrome/Firefox stores once I've added some more features to it.
+Features:
 
-Right now it basically just loads the userscripts you can already get on greasyfork.
+## Forking
+<img width="440" height="320" alt="image" src="https://github.com/user-attachments/assets/2d122c5a-fdcf-4197-b036-afa57c108171" />
 
-**NOTE:** Most of my userscripts rely in some form on fetch monkeypatching, which **Greasemonkey** does not allow. Use something else.
+Allows you to start a new chat by forking an existing one. The new chat will include all the content of the old one up to that point (or a summary of the content up to that point) and optionally any attachments.
 
-# Claude Fork Button
+## Speech to text
 
-![fork_button](https://github.com/user-attachments/assets/a7e7a82f-9a8d-4cef-b5f6-a9bb9f5decdc)
+REMINDER TO SELF, FILL IN THE SCREENSHOTS LATER, SOMETHING BROKE BECAUSE OF COURSE IT DID
 
-Adds a "Fork" button to the AI's messages, which creates a new conversation, attaching the chatlog up to the point you forked as a file.
+Uses groq (You have to provide your own API key) to recognize speech from your microphone and send it as text.
 
-It will copy over any attachments/files you have added to the conversation as well.
+## Text to speech
 
-Available on [Greasy Fork](https://greasyfork.org/en/scripts/522141-claude-forking)
+Uses elevenlabs (bring your own key) to speak messages out loud. Includes options for auto-speaking, and character-based attribution with actor mode (so you can define different voices for different characters).
 
-# Claude Exporter
+## Exporting
 
-![export_button](https://github.com/user-attachments/assets/1ba5bd8f-1d52-4027-9b04-596fbae15db9)
+You can export a chat to various formats. Txt, JSON, etc.
 
-Available on [Greasy Fork](https://greasyfork.org/en/scripts/515448-claude-chat-exporter)
+## Preferences switcher
 
-Does what it says. Exports the current chat to either jsonl or txt.
+Adds a dropdown to the sidebar to let you switch between different preferences. You can create/edit presets in the settings.
 
-# Claude Long Conversation Typing Lag Fix
+## Style selector
 
-![Screenshot 2025-05-25 181754](https://github.com/user-attachments/assets/646f299f-16f6-4dc0-afce-3fe61f912ba1)
-
-Available on [Greasy Fork](https://greasyfork.org/en/scripts/537230-claude-typing-lag-fix)
-
-Fixes the lag issues whilst typing that happen in long chats, by swapping the text input with a custom one.
-
-This breaks the "live preview" of formatting (though it does still show up correctly after the fact). One exception is codeblocks that also contain triple backticks will look kinda glitchy. Not much I can do.
+Allows you to set a style for a given chat, which will take precedence over the global style.
