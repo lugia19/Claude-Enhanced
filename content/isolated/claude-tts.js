@@ -1195,7 +1195,7 @@
 
 		const instructionText = document.createElement('p');
 		instructionText.className = 'text-sm text-text-300';
-		instructionText.textContent = 'Assign voices to character names. If Narrator is set to "None", only dialogue will be spoken.';
+		instructionText.textContent = 'Assign voices to character names. If a voice is "None", that character\'s dialog will not be spoken.';
 		headerDiv.appendChild(instructionText);
 
 		// Control buttons

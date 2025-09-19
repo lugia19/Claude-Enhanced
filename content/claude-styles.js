@@ -295,6 +295,8 @@ function createClaudeTooltip(element, tooltipText) {
 
 
 function tryAddTopRightButton(buttonClass, createButtonFn) {
+	if (!window.location.href.includes("/chat/")) return;
+
 	const BUTTON_PRIORITY = [
 		'tts-settings-button',
 		'style-selector-button',
