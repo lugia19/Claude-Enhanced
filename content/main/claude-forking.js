@@ -168,7 +168,7 @@
 		modal.modelSelect = modelSelect;
 
 		try {
-			const accountData = await fetchAccountSettings();
+			const accountData = await getAccountSettings();
 			originalSettings = accountData.settings;
 		} catch (error) {
 			console.error('Failed to fetch account settings:', error);
@@ -239,28 +239,13 @@
 	}
 
 	//#region Convo extraction & Other API
-	async function fetchAccountSettings() {
-		const response = await fetch('/api/account');
-		console.log('Account settings response:', response);
-		const data = await response.json();
-		return data;
-	}
-
-	async function updateAccountSettings(settings) {
-		await fetch('/api/account', {
-			method: 'PUT',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ settings })
-		});
-	}
 
 	async function getConversationContext(orgId, conversationId, targetParentUuid) {
 		const response = await fetch(`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`);
 		const conversationData = await response.json();
 
 		let messages = [];
+		let fullMessageObjects = []; // NEW: Store the complete message objects
 		let projectUuid = conversationData?.project?.uuid || null;
 		const chatName = conversationData.name;
 		const files = []
@@ -318,6 +303,20 @@
 
 			messages.push(messageContent.join(' '));
 
+			// NEW: Store the full message object (excluding some fields we don't need)
+			fullMessageObjects.push({
+				uuid: message.uuid,
+				parent_message_uuid: message.parent_message_uuid,
+				sender: message.sender,
+				content: message.content,
+				files_v2: message.files_v2,
+				files: message.files,
+				attachments: message.attachments,
+				sync_sources: message.sync_sources,
+				created_at: message.created_at,
+				// Add any other fields the UI needs for rendering
+			});
+
 			// Process until we find a message that has our target UUID as parent
 			if (message.parent_message_uuid === targetParentUuid) {
 				break;
@@ -328,6 +327,7 @@
 			return {
 				chatName,
 				messages,
+				fullMessageObjects, // NEW
 				syncsources: [],
 				attachments: [],
 				files: [],
@@ -338,6 +338,7 @@
 		return {
 			chatName,
 			messages,
+			fullMessageObjects, // NEW
 			syncsources,
 			attachments,
 			files,
@@ -351,9 +352,7 @@
 
 		for (const file of files) {
 			try {
-				const response = await fetch(file.url);
-				const blob = await response.blob();
-
+				const blob = await downloadFile(file.url);
 				downloadedFiles.push({
 					data: blob,
 					name: file.name,
@@ -367,105 +366,25 @@
 
 		return downloadedFiles;
 	}
-
-	async function uploadFile(orgId, file) {
-		const formData = new FormData();
-		formData.append('file', file.data, file.name);
-
-		const response = await fetch(`/api/${orgId}/upload`, {
-			method: 'POST',
-			body: formData
-		});
-
-		const uploadResult = await response.json();
-		return uploadResult.file_uuid;
-	}
-
-	async function processSyncSource(orgId, syncsource) {
-		const response = await fetch(`/api/organizations/${orgId}/sync/chat`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				sync_source_config: syncsource?.config,
-				sync_source_type: syncsource?.type
-			})
-		})
-
-		if (!response.ok) {
-			console.error(`Failed to process sync source: ${response.statusText}`);
-			return null;
-		}
-		const result = await response.json();
-		return result.uuid;
-	}
 	//#endregion
 
 	//#region Convo forking
-	function generateUuid() {
-		return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-			const r = Math.random() * 16 | 0;
-			const v = c === 'x' ? r : (r & 0x3 | 0x8);
-			return v.toString(16);
-		});
-	}
 
-	// 1. Create a standalone conversation creation function
-	async function createConversation(orgId, name, model = null, projectUuid = null, thinking = false) {
-		const newUuid = generateUuid();
-		const bodyJSON = {
-			uuid: newUuid,
-			name: name,
-			include_conversation_preferences: true,
-			project_uuid: projectUuid,
-		}
-
-		if (model) bodyJSON.model = model;
-
-		if (thinking) {
-			let isFree = true;
-			const statSigResponse = await fetch(`/api/bootstrap/${orgId}/statsig`, {
-				method: 'GET',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-			});
-			if (statSigResponse.ok) {
-				const statSigData = await statSigResponse.json();
-				if (statSigData?.user?.custom?.orgType !== 'claude_free') {
-					isFree = false;
-				}
-			}
-
-			if (!isFree) {
-				bodyJSON.paprika_mode = "extended";
-			}
-		}
-
-		const createResponse = await fetch(`/api/organizations/${orgId}/chat_conversations`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(bodyJSON)
-		});
-
-		if (!createResponse.ok) {
-			throw new Error('Failed to create conversation');
-		}
-
-		return newUuid;
-	}
 
 	async function createForkedConversation(orgId, context, model, styleData) {
 		if (!context.chatName || context.chatName.trim() === '') context.chatName = "Untitled"
 		const newName = `Fork of ${context.chatName}`;
 
 		// Create a new chat conversation
-		const newUuid = await createConversation(orgId, newName, model, context.projectUuid);
+		const conversation = new ClaudeConversation(orgId);
+		const newUuid = await conversation.create(newName, model, context.projectUuid);
 
-		// Create the chatlog
+		// Store the fork history BEFORE sending the initial message
+		if (context.fullMessageObjects && context.fullMessageObjects.length > 0) {
+			await storeForkHistory(newUuid, context.fullMessageObjects);
+		}
+
+		// Create the chatlog (existing code)
 		if (context.messages) {
 			const chatlog = context.messages.map((msg, index) => {
 				const role = index % 2 === 0 ? 'User' : 'Assistant';
@@ -484,36 +403,30 @@
 			? "This conversation is forked from the attached chatlog.txt\nYou are Assistant. Simply say 'Acknowledged' and wait for user input."
 			: "This conversation is forked based on the summary in conversation_summary.txt\nYou are Assistant. Simply say 'Acknowledged' and wait for user input.";
 
-		// Send initial message to set up conversation history
-		const completionResponse = await fetch(`/api/organizations/${orgId}/chat_conversations/${newUuid}/completion`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				prompt: message,
-				model: model,
-				parent_message_uuid: '00000000-0000-4000-8000-000000000000',
-				attachments: context.attachments,
-				files: context.files,
-				sync_sources: context.syncsources,
-				personalized_styles: styleData
-			})
+		// Send initial message and wait for response
+		await conversation.sendMessageAndWaitForResponse(message, {
+			model: model,
+			attachments: context.attachments,
+			files: context.files,
+			syncSources: context.syncsources,
+			personalizedStyles: styleData,
+			waitMinutes: 3
 		});
 
-		if (!completionResponse.ok) {
-			throw new Error('Failed to initialize conversation');
-		}
-
-		// Sleep for 2 seconds to allow the response to be fully created
-		await new Promise(r => setTimeout(r, 2000));
 		return newUuid;
 	}
+
 
 	async function generateSummary(orgId, context) {
 		// Create a temporary conversation for summarization
 		const summaryConvoName = `Temp_Summary_${Date.now()}`;
-		const summaryConvoId = await createConversation(orgId, summaryConvoName, null, context.projectUuid, true);
+		const conversation = new ClaudeConversation(orgId);
+
+		// Check if user is pro for paprika mode
+		const userType = await getUserType(orgId);
+		const paprikaMode = userType !== 'free';
+
+		const summaryConvoId = await conversation.create(summaryConvoName, null, context.projectUuid, paprikaMode);
 
 		try {
 			// Create the chatlog
@@ -532,74 +445,66 @@
 			// Ask the model to create a summary
 			const summaryPrompt = "I've attached a chatlog from a previous conversation. Please create a complete, detailed summary of the conversation that covers all important points, questions, and responses. This summary will be used to continue the conversation in a new chat, so make sure it provides enough context to understand the full discussion. Be through, and think things through. Don't include any information already present in the other attachments, as those will be forwarded to the new chat as well.";
 
-			const summaryResponse = await fetch(`/api/organizations/${orgId}/chat_conversations/${summaryConvoId}/completion`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					prompt: summaryPrompt,
-					parent_message_uuid: '00000000-0000-4000-8000-000000000000',
-					attachments: summaryAttachments,
-					files: [],
-					sync_sources: []
-				})
+			const assistantMessage = await conversation.sendMessageAndWaitForResponse(summaryPrompt, {
+				attachments: summaryAttachments,
+				files: [],
+				syncSources: [],
+				waitMinutes: 2
 			});
 
-			if (!summaryResponse.ok) {
-				console.error('Failed to generate summary');
-				return null;
-			}
-
-			// Implement polling with timeout for assistant response
-			const maxRetries = 6; // 6 retries * 5 seconds = 30 seconds max
-			let assistantMessage = null;
-
-			for (let attempt = 0; attempt < maxRetries; attempt++) {
-				// Wait 5 seconds between attempts
-				await new Promise(r => setTimeout(r, 5000));
-
-				console.log(`Checking for summary response (attempt ${attempt + 1}/${maxRetries})...`);
-
-				// Fetch conversation to check for assistant response
-				const convoResponse = await fetch(`/api/organizations/${orgId}/chat_conversations/${summaryConvoId}?tree=False&rendering_mode=messages&render_all_tools=true`);
-				const convoData = await convoResponse.json();
-
-				// Find the assistant's response
-				assistantMessage = convoData.chat_messages.find(msg => msg.sender === 'assistant');
-
-				if (assistantMessage) {
-					console.log('Found assistant summary response');
-					break;
-				}
-
-				if (attempt === maxRetries - 1) {
-					console.error('Could not find assistant summary response after maximum retries');
-					throw new Error('Could not find assistant summary response after 30 seconds');
-				}
-			}
-
-			// Extract the text of the summary
-			let summaryText = '';
-			for (const content of assistantMessage.content) {
-				if (content.text) {
-					summaryText += content.text;
-				}
-				if (content.content?.text) {
-					summaryText += content.text;
-				}
-			}
+			// Extract the text of the summary using the static helper
+			const summaryText = ClaudeConversation.extractMessageText(assistantMessage);
 
 			return summaryText;
 		} finally {
 			// Delete the temporary summarization conversation
-			try {
-				await fetch(`/api/organizations/${orgId}/chat_conversations/${summaryConvoId}`, {
-					method: 'DELETE'
-				});
-			} catch (error) {
-				console.error('Failed to delete temporary summary conversation:', error);
+			await conversation.delete();
+		}
+	}
+	//#endregion
+
+	//#region Fork history storage and retrieval
+	const FORK_HISTORY_PREFIX = 'fork_history_';
+	const FORK_DELIMITER = '===BEGINNING OF FORKED CONVERSATION - NO EDITS CAN BE MADE BEFORE THIS POINT===';
+
+	async function storeForkHistory(newConversationId, originalMessages) {
+		const key = `${FORK_HISTORY_PREFIX}${newConversationId}`;
+		const storageData = {};
+		storageData[key] = originalMessages;
+
+		try {
+			// Try chrome.storage.local first (for extension context)
+			if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+				await chrome.storage.local.set(storageData);
+			} else {
+				// Fallback to localStorage
+				localStorage.setItem(key, JSON.stringify(originalMessages));
 			}
+			console.log(`Stored fork history for ${newConversationId}, ${originalMessages.length} messages`);
+		} catch (error) {
+			console.error('Failed to store fork history:', error);
+		}
+	}
+
+	async function getForkHistory(conversationId) {
+		const key = `${FORK_HISTORY_PREFIX}${conversationId}`;
+
+		try {
+			// Try chrome.storage.local first
+			if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+				return new Promise((resolve) => {
+					chrome.storage.local.get(key, (result) => {
+						resolve(result[key] || null);
+					});
+				});
+			} else {
+				// Fallback to localStorage
+				const data = localStorage.getItem(key);
+				return data ? JSON.parse(data) : null;
+			}
+		} catch (error) {
+			console.error('Failed to get fork history:', error);
+			return null;
 		}
 	}
 	//#endregion
@@ -654,10 +559,9 @@
 				if (pendingUseSummary) {
 					// Generate summary
 					console.log("Generating summary for forking");
-					const summary = await generateSummary(orgId, context, pendingForkModel);
+					const summary = await generateSummary(orgId, context);
 					if (summary === null) {
-						// Fall back to normal forking
-						newConversationId = await createForkedConversation(orgId, context, pendingForkModel, styleData);
+						throw new Error('Failed to generate summary. This may be due to service disruption or usage limits.');
 					} else {
 						// Prepare context for summary-based fork
 						const summaryContext = { ...context };
@@ -676,27 +580,88 @@
 					newConversationId = await createForkedConversation(orgId, context, pendingForkModel, styleData);
 				}
 
-				// Restore original settings
-				if (originalSettings) {
-					await updateAccountSettings(originalSettings);
-				}
-
-				// Navigate to new conversation
+				// Navigate to new conversation in 100ms
 				console.log('Forked conversation created:', newConversationId);
-				window.location.href = `/chat/${newConversationId}`;
+				setTimeout(() => {
+					window.location.href = `/chat/${newConversationId}`;
+				}, 100);
 
 			} catch (error) {
 				console.error('Failed to fork conversation:', error);
-				// Restore original settings even if forking fails
+			} finally {
 				if (originalSettings) {
 					await updateAccountSettings(originalSettings);
 				}
+				originalSettings = null;
+				pendingForkModel = null;
+				pendingUseSummary = false;
 			}
 
-			originalSettings = null;
-			pendingForkModel = null; // Clear the pending flag
-			pendingUseSummary = false; // Clear the summary flag
 			return new Response(JSON.stringify({ success: true }));
+		}
+
+		// NEW: Handle GET requests for conversation data
+		if (url && url.includes('/chat_conversations/') &&
+			url.includes('rendering_mode=messages') &&
+			(!config || config.method === 'GET' || !config.method)) {
+
+			// Extract conversation ID from URL
+			const urlParts = url.split('/');
+			const conversationIdIndex = urlParts.findIndex(part => part === 'chat_conversations') + 1;
+			const conversationId = urlParts[conversationIdIndex]?.split('?')[0];
+
+			if (conversationId) {
+				// Fetch the original data
+				const response = await originalFetch(...args);
+				const originalData = await response.json();
+				console.log('Fetched conversation data for', conversationId, originalData);
+				// Check if this conversation has fork history
+				const forkHistory = await getForkHistory(conversationId);
+
+				if (forkHistory && forkHistory.length > 0) {
+					console.log(`Injecting ${forkHistory.length} ghost messages into conversation ${conversationId}`);
+
+					// Find the first assistant message and modify it
+					const firstRealAssistantIndex = originalData.chat_messages.findIndex(
+						msg => msg.sender === 'assistant'
+					);
+
+					if (firstRealAssistantIndex !== -1) {
+						const firstAssistant = originalData.chat_messages[firstRealAssistantIndex];
+
+						// Modify the text content to include delimiter
+						if (firstAssistant.content && firstAssistant.content.length > 0) {
+							for (let content of firstAssistant.content) {
+								if (content.text) {
+									// Replace the "Acknowledged" message with delimiter
+									content.text = "I've loaded the conversation history from the attached file. Please continue from here.";
+									break;
+								}
+							}
+						}
+
+						// Update parent UUID of first real message to link to last ghost
+						const lastGhost = forkHistory[forkHistory.length - 1];
+						const firstRealMessage = originalData.chat_messages[0];
+						if (firstRealMessage && lastGhost) {
+							firstRealMessage.content[0].text = FORK_DELIMITER
+							firstRealMessage.files_v2 = [];
+							firstRealMessage.files = [];
+							firstRealMessage.parent_message_uuid = lastGhost.uuid;
+						}
+					}
+
+					// Prepend ghost messages to the conversation
+					originalData.chat_messages = [...forkHistory, ...originalData.chat_messages];
+				}
+
+				// Return modified response
+				return new Response(JSON.stringify(originalData), {
+					status: response.status,
+					statusText: response.statusText,
+					headers: response.headers
+				});
+			}
 		}
 
 		return originalFetch(...args);

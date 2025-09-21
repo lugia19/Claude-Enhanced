@@ -315,6 +315,12 @@ function tryAddTopRightButton(buttonClass, createButtonFn) {
 	if (!container.querySelector('.' + buttonClass)) {
 		const button = createButtonFn();
 		button.classList.add(buttonClass);
+
+		// Add negative margin if mobile (portrait mode)
+		if (window.innerHeight > window.innerWidth) {
+			button.classList.add('-mx-1.5'); // or '-mx-1.5' for tighter spacing
+		}
+
 		container.appendChild(button);
 		madeChanges = true;
 	}

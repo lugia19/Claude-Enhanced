@@ -19,6 +19,7 @@
 			],
 			"js": [
 				"content/claude-styles.js",
+				"content/claude-api.js",
 				"content/isolated/claude-exporter.js",
 				"content/isolated/claude-pref-switcher.js",
 				"content/isolated/claude-stt.js",
@@ -33,6 +34,7 @@
 			],
 			"js": [
 				"content/claude-styles.js",
+				"content/claude-api.js",
 				"content/main/claude-forking.js",
 				"content/main/pref-switcher-fetch-watcher.js",
 				"content/main/perchat-styles-fetch-interceptor.js",
