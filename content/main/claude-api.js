@@ -74,7 +74,7 @@ class ClaudeConversation {
 
 
 		if (!response.ok) {
-			console.error(response.json());
+			console.error(await response.json());
 			throw new Error('Failed to send message');
 		}
 
@@ -256,16 +256,4 @@ function generateUuid() {
 		const v = c === 'x' ? r : (r & 0x3 | 0x8);
 		return v.toString(16);
 	});
-}
-
-// Utility function to get org ID
-function getOrgId() {
-	const cookies = document.cookie.split(';');
-	for (const cookie of cookies) {
-		const [name, value] = cookie.trim().split('=');
-		if (name === 'lastActiveOrg') {
-			return value;
-		}
-	}
-	throw new Error('Could not find organization ID');
 }
