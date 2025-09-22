@@ -474,30 +474,38 @@
 
 	//#region Actor Mode Implementation
 	async function attributeDialogueToCharacters(text, characters) {
-		const result = await chrome.storage.local.get('tts_anthropicApiKey');
-		const apiKey = result.tts_anthropicApiKey;
+		return new Promise((resolve, reject) => {
+			const requestId = Math.random().toString(36).substr(2, 9);
 
-		if (!apiKey) {
-			throw new Error('No Anthropic API key configured for actor mode');
-		}
+			const listener = (event) => {
+				if (event.data.type === 'tts-analyze-dialogue-response' &&
+					event.data.requestId === requestId) {
+					window.removeEventListener('message', listener);
 
-		try {
-			const response = await chrome.runtime.sendMessage({
-				type: 'analyze-dialogue',
-				text,
-				characters,
-				apiKey
-			});
+					if (event.data.success) {
+						resolve(event.data.data);
+					} else {
+						reject(new Error(event.data.error));
+					}
+				}
+			};
 
-			if (!response.success) {
-				throw new Error(response.error);
-			}
+			window.addEventListener('message', listener);
 
-			return response.data;
-		} catch (error) {
-			console.error('Failed to attribute dialogue:', error);
-			throw error;
-		}
+			// Post to MAIN world for processing
+			window.postMessage({
+				type: 'tts-analyze-dialogue-request',
+				text: text,
+				characters: characters,
+				requestId: requestId
+			}, '*');
+
+			// Timeout after 30 seconds
+			setTimeout(() => {
+				window.removeEventListener('message', listener);
+				reject(new Error('Dialogue analysis timed out'));
+			}, 30000);
+		});
 	}
 
 	// Updated playback function that uses actor mode
@@ -616,12 +624,7 @@
 		} catch (error) {
 			// Actor mode failed - fall back to regular playback with default voice
 			console.error('Actor mode failed, falling back to regular playback:', error);
-
-			// Optionally alert the user about the failure
-			if (error.message.includes('No Anthropic API key')) {
-				alert('Actor mode requires an Anthropic API key. Please configure it in the character settings.');
-			}
-
+			
 			// Play the entire text with the default voice
 			return playbackManager.play(text, defaultVoiceId, settings.model, settings.apiKey);
 		}
@@ -1164,28 +1167,6 @@
 		// Create modal content
 		const contentContainer = document.createElement('div');
 
-		// Anthropic API Key section
-		const apiKeySection = document.createElement('div');
-		apiKeySection.className = 'mb-4 p-3 bg-bg-100 rounded-lg border border-border-200';
-
-		const apiKeyLabel = document.createElement('label');
-		apiKeyLabel.className = CLAUDE_STYLES.LABEL;
-		apiKeyLabel.textContent = 'Anthropic API Key (for dialogue attribution)';
-
-		const apiKeyInput = createClaudeInput({
-			type: 'password',
-			placeholder: 'sk-ant-api...'
-		});
-		apiKeyInput.id = 'anthropicApiKeyInput';
-
-		const apiKeyHelp = document.createElement('p');
-		apiKeyHelp.className = 'text-xs text-text-400 mt-1';
-		apiKeyHelp.innerHTML = 'Required for automatic dialogue attribution. Get your key from <a href="https://console.anthropic.com/" target="_blank" class="text-accent-300 hover:underline">console.anthropic.com</a>';
-
-		apiKeySection.appendChild(apiKeyLabel);
-		apiKeySection.appendChild(apiKeyInput);
-		apiKeySection.appendChild(apiKeyHelp);
-
 		// Characters section
 		const charactersSection = document.createElement('div');
 		charactersSection.className = 'mb-4';
@@ -1256,7 +1237,6 @@
 		charactersSection.appendChild(tableContainer);
 		charactersSection.appendChild(tipText);
 
-		contentContainer.appendChild(apiKeySection);
 		contentContainer.appendChild(charactersSection);
 
 		// Function to create a character row
@@ -1316,12 +1296,6 @@
 			charactersList.appendChild(createCharacterRow());
 		}
 
-		// Load existing Anthropic API key if available
-		const anthropicResult = await chrome.storage.local.get('tts_anthropicApiKey');
-		if (anthropicResult.tts_anthropicApiKey) {
-			apiKeyInput.value = anthropicResult.tts_anthropicApiKey;
-		}
-
 		// Add character button
 		addBtn.onclick = () => {
 			charactersList.appendChild(createCharacterRow());
@@ -1347,12 +1321,6 @@
 			confirmText: 'Save',
 			cancelText: 'Cancel',
 			onConfirm: async () => {
-				// Save Anthropic API key
-				const anthropicKey = apiKeyInput.value.trim();
-				if (anthropicKey) {
-					await chrome.storage.local.set({ 'tts_anthropicApiKey': anthropicKey });
-				}
-
 				// Collect character data - always include narrator
 				const characterRows = charactersList.querySelectorAll('.character-row');
 				const charactersData = Array.from(characterRows)

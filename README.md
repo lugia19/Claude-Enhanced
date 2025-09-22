@@ -28,7 +28,7 @@ Uses elevenlabs (bring your own key) to speak messages out loud. Includes option
 ### Actor mode
 <img width="687" height="548" alt="image" src="https://github.com/user-attachments/assets/93ef0dd4-0214-4025-9a74-80d50e8b71b0" />
 
-This allows you to assign text from specific characters to specific voices, using sonnet via the anthropic API.
+This allows you to assign text from specific characters to specific voices.
 
 ## Exporting
 <img width="377" height="191" alt="image" src="https://github.com/user-attachments/assets/23441420-e254-4b69-a201-130e393ff9b9" />
