@@ -57,7 +57,8 @@ class ClaudeConversation {
 			attachments,
 			files,
 			sync_sources: syncSources,
-			personalized_styles: personalizedStyles
+			personalized_styles: personalizedStyles,
+			rendering_mode: "messages"
 		};
 
 		// Only add model if it's not null
