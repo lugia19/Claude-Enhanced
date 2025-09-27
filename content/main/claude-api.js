@@ -191,7 +191,6 @@ async function updateAccountSettings(settings) {
 async function uploadFile(orgId, file) {
 	const formData = new FormData();
 	formData.append('file', file.data, file.name);
-
 	const response = await fetch(`/api/${orgId}/upload`, {
 		method: 'POST',
 		body: formData
@@ -202,7 +201,7 @@ async function uploadFile(orgId, file) {
 	}
 
 	const uploadResult = await response.json();
-	return uploadResult.file_uuid;
+	return uploadResult;
 }
 
 async function downloadFile(url) {

@@ -2,34 +2,31 @@
 (function () {
 	'use strict';
 
-	let pendingEditIntercept = false;
+	//#region Constants and State
 
-	//#region Edit button wrapping
+	let pendingEditIntercept = false;
+	//#endregion
+
+	//#region Edit Button Interception
 	function wrapEditButtons() {
-		// Find all user messages and their edit buttons
 		const userMessages = document.querySelectorAll('[data-testid="user-message"]');
 
 		userMessages.forEach(messageEl => {
-			// Find the parent group element
 			const groupEl = messageEl.closest('.group');
 			if (!groupEl) return;
 
-			// Look for the controls container at the bottom right
 			const controlsContainer = groupEl.querySelector('.absolute.bottom-0.right-2');
 			if (!controlsContainer) return;
 
-			// Find the direct child button (edit button is less nested than others)
 			const directButton = controlsContainer.querySelector(':scope > div > div > button[type="button"]');
 
 			if (directButton && !directButton.hasAttribute('data-wrapped')) {
 				directButton.setAttribute('data-wrapped', 'true');
 
-				// Use pointerdown instead of onclick
 				directButton.addEventListener('pointerdown', (e) => {
 					console.log('Edit button clicked, setting intercept flag');
 					pendingEditIntercept = true;
 
-					// Auto-submit after a brief delay to let edit mode open
 					setTimeout(() => {
 						autoSubmitEdit();
 					}, 100);
@@ -37,6 +34,27 @@
 			}
 		});
 	}
+
+	function updateMessageUI(messageElement, newText) {
+		if (!messageElement) return;
+
+		// Mark this message as stale
+		messageElement.classList.add('stale-message');
+
+		// Hide original paragraphs (but keep them in DOM)
+		const originalParagraphs = messageElement.querySelectorAll('p:not(.custom-edit-text)');
+		originalParagraphs.forEach(p => {
+			p.style.display = 'none';
+			p.classList.add('original-hidden');
+		});
+
+		// Add our custom paragraph(s)
+		const customP = document.createElement('p');
+		customP.className = 'whitespace-pre-wrap break-words custom-edit-text';
+		customP.textContent = newText;
+		messageElement.appendChild(customP);
+	}
+
 
 	function autoSubmitEdit() {
 		if (!pendingEditIntercept) return;
@@ -54,7 +72,7 @@
 	}
 	//#endregion
 
-	//#region Modal creation
+	//#region Modal UI Construction
 	async function createEditModal(url, config) {
 		const bodyData = JSON.parse(config.body);
 		// Get conversation ID and org ID from URL
@@ -94,33 +112,11 @@
 				confirmText: 'Submit Edit',
 				cancelText: 'Cancel',
 				onConfirm: async () => {
-					const submitBtn = Array.from(modal.querySelectorAll('button')).find(
-						btn => btn.textContent === 'Submit Edit'
-					);
-					try {
-						// Show loading state on button
-						if (submitBtn) {
-							submitBtn.disabled = true;
-							submitBtn.textContent = 'Uploading files...';
-						}
-
-						// Collect data and format request with uploads
-						const modalData = collectModalData();
-						const modifiedRequest = await formatNewRequest(url, config, modalData);
-
-						// Remove modal
-						modal.remove();
-
-						// Resolve with the formatted request
-						resolve(modifiedRequest);
-					} catch (error) {
-						// Re-enable button on error
-						if (submitBtn) {
-							submitBtn.disabled = false;
-							submitBtn.textContent = 'Submit Edit';
-						}
-						alert(`Upload failed: ${error.message}`);
-					}
+					// No more upload wait - just format and send!
+					const modalData = collectModalData();
+					const modifiedRequest = await formatNewRequest(url, config, modalData);
+					modal.remove();
+					resolve(modifiedRequest);
 				},
 				onCancel: () => {
 					// Remove modal and reject
@@ -128,6 +124,12 @@
 					reject(new Error('Edit cancelled by user'));
 				}
 			});
+			modal.classList.add('claude-edit-modal');
+
+			// Store submit button reference for enable/disable
+			modal.submitButton = Array.from(modal.querySelectorAll('button')).find(
+				btn => btn.textContent === 'Submit Edit'
+			);
 
 			const modalContainer = modal.querySelector('.bg-bg-100');
 			modalContainer.classList.remove('max-w-md');
@@ -136,32 +138,6 @@
 			// Add modal to document
 			document.body.appendChild(modal);
 		});
-	}
-
-	async function getMessageBeingEdited(orgId, conversationId, parentUuid) {
-		try {
-			const response = await fetch(
-				`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`
-			);
-
-			if (!response.ok) {
-				console.error('Failed to fetch conversation data');
-				return null;
-			}
-
-			const data = await response.json();
-
-			// Find the message that has our parent UUID as its parent
-			const messageBeingEdited = data.chat_messages.find(
-				msg => msg.parent_message_uuid === parentUuid && msg.sender === 'human'
-			);
-
-			console.log('Found message being edited:', messageBeingEdited);
-			return messageBeingEdited;
-		} catch (error) {
-			console.error('Error fetching message data:', error);
-			return null;
-		}
 	}
 
 	function buildFilesSection(data) {
@@ -178,7 +154,7 @@
 		const filesList = document.createElement('div');
 		filesList.className = 'space-y-2 mb-3 overflow-y-auto';
 		filesList.id = 'files-list';
-		filesList.style.maxHeight = '200px';
+		filesList.style.maxHeight = "200px";
 
 		// Add real files from the request
 		if (data.filesMetadata && data.filesMetadata.length > 0) {
@@ -206,6 +182,60 @@
 
 		return container;
 	}
+
+	function buildTextEditor(text) {
+		const container = document.createElement('div');
+
+		const label = document.createElement('label');
+		label.className = CLAUDE_STYLES.LABEL;
+		label.textContent = 'Message Text';
+		container.appendChild(label);
+
+		const textarea = document.createElement('textarea');
+		textarea.className = CLAUDE_STYLES.INPUT;
+		textarea.rows = 10;
+		textarea.value = text;
+		textarea.id = 'message-text';
+		textarea.placeholder = 'Enter your message...';
+		textarea.style.resize = 'vertical';
+		textarea.style.minHeight = '150px';
+		container.appendChild(textarea);
+
+		return container;
+	}
+
+	function buildUploadingFileItem(file) {
+		const item = document.createElement('div');
+		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded opacity-75';
+		item.dataset.uploading = 'true';
+		item.dataset.fileType = 'files_v2';
+
+		// Loading spinner or placeholder icon
+		const icon = document.createElement('div');
+		icon.className = 'w-8 h-8 bg-bg-300 rounded flex items-center justify-center text-text-400';
+
+		// Add spinning animation
+		const spinner = document.createElement('div');
+		spinner.className = 'animate-spin h-5 w-5 border-2 border-text-400 border-t-transparent rounded-full';
+		icon.appendChild(spinner);
+		item.appendChild(icon);
+
+		// File name with uploading indicator
+		const name = document.createElement('span');
+		name.className = 'flex-1 text-sm text-text-100';
+		name.innerHTML = `${file.name} <span class="text-text-400 text-xs">(uploading...)</span>`;
+		item.appendChild(name);
+
+		// Remove button (disabled during upload)
+		const removeBtn = createClaudeButton('Remove', 'secondary');
+		removeBtn.classList.add('!min-w-0', '!px-2', '!h-7', '!text-xs');
+		removeBtn.disabled = true;
+		removeBtn.style.opacity = '0.5';
+		item.appendChild(removeBtn);
+
+		return item;
+	}
+	//#endregion
 
 	function buildFileItem(file) {
 		const item = document.createElement('div');
@@ -238,7 +268,6 @@
 		removeBtn.classList.add('!min-w-0', '!px-2', '!h-7', '!text-xs');
 		removeBtn.onclick = () => item.remove();
 		item.appendChild(removeBtn);
-
 		return item;
 	}
 
@@ -260,6 +289,37 @@
 		const name = document.createElement('span');
 		name.className = 'flex-1 text-sm text-text-100';
 		name.textContent = attachment.file_name;
+		item.appendChild(name);
+
+		// Remove button
+		const removeBtn = createClaudeButton('Remove', 'secondary');
+		removeBtn.classList.add('!min-w-0', '!px-2', '!h-7', '!text-xs');
+		removeBtn.onclick = () => item.remove();
+		item.appendChild(removeBtn);
+
+		return item;
+	}
+
+	function buildPendingFileItem(file) {
+		const item = document.createElement('div');
+		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded';
+		item.dataset.fileUuid = 'pending-' + Date.now() + '-' + Math.random();
+		item.dataset.fileType = 'files_v2';
+		item.dataset.pendingFile = 'true';
+
+		// Store the actual file object for later upload
+		item.fileObject = file;
+
+		// File icon
+		const icon = document.createElement('div');
+		icon.className = 'w-8 h-8 bg-bg-300 rounded flex items-center justify-center text-text-400';
+		icon.innerHTML = file.type.startsWith('image/') ? '🖼️' : '📄';
+		item.appendChild(icon);
+
+		// File name with pending indicator
+		const name = document.createElement('span');
+		name.className = 'flex-1 text-sm text-text-100';
+		name.textContent = `${file.name}`;
 		item.appendChild(name);
 
 		// Remove button
@@ -322,6 +382,100 @@
 		document.getElementById('file-input').click();
 	}
 
+
+	//#region File Handling
+	async function processSelectedFiles(files) {
+		const filesList = document.getElementById('files-list');
+		const orgId = getOrgId();
+
+		const filesArray = Array.from(files);
+		if (filesArray.length === 0) return;
+
+		let remainingUploads = filesArray.length;
+
+		// Disable submit button with initial count
+		updateSubmitButtonState(true, remainingUploads);
+
+		// Create all uploading items first
+		const uploadPromises = filesArray.map(async (file) => {
+			// Create an uploading file item with placeholder
+			const uploadingItem = buildUploadingFileItem(file);
+			filesList.appendChild(uploadingItem);
+
+			try {
+				// Upload and get full metadata back
+				const fileMetadata = await uploadFile(orgId, {
+					data: file,
+					name: file.name
+				});
+
+				// Replace uploading item with real file item that has thumbnail
+				const realFileItem = buildFileItem(fileMetadata);
+				uploadingItem.replaceWith(realFileItem);
+
+				// Decrement and update button
+				remainingUploads--;
+				updateSubmitButtonState(remainingUploads > 0, remainingUploads);
+
+				return { success: true, file: file.name };
+
+			} catch (error) {
+				console.error(`Failed to upload ${file.name}:`, error);
+
+				// Convert to error state
+				const icon = uploadingItem.querySelector('.w-8.h-8');
+				icon.innerHTML = '❌';
+
+				const nameSpan = uploadingItem.querySelector('span.text-text-100');
+				nameSpan.innerHTML = `${file.name} <span class="text-red-600 text-xs">(upload failed)</span>`;
+
+				// Mark as failed and make remove button work
+				uploadingItem.dataset.failed = 'true';
+				uploadingItem.dataset.uploading = 'false';
+
+				const removeBtn = uploadingItem.querySelector('button');
+				removeBtn.disabled = false;
+				removeBtn.style.opacity = '1';
+				removeBtn.onclick = () => uploadingItem.remove();
+
+				// Decrement and update button even on failure
+				remainingUploads--;
+				updateSubmitButtonState(remainingUploads > 0, remainingUploads);
+
+				return { success: false, file: file.name, error };
+			}
+		});
+
+		// Wait for all uploads to complete
+		const results = await Promise.allSettled(uploadPromises);
+
+		// Final check to ensure button is enabled
+		updateSubmitButtonState(false, 0);
+
+		// Log summary
+		const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+		const failed = results.length - succeeded;
+		console.log(`Upload complete: ${succeeded} succeeded, ${failed} failed`);
+	}
+
+	function updateSubmitButtonState(uploading, count = 0) {
+		// Find our specific modal and its submit button
+		const modal = document.querySelector('.claude-edit-modal');
+		if (!modal || !modal.submitButton) return;
+
+		if (uploading && count > 0) {
+			modal.submitButton.disabled = true;
+			modal.submitButton.textContent = `Submit Edit (${count} uploading...)`;
+			modal.submitButton.style.opacity = '0.5';
+			modal.submitButton.style.cursor = 'not-allowed';
+		} else {
+			modal.submitButton.disabled = false;
+			modal.submitButton.textContent = 'Submit Edit';
+			modal.submitButton.style.opacity = '1';
+			modal.submitButton.style.cursor = 'pointer';
+		}
+	}
+
 	async function processSelectedAttachments(files) {
 		const filesList = document.getElementById('files-list');
 
@@ -343,45 +497,63 @@
 		}
 	}
 
-	function processSelectedFiles(files) {
-		const filesList = document.getElementById('files-list');
+	function collectModalData() {
+		const messageText = document.getElementById('message-text').value;
+		const fileItems = document.querySelectorAll('#files-list > div');
+		const fileUuids = [];
+		const attachments = [];
 
-		Array.from(files).forEach(file => {
-			// Create a pending file item
-			const fileItem = buildPendingFileItem(file);
-			filesList.appendChild(fileItem);
+		fileItems.forEach(item => {
+			// Skip failed uploads
+			if (item.dataset.failed === 'true' || item.dataset.uploading === 'true') {
+				return;
+			}
+
+			if (item.dataset.fileType === 'files_v2') {
+				const uuid = item.dataset.fileUuid;
+				if (uuid) {
+					fileUuids.push(uuid);
+				}
+			} else if (item.dataset.fileType === 'attachment') {
+				const attachment = item.dataset.attachmentData;
+				if (attachment) {
+					attachments.push(JSON.parse(attachment));
+				}
+			}
 		});
+
+		return {
+			text: messageText,
+			fileUuids: fileUuids,
+			attachments: attachments
+		};
 	}
+	//#endregion
 
-	function buildPendingFileItem(file) {
-		const item = document.createElement('div');
-		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded';
-		item.dataset.fileUuid = 'pending-' + Date.now() + '-' + Math.random();
-		item.dataset.fileType = 'files_v2';
-		item.dataset.pendingFile = 'true';
+	async function getMessageBeingEdited(orgId, conversationId, parentUuid) {
+		try {
+			const response = await fetch(
+				`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`
+			);
 
-		// Store the actual file object for later upload
-		item.fileObject = file;
+			if (!response.ok) {
+				console.error('Failed to fetch conversation data');
+				return null;
+			}
 
-		// File icon
-		const icon = document.createElement('div');
-		icon.className = 'w-8 h-8 bg-bg-300 rounded flex items-center justify-center text-text-400';
-		icon.innerHTML = file.type.startsWith('image/') ? '🖼️' : '📄';
-		item.appendChild(icon);
+			const data = await response.json();
 
-		// File name with pending indicator
-		const name = document.createElement('span');
-		name.className = 'flex-1 text-sm text-text-100';
-		name.textContent = `${file.name}`;
-		item.appendChild(name);
+			// Find the message that has our parent UUID as its parent
+			const messageBeingEdited = data.chat_messages.find(
+				msg => msg.parent_message_uuid === parentUuid && msg.sender === 'human'
+			);
 
-		// Remove button
-		const removeBtn = createClaudeButton('Remove', 'secondary');
-		removeBtn.classList.add('!min-w-0', '!px-2', '!h-7', '!text-xs');
-		removeBtn.onclick = () => item.remove();
-		item.appendChild(removeBtn);
-
-		return item;
+			console.log('Found message being edited:', messageBeingEdited);
+			return messageBeingEdited;
+		} catch (error) {
+			console.error('Error fetching message data:', error);
+			return null;
+		}
 	}
 
 	async function readTextFile(file) {
@@ -391,60 +563,6 @@
 			reader.onerror = (e) => reject(e);
 			reader.readAsText(file);
 		});
-	}
-
-	function buildTextEditor(text) {
-		const container = document.createElement('div');
-
-		const label = document.createElement('label');
-		label.className = CLAUDE_STYLES.LABEL;
-		label.textContent = 'Message Text';
-		container.appendChild(label);
-
-		const textarea = document.createElement('textarea');
-		textarea.className = CLAUDE_STYLES.INPUT;
-		textarea.rows = 10;
-		textarea.value = text;
-		textarea.id = 'message-text';
-		textarea.placeholder = 'Enter your message...';
-		textarea.style.resize = 'vertical';
-		textarea.style.minHeight = '150px';
-		container.appendChild(textarea);
-
-		return container;
-	}
-
-	async function formatNewRequest(url, config, modalData) {
-		const bodyData = JSON.parse(config.body);
-
-		// Collect current state from modal
-		const modifiedData = modalData || collectModalData();
-
-		// Extract org ID from URL for uploads
-		const urlParts = url.split('/');
-		const orgId = urlParts[urlParts.indexOf('organizations') + 1];
-
-		// Handle pending file uploads
-		const uploadedFileUuids = await uploadPendingFiles(orgId);
-
-		// Combine existing file UUIDs with newly uploaded ones
-		const allFileUuids = [...modifiedData.fileUuids, ...uploadedFileUuids];
-
-		// Create modified request body
-		const modifiedBody = {
-			...bodyData,
-			prompt: modifiedData.text,
-			attachments: modifiedData.attachments,
-			files: allFileUuids
-		};
-
-		// Create modified request config
-		const modifiedConfig = {
-			...config,
-			body: JSON.stringify(modifiedBody)
-		};
-
-		return { url, config: modifiedConfig };
 	}
 
 	async function uploadPendingFiles(orgId) {
@@ -484,41 +602,29 @@
 		return uploadedUuids;
 	}
 
-	function collectModalData() {
-		// Get the message text
-		const messageText = document.getElementById('message-text').value;
+	async function formatNewRequest(url, config, modalData) {
+		const bodyData = JSON.parse(config.body);
+		const modifiedData = modalData || collectModalData();
 
-		// Collect files and attachments from the list
-		const fileItems = document.querySelectorAll('#files-list > div');
-		const fileUuids = [];
-		const attachments = [];
-
-		fileItems.forEach(item => {
-			if (item.dataset.fileType === 'files_v2') {
-				// Real file with UUID
-				const uuid = item.dataset.fileUuid;
-				if (uuid && !uuid.startsWith('pending-')) {
-					fileUuids.push(uuid);
-				}
-				// Note: pending files would need upload first - we'll handle this later
-			} else if (item.dataset.fileType === 'attachment') {
-				// Text attachment - need to reconstruct it
-				const attachment = item.dataset.attachmentData;
-				if (attachment) {
-					attachments.push(JSON.parse(attachment));
-				}
-			}
-		});
+		// All files are already uploaded, just use their UUIDs
+		const modifiedBody = {
+			...bodyData,
+			prompt: modifiedData.text,
+			attachments: modifiedData.attachments,
+			files: modifiedData.fileUuids  // These are all real UUIDs now
+		};
 
 		return {
-			text: messageText,
-			fileUuids: fileUuids,
-			attachments: attachments
+			url,
+			config: {
+				...config,
+				body: JSON.stringify(modifiedBody)
+			}
 		};
 	}
 	//#endregion
 
-	//#region Fetch patching
+	//#region Fetch Patching
 	const originalFetch = window.fetch;
 	window.fetch = async (...args) => {
 		const [input, config] = args;
@@ -532,14 +638,44 @@
 			url = input.url;
 		}
 
+		// Handle conversation fetch - remove our custom elements
+		if (url && url.includes('/chat_conversations/') && url.includes('rendering_mode=messages')) {
+			// Clean up any stale messages before Claude updates
+			const staleMessages = document.querySelectorAll('.stale-message');
+			staleMessages.forEach(msg => {
+				// Remove our custom paragraphs
+				msg.querySelectorAll('.custom-edit-text').forEach(p => p.remove());
+
+				// Unhide original paragraphs
+				msg.querySelectorAll('.original-hidden').forEach(p => {
+					p.style.display = '';
+					p.classList.remove('original-hidden');
+				});
+
+				msg.classList.remove('stale-message');
+			});
+		}
+
 		// Intercept /completion requests when edit flag is set
 		if (url && url.includes('/completion') && pendingEditIntercept && config?.method === 'POST') {
 			console.log('Intercepting edit completion request');
-			pendingEditIntercept = false; // Reset flag immediately
+			const messageElement = pendingEditIntercept; // Store reference before resetting
+			pendingEditIntercept = null; // Reset flag immediately
 
 			try {
 				// Create modal and wait for user action
 				const modifiedRequest = await createEditModal(url, config);
+
+				// Update the UI with the new text immediately
+				const bodyData = JSON.parse(modifiedRequest.config.body);
+				setTimeout(() => {
+					const userMessages = document.querySelectorAll('[data-testid="user-message"]');
+					const lastMessage = userMessages[userMessages.length - 1];
+					if (lastMessage) {
+						updateMessageUI(lastMessage, bodyData.prompt);
+					}
+				}, 100);
+
 				// User confirmed - make the modified request
 				return originalFetch(modifiedRequest.url, modifiedRequest.config);
 			} catch (error) {
@@ -553,6 +689,6 @@
 	};
 	//#endregion
 
-	// Start checking for edit buttons every 2 seconds
+	// Initialize - start checking for edit buttons every 2 seconds
 	setInterval(wrapEditButtons, 2000);
 })();

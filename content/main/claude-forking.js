@@ -546,7 +546,10 @@
 
 					// Parallel processing of files and syncs
 					[context.files, context.syncsources] = await Promise.all([
-						Promise.all(downloadedFiles.map(file => uploadFile(orgId, file))),
+						Promise.all(downloadedFiles.map(async file => {
+							const metadata = await uploadFile(orgId, file);
+							return metadata.file_uuid;
+						})),
 						Promise.all(context.syncsources.map(syncsource => processSyncSource(orgId, syncsource)))
 					]);
 				} else {
@@ -614,7 +617,6 @@
 				// Fetch the original data
 				const response = await originalFetch(...args);
 				const originalData = await response.json();
-				console.log('Fetched conversation data for', conversationId, originalData);
 				// Check if this conversation has fork history
 				const forkHistory = await getForkHistory(conversationId);
 
