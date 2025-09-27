@@ -93,16 +93,34 @@
 				content: content,
 				confirmText: 'Submit Edit',
 				cancelText: 'Cancel',
-				onConfirm: () => {
-					// Collect data and resolve the promise with modified request
-					const modalData = collectModalData();
-					const modifiedRequest = formatNewRequest(url, config, modalData);
+				onConfirm: async () => {
+					const submitBtn = Array.from(modal.querySelectorAll('button')).find(
+						btn => btn.textContent === 'Submit Edit'
+					);
+					try {
+						// Show loading state on button
+						if (submitBtn) {
+							submitBtn.disabled = true;
+							submitBtn.textContent = 'Uploading files...';
+						}
 
-					// Remove modal
-					modal.remove();
+						// Collect data and format request with uploads
+						const modalData = collectModalData();
+						const modifiedRequest = await formatNewRequest(url, config, modalData);
 
-					// Resolve with the formatted request
-					resolve(modifiedRequest);
+						// Remove modal
+						modal.remove();
+
+						// Resolve with the formatted request
+						resolve(modifiedRequest);
+					} catch (error) {
+						// Re-enable button on error
+						if (submitBtn) {
+							submitBtn.disabled = false;
+							submitBtn.textContent = 'Submit Edit';
+						}
+						alert(`Upload failed: ${error.message}`);
+					}
 				},
 				onCancel: () => {
 					// Remove modal and reject
@@ -161,7 +179,6 @@
 		filesList.className = 'space-y-2 mb-3 overflow-y-auto';
 		filesList.id = 'files-list';
 		filesList.style.maxHeight = '200px';
-		filesList.style.minHeight = '60px';
 
 		// Add real files from the request
 		if (data.filesMetadata && data.filesMetadata.length > 0) {
@@ -355,7 +372,7 @@
 		// File name with pending indicator
 		const name = document.createElement('span');
 		name.className = 'flex-1 text-sm text-text-100';
-		name.innerHTML = `${file.name} <span class="text-text-400 text-xs">(pending)</span>`;
+		name.textContent = `${file.name}`;
 		item.appendChild(name);
 
 		// Remove button
@@ -392,28 +409,34 @@
 		textarea.placeholder = 'Enter your message...';
 		textarea.style.resize = 'vertical';
 		textarea.style.minHeight = '150px';
-		textarea.style.maxHeight = '400px';
 		container.appendChild(textarea);
 
 		return container;
 	}
 
-	function formatNewRequest(url, config, modalData) {
+	async function formatNewRequest(url, config, modalData) {
 		const bodyData = JSON.parse(config.body);
 
 		// Collect current state from modal
 		const modifiedData = modalData || collectModalData();
+
+		// Extract org ID from URL for uploads
+		const urlParts = url.split('/');
+		const orgId = urlParts[urlParts.indexOf('organizations') + 1];
+
+		// Handle pending file uploads
+		const uploadedFileUuids = await uploadPendingFiles(orgId);
+
+		// Combine existing file UUIDs with newly uploaded ones
+		const allFileUuids = [...modifiedData.fileUuids, ...uploadedFileUuids];
 
 		// Create modified request body
 		const modifiedBody = {
 			...bodyData,
 			prompt: modifiedData.text,
 			attachments: modifiedData.attachments,
-			files: modifiedData.fileUuids
+			files: allFileUuids
 		};
-
-		// TODO: Add more transformations here as needed
-		// e.g., handle pending file uploads, convert data formats, etc.
 
 		// Create modified request config
 		const modifiedConfig = {
@@ -422,6 +445,43 @@
 		};
 
 		return { url, config: modifiedConfig };
+	}
+
+	async function uploadPendingFiles(orgId) {
+		const pendingItems = document.querySelectorAll('[data-pending-file="true"]');
+		const uploadedUuids = [];
+
+		for (const item of pendingItems) {
+			if (item.fileObject) {
+				try {
+					// Update UI to show uploading status
+					const nameSpan = item.querySelector('span.text-text-100');
+					const originalHTML = nameSpan.innerHTML;
+					nameSpan.innerHTML = `${item.fileObject.name} <span class="text-text-400 text-xs">(uploading...)</span>`;
+
+					// Upload the file
+					const uuid = await uploadFile(orgId, {
+						data: item.fileObject,
+						name: item.fileObject.name
+					});
+
+					console.log(`Uploaded ${item.fileObject.name}, got UUID: ${uuid}`);
+					uploadedUuids.push(uuid);
+
+					// Update UI to show success
+					nameSpan.innerHTML = `${item.fileObject.name} <span class="text-green-600 text-xs">(uploaded)</span>`;
+
+				} catch (error) {
+					console.error(`Failed to upload ${item.fileObject.name}:`, error);
+					// Update UI to show error
+					const nameSpan = item.querySelector('span.text-text-100');
+					nameSpan.innerHTML = `${item.fileObject.name} <span class="text-red-600 text-xs">(upload failed)</span>`;
+					throw new Error(`Failed to upload file: ${item.fileObject.name}`);
+				}
+			}
+		}
+
+		return uploadedUuids;
 	}
 
 	function collectModalData() {
