@@ -3,9 +3,6 @@
 	'use strict';
 
 	let pendingEditIntercept = false;
-	let blockedEditRequest = null;
-	let blockedEditResolve = null;
-	let blockedEditReject = null;
 
 	//#region Edit button wrapping
 	function wrapEditButtons() {
@@ -22,7 +19,6 @@
 			if (!controlsContainer) return;
 
 			// Find the direct child button (edit button is less nested than others)
-			// Other buttons are typically inside additional wrapper divs
 			const directButton = controlsContainer.querySelector(':scope > div > div > button[type="button"]');
 
 			if (directButton && !directButton.hasAttribute('data-wrapped')) {
@@ -32,8 +28,6 @@
 				directButton.addEventListener('pointerdown', (e) => {
 					console.log('Edit button clicked, setting intercept flag');
 					pendingEditIntercept = true;
-
-					// Don't prevent default - let the original handler run
 
 					// Auto-submit after a brief delay to let edit mode open
 					setTimeout(() => {
@@ -52,7 +46,6 @@
 
 		if (saveButton) {
 			console.log('Auto-clicking save button');
-			// Use pointerdown event for Radix compatibility
 			saveButton.click();
 		} else {
 			// Retry if not found yet
@@ -78,41 +71,58 @@
 			files: bodyData.files || [],
 			attachments: bodyData.attachments || [],
 			parent_message_uuid: bodyData.parent_message_uuid,
-			// Add full file metadata from the original message
 			filesMetadata: messageData?.files_v2 || [],
 			originalMessageUuid: messageData?.uuid
 		};
 
-		const content = document.createElement('div');
-		content.className = 'space-y-4';
+		// Return a promise that resolves when user makes a choice
+		return new Promise((resolve, reject) => {
+			const content = document.createElement('div');
+			content.className = 'space-y-4';
 
-		// Files section with real data
-		const filesSection = buildFilesSection(enrichedData);
-		content.appendChild(filesSection);
+			// Files section with real data
+			const filesSection = buildFilesSection(enrichedData);
+			content.appendChild(filesSection);
 
-		// Text editor section
-		const textSection = buildTextEditor(enrichedData.prompt);
-		content.appendChild(textSection);
+			// Text editor section
+			const textSection = buildTextEditor(enrichedData.prompt);
+			content.appendChild(textSection);
 
-		const modal = createClaudeModal({
-			title: 'Edit Message',
-			content: content,
-			confirmText: 'Submit Edit',
-			cancelText: 'Cancel',
-			onConfirm: () => handleEditSubmit(url, config),
-			onCancel: () => handleEditCancel()
+			const modal = createClaudeModal({
+				title: 'Edit Message',
+				content: content,
+				confirmText: 'Submit Edit',
+				cancelText: 'Cancel',
+				onConfirm: () => {
+					// Collect data and resolve the promise with modified request
+					const modalData = collectModalData();
+					const modifiedRequest = formatNewRequest(url, config, modalData);
+
+					// Remove modal
+					modal.remove();
+
+					// Resolve with the formatted request
+					resolve(modifiedRequest);
+				},
+				onCancel: () => {
+					// Remove modal and reject
+					modal.remove();
+					reject(new Error('Edit cancelled by user'));
+				}
+			});
+
+			const modalContainer = modal.querySelector('.bg-bg-100');
+			modalContainer.classList.remove('max-w-md');
+			modalContainer.classList.add('max-w-2xl');
+
+			// Add modal to document
+			document.body.appendChild(modal);
 		});
-
-		const modalContainer = modal.querySelector('.bg-bg-100');
-		modalContainer.classList.remove('max-w-md');
-		modalContainer.classList.add('max-w-2xl'); // or even 'max-w-3xl' for extra width
-
-		return modal;
 	}
 
 	async function getMessageBeingEdited(orgId, conversationId, parentUuid) {
 		try {
-			const response = await originalFetch(
+			const response = await fetch(
 				`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`
 			);
 
@@ -124,7 +134,6 @@
 			const data = await response.json();
 
 			// Find the message that has our parent UUID as its parent
-			// This is the message being edited
 			const messageBeingEdited = data.chat_messages.find(
 				msg => msg.parent_message_uuid === parentUuid && msg.sender === 'human'
 			);
@@ -151,7 +160,7 @@
 		const filesList = document.createElement('div');
 		filesList.className = 'space-y-2 mb-3 overflow-y-auto';
 		filesList.id = 'files-list';
-		filesList.style.maxHeight = '200px'; // Adjust this as needed
+		filesList.style.maxHeight = '200px';
 		filesList.style.minHeight = '60px';
 
 		// Add real files from the request
@@ -389,29 +398,30 @@
 		return container;
 	}
 
-	function handleEditSubmit(url, config) {
-		if (blockedEditRequest && blockedEditResolve) {
-			// Collect current state from modal
-			const modifiedData = collectModalData();
-			const originalBody = JSON.parse(config.body);
-			// Create modified request body
-			const modifiedBody = {
-				...originalBody,
-				prompt: modifiedData.text,
-				attachments: modifiedData.attachments,
-				files: modifiedData.fileUuids
-			};
+	function formatNewRequest(url, config, modalData) {
+		const bodyData = JSON.parse(config.body);
 
-			// Create modified request
-			const modifiedConfig = {
-				...config,
-				body: JSON.stringify(modifiedBody)
-			};
+		// Collect current state from modal
+		const modifiedData = modalData || collectModalData();
 
-			// Forward the modified request
-			blockedEditResolve(originalFetch(url, modifiedConfig));
-			resetEditState();
-		}
+		// Create modified request body
+		const modifiedBody = {
+			...bodyData,
+			prompt: modifiedData.text,
+			attachments: modifiedData.attachments,
+			files: modifiedData.fileUuids
+		};
+
+		// TODO: Add more transformations here as needed
+		// e.g., handle pending file uploads, convert data formats, etc.
+
+		// Create modified request config
+		const modifiedConfig = {
+			...config,
+			body: JSON.stringify(modifiedBody)
+		};
+
+		return { url, config: modifiedConfig };
 	}
 
 	function collectModalData() {
@@ -446,37 +456,6 @@
 			attachments: attachments
 		};
 	}
-
-	function handleEditCancel() {
-		if (blockedEditReject) {
-			blockedEditReject(new Error('Edit cancelled by user'));
-			resetEditState();
-		}
-	}
-
-	function getDummyData() {
-		return {
-			prompt: 'This is a test message that can be edited',
-			files: ['uuid-1', 'uuid-2'],
-			attachments: [
-				{
-					file_name: 'notes.txt',
-					file_size: 1024,
-					file_type: 'text/plain',
-					extracted_content: 'Some notes content...'
-				}
-			],
-			parent_message_uuid: '00000000-0000-4000-8000-000000000000'
-		};
-	}
-	//#endregion
-
-	function resetEditState() {
-		pendingEditIntercept = false;
-		blockedEditRequest = null;
-		blockedEditResolve = null;
-		blockedEditReject = null;
-	}
 	//#endregion
 
 	//#region Fetch patching
@@ -496,20 +475,18 @@
 		// Intercept /completion requests when edit flag is set
 		if (url && url.includes('/completion') && pendingEditIntercept && config?.method === 'POST') {
 			console.log('Intercepting edit completion request');
+			pendingEditIntercept = false; // Reset flag immediately
 
-			// Store the request
-			blockedEditRequest = args;
-			console.log('Blocked request stored:', blockedEditRequest);
-			// Create and show the modal (now async)
-			createEditModal(url, config).then(modal => {
-				document.body.appendChild(modal);
-			});
-
-			// Return a promise that we'll resolve/reject based on user action
-			return new Promise((resolve, reject) => {
-				blockedEditResolve = resolve;
-				blockedEditReject = reject;
-			});
+			try {
+				// Create modal and wait for user action
+				const modifiedRequest = await createEditModal(url, config);
+				// User confirmed - make the modified request
+				return originalFetch(modifiedRequest.url, modifiedRequest.config);
+			} catch (error) {
+				// User cancelled - throw error to cancel the request
+				console.log('Edit cancelled by user');
+				throw error;
+			}
 		}
 
 		return originalFetch(...args);
