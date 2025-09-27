@@ -36,17 +36,6 @@
 		return match ? match[1] : null;
 	}
 
-	function getOrgId() {
-		const cookies = document.cookie.split(';');
-		for (const cookie of cookies) {
-			const [name, value] = cookie.trim().split('=');
-			if (name === 'lastActiveOrg') {
-				return value;
-			}
-		}
-		throw new Error('Could not find organization ID');
-	}
-
 	// ======== STYLE FETCHING ========
 	async function fetchAvailableStyles() {
 		try {
