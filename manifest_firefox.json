@@ -35,6 +35,7 @@
 				"content/claude-styles.js",
 				"content/main/claude-api.js",
 				"content/main/claude-forking.js",
+				"content/main/claude-edit-files.js",
 				"content/main/pref-switcher-fetch-watcher.js",
 				"content/main/perchat-styles-fetch-interceptor.js",
 				"content/main/tts-interceptor.js"

@@ -1,0 +1,521 @@
+// claude-edit-files.js
+(function () {
+	'use strict';
+
+	let pendingEditIntercept = false;
+	let blockedEditRequest = null;
+	let blockedEditResolve = null;
+	let blockedEditReject = null;
+
+	//#region Edit button wrapping
+	function wrapEditButtons() {
+		// Find all user messages and their edit buttons
+		const userMessages = document.querySelectorAll('[data-testid="user-message"]');
+
+		userMessages.forEach(messageEl => {
+			// Find the parent group element
+			const groupEl = messageEl.closest('.group');
+			if (!groupEl) return;
+
+			// Look for the controls container at the bottom right
+			const controlsContainer = groupEl.querySelector('.absolute.bottom-0.right-2');
+			if (!controlsContainer) return;
+
+			// Find the direct child button (edit button is less nested than others)
+			// Other buttons are typically inside additional wrapper divs
+			const directButton = controlsContainer.querySelector(':scope > div > div > button[type="button"]');
+
+			if (directButton && !directButton.hasAttribute('data-wrapped')) {
+				directButton.setAttribute('data-wrapped', 'true');
+
+				// Use pointerdown instead of onclick
+				directButton.addEventListener('pointerdown', (e) => {
+					console.log('Edit button clicked, setting intercept flag');
+					pendingEditIntercept = true;
+
+					// Don't prevent default - let the original handler run
+
+					// Auto-submit after a brief delay to let edit mode open
+					setTimeout(() => {
+						autoSubmitEdit();
+					}, 100);
+				});
+			}
+		});
+	}
+
+	function autoSubmitEdit() {
+		if (!pendingEditIntercept) return;
+
+		// Find the submit button
+		const saveButton = document.querySelector('button[type="submit"].bg-text-000');
+
+		if (saveButton) {
+			console.log('Auto-clicking save button');
+			// Use pointerdown event for Radix compatibility
+			saveButton.click();
+		} else {
+			// Retry if not found yet
+			setTimeout(autoSubmitEdit, 50);
+		}
+	}
+	//#endregion
+
+	//#region Modal creation
+	async function createEditModal(url, config) {
+		const bodyData = JSON.parse(config.body);
+		// Get conversation ID and org ID from URL
+		const urlParts = url.split('/');
+		const orgId = urlParts[urlParts.indexOf('organizations') + 1];
+		const conversationId = urlParts[urlParts.indexOf('chat_conversations') + 1];
+
+		// Fetch the full message data to get file details
+		const messageData = await getMessageBeingEdited(orgId, conversationId, bodyData.parent_message_uuid);
+
+		// Merge request data with fetched message data
+		const enrichedData = {
+			prompt: bodyData.prompt,
+			files: bodyData.files || [],
+			attachments: bodyData.attachments || [],
+			parent_message_uuid: bodyData.parent_message_uuid,
+			// Add full file metadata from the original message
+			filesMetadata: messageData?.files_v2 || [],
+			originalMessageUuid: messageData?.uuid
+		};
+
+		const content = document.createElement('div');
+		content.className = 'space-y-4';
+
+		// Files section with real data
+		const filesSection = buildFilesSection(enrichedData);
+		content.appendChild(filesSection);
+
+		// Text editor section
+		const textSection = buildTextEditor(enrichedData.prompt);
+		content.appendChild(textSection);
+
+		const modal = createClaudeModal({
+			title: 'Edit Message',
+			content: content,
+			confirmText: 'Submit Edit',
+			cancelText: 'Cancel',
+			onConfirm: () => handleEditSubmit(url, config),
+			onCancel: () => handleEditCancel()
+		});
+
+		const modalContainer = modal.querySelector('.bg-bg-100');
+		modalContainer.classList.remove('max-w-md');
+		modalContainer.classList.add('max-w-2xl'); // or even 'max-w-3xl' for extra width
+
+		return modal;
+	}
+
+	async function getMessageBeingEdited(orgId, conversationId, parentUuid) {
+		try {
+			const response = await originalFetch(
+				`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`
+			);
+
+			if (!response.ok) {
+				console.error('Failed to fetch conversation data');
+				return null;
+			}
+
+			const data = await response.json();
+
+			// Find the message that has our parent UUID as its parent
+			// This is the message being edited
+			const messageBeingEdited = data.chat_messages.find(
+				msg => msg.parent_message_uuid === parentUuid && msg.sender === 'human'
+			);
+
+			console.log('Found message being edited:', messageBeingEdited);
+			return messageBeingEdited;
+		} catch (error) {
+			console.error('Error fetching message data:', error);
+			return null;
+		}
+	}
+
+	function buildFilesSection(data) {
+		const container = document.createElement('div');
+		container.className = 'border border-border-300 rounded-lg p-3';
+
+		// Section header
+		const header = document.createElement('h3');
+		header.className = 'text-sm font-medium text-text-200 mb-2';
+		header.textContent = 'Files & Attachments';
+		container.appendChild(header);
+
+		// Files list container - now with scrolling
+		const filesList = document.createElement('div');
+		filesList.className = 'space-y-2 mb-3 overflow-y-auto';
+		filesList.id = 'files-list';
+		filesList.style.maxHeight = '200px'; // Adjust this as needed
+		filesList.style.minHeight = '60px';
+
+		// Add real files from the request
+		if (data.filesMetadata && data.filesMetadata.length > 0) {
+			data.filesMetadata.forEach(file => {
+				if (data.files.includes(file.file_uuid)) {
+					const fileItem = buildFileItem(file);
+					filesList.appendChild(fileItem);
+				}
+			});
+		}
+
+		// Add attachments
+		if (data.attachments && data.attachments.length > 0) {
+			data.attachments.forEach(attachment => {
+				const item = buildAttachmentItem(attachment);
+				filesList.appendChild(item);
+			});
+		}
+
+		container.appendChild(filesList);
+
+		// Add file button
+		const addButton = buildAddFileButton();
+		container.appendChild(addButton);
+
+		return container;
+	}
+
+	function buildFileItem(file) {
+		const item = document.createElement('div');
+		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded';
+		item.dataset.fileUuid = file.file_uuid;
+		item.dataset.fileType = 'files_v2';
+
+		// File preview/icon
+		const icon = document.createElement('div');
+		icon.className = 'w-8 h-8 bg-bg-300 rounded overflow-hidden flex items-center justify-center';
+
+		if (file.file_kind === 'image' && file.thumbnail_asset?.url) {
+			const img = document.createElement('img');
+			img.src = file.thumbnail_asset.url;
+			img.className = 'w-full h-full object-cover';
+			icon.appendChild(img);
+		} else {
+			icon.innerHTML = file.file_kind === 'document' ? '📄' : '📎';
+		}
+		item.appendChild(icon);
+
+		// File name
+		const name = document.createElement('span');
+		name.className = 'flex-1 text-sm text-text-100';
+		name.textContent = file.file_name;
+		item.appendChild(name);
+
+		// Remove button
+		const removeBtn = createClaudeButton('Remove', 'secondary');
+		removeBtn.classList.add('!min-w-0', '!px-2', '!h-7', '!text-xs');
+		removeBtn.onclick = () => item.remove();
+		item.appendChild(removeBtn);
+
+		return item;
+	}
+
+	function buildAttachmentItem(attachment) {
+		const item = document.createElement('div');
+		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded';
+		item.dataset.fileType = 'attachment';
+		item.dataset.fileName = attachment.file_name;
+		// Store the full attachment data for reconstruction
+		item.dataset.attachmentData = JSON.stringify(attachment);
+
+		// Attachment icon
+		const icon = document.createElement('div');
+		icon.className = 'w-8 h-8 bg-bg-300 rounded flex items-center justify-center text-text-400';
+		icon.innerHTML = '📎';
+		item.appendChild(icon);
+
+		// Attachment name
+		const name = document.createElement('span');
+		name.className = 'flex-1 text-sm text-text-100';
+		name.textContent = attachment.file_name;
+		item.appendChild(name);
+
+		// Remove button
+		const removeBtn = createClaudeButton('Remove', 'secondary');
+		removeBtn.classList.add('!min-w-0', '!px-2', '!h-7', '!text-xs');
+		removeBtn.onclick = () => item.remove();
+		item.appendChild(removeBtn);
+
+		return item;
+	}
+
+	function buildAddFileButton() {
+		const container = document.createElement('div');
+		container.className = 'space-y-2';
+
+		// Buttons container
+		const buttonsDiv = document.createElement('div');
+		buttonsDiv.className = 'flex gap-2';
+
+		// Add attachment button (text files)
+		const addAttachmentBtn = createClaudeButton('+ Add Text Attachment (eg .txt, .md, .js)', 'secondary');
+		addAttachmentBtn.onclick = () => handleAddAttachment();
+		buttonsDiv.appendChild(addAttachmentBtn);
+
+		// Add file button (images, PDFs, etc)
+		const addFileBtn = createClaudeButton('+ Add File (eg .pdf, .png, .docx)', 'secondary');
+		addFileBtn.onclick = () => handleAddFile();
+		buttonsDiv.appendChild(addFileBtn);
+
+		container.appendChild(buttonsDiv);
+
+		// Hidden file input for attachments (text only)
+		const attachmentInput = document.createElement('input');
+		attachmentInput.type = 'file';
+		attachmentInput.accept = 'text/*, .txt, .md, .csv, .log';
+		attachmentInput.multiple = true;
+		attachmentInput.style.display = 'none';
+		attachmentInput.id = 'attachment-input';
+		attachmentInput.onchange = (e) => processSelectedAttachments(e.target.files);
+		container.appendChild(attachmentInput);
+
+		// Hidden file input for real files
+		const fileInput = document.createElement('input');
+		fileInput.type = 'file';
+		fileInput.accept = 'image/*, .pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx';
+		fileInput.multiple = true;
+		fileInput.style.display = 'none';
+		fileInput.id = 'file-input';
+		fileInput.onchange = (e) => processSelectedFiles(e.target.files);
+		container.appendChild(fileInput);
+
+		return container;
+	}
+
+	function handleAddAttachment() {
+		document.getElementById('attachment-input').click();
+	}
+
+	function handleAddFile() {
+		document.getElementById('file-input').click();
+	}
+
+	async function processSelectedAttachments(files) {
+		const filesList = document.getElementById('files-list');
+
+		for (const file of files) {
+			// Read the text content
+			const content = await readTextFile(file);
+
+			// Create attachment object
+			const attachment = {
+				file_name: file.name,
+				file_type: file.type || 'text/plain',
+				file_size: file.size,
+				extracted_content: content
+			};
+
+			// Add to the list
+			const attachmentItem = buildAttachmentItem(attachment);
+			filesList.appendChild(attachmentItem);
+		}
+	}
+
+	function processSelectedFiles(files) {
+		const filesList = document.getElementById('files-list');
+
+		Array.from(files).forEach(file => {
+			// Create a pending file item
+			const fileItem = buildPendingFileItem(file);
+			filesList.appendChild(fileItem);
+		});
+	}
+
+	function buildPendingFileItem(file) {
+		const item = document.createElement('div');
+		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded';
+		item.dataset.fileUuid = 'pending-' + Date.now() + '-' + Math.random();
+		item.dataset.fileType = 'files_v2';
+		item.dataset.pendingFile = 'true';
+
+		// Store the actual file object for later upload
+		item.fileObject = file;
+
+		// File icon
+		const icon = document.createElement('div');
+		icon.className = 'w-8 h-8 bg-bg-300 rounded flex items-center justify-center text-text-400';
+		icon.innerHTML = file.type.startsWith('image/') ? '🖼️' : '📄';
+		item.appendChild(icon);
+
+		// File name with pending indicator
+		const name = document.createElement('span');
+		name.className = 'flex-1 text-sm text-text-100';
+		name.innerHTML = `${file.name} <span class="text-text-400 text-xs">(pending)</span>`;
+		item.appendChild(name);
+
+		// Remove button
+		const removeBtn = createClaudeButton('Remove', 'secondary');
+		removeBtn.classList.add('!min-w-0', '!px-2', '!h-7', '!text-xs');
+		removeBtn.onclick = () => item.remove();
+		item.appendChild(removeBtn);
+
+		return item;
+	}
+
+	async function readTextFile(file) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = (e) => resolve(e.target.result);
+			reader.onerror = (e) => reject(e);
+			reader.readAsText(file);
+		});
+	}
+
+	function buildTextEditor(text) {
+		const container = document.createElement('div');
+
+		const label = document.createElement('label');
+		label.className = CLAUDE_STYLES.LABEL;
+		label.textContent = 'Message Text';
+		container.appendChild(label);
+
+		const textarea = document.createElement('textarea');
+		textarea.className = CLAUDE_STYLES.INPUT;
+		textarea.rows = 10;
+		textarea.value = text;
+		textarea.id = 'message-text';
+		textarea.placeholder = 'Enter your message...';
+		textarea.style.resize = 'vertical';
+		textarea.style.minHeight = '150px';
+		textarea.style.maxHeight = '400px';
+		container.appendChild(textarea);
+
+		return container;
+	}
+
+	function handleEditSubmit(url, config) {
+		if (blockedEditRequest && blockedEditResolve) {
+			// Collect current state from modal
+			const modifiedData = collectModalData();
+			const originalBody = JSON.parse(config.body);
+			// Create modified request body
+			const modifiedBody = {
+				...originalBody,
+				prompt: modifiedData.text,
+				attachments: modifiedData.attachments,
+				files: modifiedData.fileUuids
+			};
+
+			// Create modified request
+			const modifiedConfig = {
+				...config,
+				body: JSON.stringify(modifiedBody)
+			};
+
+			// Forward the modified request
+			blockedEditResolve(originalFetch(url, modifiedConfig));
+			resetEditState();
+		}
+	}
+
+	function collectModalData() {
+		// Get the message text
+		const messageText = document.getElementById('message-text').value;
+
+		// Collect files and attachments from the list
+		const fileItems = document.querySelectorAll('#files-list > div');
+		const fileUuids = [];
+		const attachments = [];
+
+		fileItems.forEach(item => {
+			if (item.dataset.fileType === 'files_v2') {
+				// Real file with UUID
+				const uuid = item.dataset.fileUuid;
+				if (uuid && !uuid.startsWith('pending-')) {
+					fileUuids.push(uuid);
+				}
+				// Note: pending files would need upload first - we'll handle this later
+			} else if (item.dataset.fileType === 'attachment') {
+				// Text attachment - need to reconstruct it
+				const attachment = item.dataset.attachmentData;
+				if (attachment) {
+					attachments.push(JSON.parse(attachment));
+				}
+			}
+		});
+
+		return {
+			text: messageText,
+			fileUuids: fileUuids,
+			attachments: attachments
+		};
+	}
+
+	function handleEditCancel() {
+		if (blockedEditReject) {
+			blockedEditReject(new Error('Edit cancelled by user'));
+			resetEditState();
+		}
+	}
+
+	function getDummyData() {
+		return {
+			prompt: 'This is a test message that can be edited',
+			files: ['uuid-1', 'uuid-2'],
+			attachments: [
+				{
+					file_name: 'notes.txt',
+					file_size: 1024,
+					file_type: 'text/plain',
+					extracted_content: 'Some notes content...'
+				}
+			],
+			parent_message_uuid: '00000000-0000-4000-8000-000000000000'
+		};
+	}
+	//#endregion
+
+	function resetEditState() {
+		pendingEditIntercept = false;
+		blockedEditRequest = null;
+		blockedEditResolve = null;
+		blockedEditReject = null;
+	}
+	//#endregion
+
+	//#region Fetch patching
+	const originalFetch = window.fetch;
+	window.fetch = async (...args) => {
+		const [input, config] = args;
+
+		let url = undefined;
+		if (input instanceof URL) {
+			url = input.href;
+		} else if (typeof input === 'string') {
+			url = input;
+		} else if (input instanceof Request) {
+			url = input.url;
+		}
+
+		// Intercept /completion requests when edit flag is set
+		if (url && url.includes('/completion') && pendingEditIntercept && config?.method === 'POST') {
+			console.log('Intercepting edit completion request');
+
+			// Store the request
+			blockedEditRequest = args;
+			console.log('Blocked request stored:', blockedEditRequest);
+			// Create and show the modal (now async)
+			createEditModal(url, config).then(modal => {
+				document.body.appendChild(modal);
+			});
+
+			// Return a promise that we'll resolve/reject based on user action
+			return new Promise((resolve, reject) => {
+				blockedEditResolve = resolve;
+				blockedEditReject = reject;
+			});
+		}
+
+		return originalFetch(...args);
+	};
+	//#endregion
+
+	// Start checking for edit buttons every 2 seconds
+	setInterval(wrapEditButtons, 2000);
+})();
