@@ -93,8 +93,11 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 	if (onCancel) {
 		const cancelBtn = createClaudeButton(cancelText, 'secondary');
 		cancelBtn.onclick = () => {
-			backdrop.remove();
-			onCancel();
+			try {
+				onCancel();
+			} finally {
+				backdrop.remove();
+			}
 		};
 		buttonContainer.appendChild(cancelBtn);
 	}
@@ -102,8 +105,11 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 	if (onConfirm) {
 		const confirmBtn = createClaudeButton(confirmText, 'primary');
 		confirmBtn.onclick = () => {
-			backdrop.remove();
-			onConfirm();
+			try {
+				onConfirm();
+			} finally {
+				backdrop.remove();
+			}
 		};
 		buttonContainer.appendChild(confirmBtn);
 	}
