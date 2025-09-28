@@ -243,7 +243,9 @@ function createClaudeToggle(labelText = '', checked = false, onChange = null) {
 	return { container, input, toggle: toggleContainer };
 }
 
-function createClaudeTooltip(element, tooltipText) {
+// In claude-styles.js, update the createClaudeTooltip function:
+
+function createClaudeTooltip(element, tooltipText, deleteOnClick) {
 	// Create tooltip wrapper
 	const tooltipWrapper = document.createElement('div');
 	tooltipWrapper.className = CLAUDE_STYLES.TOOLTIP_WRAPPER;
@@ -252,7 +254,7 @@ function createClaudeTooltip(element, tooltipText) {
 
 	// Add tooltip content
 	const tooltipContent = document.createElement('div');
-	tooltipContent.className = CLAUDE_STYLES.TOOLTIP_CONTENT + ' tooltip-content'; // Keep the extra class if needed
+	tooltipContent.className = CLAUDE_STYLES.TOOLTIP_CONTENT + ' tooltip-content';
 	tooltipContent.setAttribute('data-side', 'bottom');
 	tooltipContent.setAttribute('data-align', 'center');
 	tooltipContent.setAttribute('data-state', 'delayed-open');
@@ -277,14 +279,16 @@ function createClaudeTooltip(element, tooltipText) {
 		tooltipWrapper.style.display = 'none';
 	});
 
-	// Rest stays the same...
-	// Hide on click if element is clickable
-	const originalOnclick = element.onclick;
-	if (originalOnclick) {
-		element.onclick = (e) => {
+	// Handle click behavior based on deleteOnClick parameter
+	const shouldHideOnClick = deleteOnClick === undefined
+		? (element.onclick !== null)  // Default: hide if element has onclick handler
+		: deleteOnClick;  // Otherwise use explicit setting
+
+	if (shouldHideOnClick) {
+		// Hide tooltip on any click event
+		element.addEventListener('click', () => {
 			tooltipWrapper.style.display = 'none';
-			return originalOnclick.call(element, e);
-		};
+		});
 	}
 
 	document.body.appendChild(tooltipWrapper);

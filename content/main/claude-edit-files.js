@@ -8,7 +8,7 @@
 	//#endregion
 
 	//#region Edit Button Interception
-	function wrapEditButtons() {
+	function addAdvancedEditButtons() {
 		const userMessages = document.querySelectorAll('[data-testid="user-message"]');
 
 		userMessages.forEach(messageEl => {
@@ -18,20 +18,64 @@
 			const controlsContainer = groupEl.querySelector('.absolute.bottom-0.right-2');
 			if (!controlsContainer) return;
 
+			// Check if we already added our button
+			if (controlsContainer.querySelector('.advanced-edit-button')) return;
+
+			// Find the existing edit button to place ours next to it
 			const directButton = controlsContainer.querySelector(':scope > div > div > button[type="button"]');
+			if (!directButton) return;
 
-			if (directButton && !directButton.hasAttribute('data-wrapped')) {
-				directButton.setAttribute('data-wrapped', 'true');
+			// Create our advanced edit button using the Claude styles
+			const svgContent = `
+				<div class="flex items-center justify-center" style="width: 16px; height: 16px;">
+					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" class="shrink-0" aria-hidden="true" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #2c84db;">
+						<!-- File/document -->
+						<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h9"/>
+						<polyline points="13 2 13 7 18 7"/>
+						<!-- Pencil overlapping -->
+						<path d="M18.5 8.5a1.5 1.5 0 0 0-2.12 0L10 14.88V18h3.12l6.38-6.38a1.5 1.5 0 0 0 0-2.12z"/>
+					</svg>
+				</div>
+			`;
 
-				directButton.addEventListener('pointerdown', (e) => {
-					console.log('Edit button clicked, setting intercept flag');
-					pendingEditIntercept = true;
+			const advancedEditBtn = createClaudeButton(svgContent, 'icon');
+			advancedEditBtn.type = 'button';
+			advancedEditBtn.setAttribute('data-state', 'closed');
+			advancedEditBtn.setAttribute('aria-label', 'Advanced Edit');
+			advancedEditBtn.classList.add('advanced-edit-button');
 
-					setTimeout(() => {
-						autoSubmitEdit();
-					}, 100);
-				});
-			}
+			// Adjust size to match other buttons
+			advancedEditBtn.classList.remove('h-9', 'w-9');
+			advancedEditBtn.classList.add('h-7', 'w-7');
+
+			// Add tooltip with explicit hide-on-click
+			createClaudeTooltip(advancedEditBtn, 'Advanced Edit', true);
+
+			// Add click handler
+			advancedEditBtn.onclick = async (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+
+				console.log('Advanced edit button clicked');
+
+				// Click the original edit button to enter edit mode
+				directButton.click();
+
+				// Set our intercept flag
+				pendingEditIntercept = true;
+
+				// Auto-submit after a short delay
+				setTimeout(() => {
+					autoSubmitEdit();
+				}, 100);
+			};
+
+			// Insert button to the left of the existing edit button
+			const buttonParent = directButton.parentElement;
+			buttonParent.style.display = 'flex';
+			buttonParent.style.gap = '2px';
+			buttonParent.style.alignItems = 'center';
+			buttonParent.insertBefore(advancedEditBtn, directButton);
 		});
 	}
 
@@ -378,32 +422,99 @@
 
 		// Buttons container - now with flex-wrap for responsive layout
 		const buttonsDiv = document.createElement('div');
-		buttonsDiv.className = 'flex gap-2 flex-wrap';  // Added flex-wrap
+		buttonsDiv.className = 'flex gap-2 flex-wrap';
 
-		// Add attachment button (text files) - with min-width for better mobile display
-		const addAttachmentBtn = createClaudeButton('+ Add Text Attachment (eg txt, js)', 'secondary');
-		addAttachmentBtn.style.minWidth = '200px';  // Ensures minimum width
-		addAttachmentBtn.style.flex = '1';  // Allows button to grow
+		// Add attachment button (text files) - updated description
+		const addAttachmentBtn = createClaudeButton('+ Add Text File (any text format)', 'secondary');
+		addAttachmentBtn.style.minWidth = '200px';
+		addAttachmentBtn.style.flex = '1';
 		addAttachmentBtn.onclick = () => handleAddAttachment();
 		buttonsDiv.appendChild(addAttachmentBtn);
 
-		// Add file button (images, PDFs, etc) - with min-width for better mobile display
-		const addFileBtn = createClaudeButton('+ Add File (eg pdf, png, docx)', 'secondary');
-		addFileBtn.style.minWidth = '200px';  // Ensures minimum width
-		addFileBtn.style.flex = '1';  // Allows button to grow
+		// Add file button (images, PDFs, etc)
+		const addFileBtn = createClaudeButton('+ Add File (images, PDFs, docs)', 'secondary');
+		addFileBtn.style.minWidth = '200px';
+		addFileBtn.style.flex = '1';
 		addFileBtn.onclick = () => handleAddFile();
 		buttonsDiv.appendChild(addFileBtn);
 
 		container.appendChild(buttonsDiv);
 
-		// Hidden file input for attachments (text only)
+		// Hidden file input for attachments - now accepts ANY text file
 		const attachmentInput = document.createElement('input');
 		attachmentInput.type = 'file';
-		attachmentInput.accept = 'text/*, .txt, .md, .csv, .log';
+		// Accept any text/* MIME type, plus common code/text extensions
+		attachmentInput.accept = [
+			'text/*',  // Any text MIME type
+			'.txt', '.md', '.csv', '.log', '.json', '.xml', '.yaml', '.yml',
+			'.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
+			'.py', '.pyw', '.ipynb',
+			'.java', '.class',
+			'.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx',
+			'.cs', '.vb',
+			'.php', '.php3', '.php4', '.php5',
+			'.rb', '.erb',
+			'.go',
+			'.rs',
+			'.swift',
+			'.kt', '.kts',
+			'.scala',
+			'.r', '.R',
+			'.m', '.mm',
+			'.pl', '.pm',
+			'.lua',
+			'.sh', '.bash', '.zsh', '.fish', '.bat', '.cmd', '.ps1',
+			'.sql',
+			'.html', '.htm', '.xhtml',
+			'.css', '.scss', '.sass', '.less',
+			'.vue',
+			'.svelte',
+			'.dart',
+			'.elm',
+			'.ex', '.exs',
+			'.clj', '.cljs',
+			'.lisp', '.lsp',
+			'.hs',
+			'.ml', '.mli',
+			'.fs', '.fsi', '.fsx',
+			'.nim',
+			'.zig',
+			'.v',
+			'.tf', '.tfvars',
+			'.dockerfile', '.containerfile',
+			'.makefile', '.mk',
+			'.cmake',
+			'.gradle', '.gradle.kts',
+			'.ini', '.cfg', '.conf', '.config',
+			'.toml',
+			'.env',
+			'.gitignore', '.dockerignore',
+			'.editorconfig',
+			'.properties',
+			'.plist',
+			'.asm', '.s'
+		].join(',');
 		attachmentInput.multiple = true;
 		attachmentInput.style.display = 'none';
 		attachmentInput.id = 'attachment-input';
-		attachmentInput.onchange = (e) => processSelectedAttachments(e.target.files);
+		attachmentInput.onchange = async (e) => {
+			// Verify files are actually text before processing
+			const files = Array.from(e.target.files);
+			const validFiles = [];
+
+			for (const file of files) {
+				// Check if it's likely a text file by trying to read first few bytes
+				if (await isLikelyTextFile(file)) {
+					validFiles.push(file);
+				} else {
+					console.warn(`Skipping ${file.name} - doesn't appear to be a text file`);
+				}
+			}
+
+			if (validFiles.length > 0) {
+				processSelectedAttachments(validFiles);
+			}
+		};
 		container.appendChild(attachmentInput);
 
 		// Hidden file input for real files
@@ -417,6 +528,56 @@
 		container.appendChild(fileInput);
 
 		return container;
+	}
+
+	async function isLikelyTextFile(file) {
+		// First check MIME type
+		if (file.type && file.type.startsWith('text/')) {
+			return true;
+		}
+
+		// Check common text file extensions
+		const textExtensions = ['.txt', '.md', '.csv', '.log', '.json', '.xml', '.yaml', '.yml',
+			'.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.c', '.cpp', '.h', '.cs',
+			'.php', '.rb', '.go', '.rs', '.swift', '.kt', '.scala', '.r', '.m',
+			'.pl', '.lua', '.sh', '.bash', '.zsh', '.bat', '.cmd', '.ps1', '.sql',
+			'.html', '.htm', '.css', '.scss', '.sass', '.vue', '.svelte'];
+
+		const fileName = file.name.toLowerCase();
+		if (textExtensions.some(ext => fileName.endsWith(ext))) {
+			return true;
+		}
+
+		// Try to read first 1KB to check if it's text
+		try {
+			const slice = file.slice(0, 1024);
+			const arrayBuffer = await slice.arrayBuffer();
+			const bytes = new Uint8Array(arrayBuffer);
+
+			// Check for null bytes (binary files often have these)
+			for (let i = 0; i < bytes.length; i++) {
+				if (bytes[i] === 0) {
+					return false; // Likely binary
+				}
+			}
+
+			// Check if most bytes are printable ASCII or common UTF-8
+			let printableCount = 0;
+			for (let i = 0; i < bytes.length; i++) {
+				const byte = bytes[i];
+				// Printable ASCII, tab, newline, carriage return, or valid UTF-8 start bytes
+				if ((byte >= 32 && byte <= 126) || byte === 9 || byte === 10 || byte === 13 || byte >= 128) {
+					printableCount++;
+				}
+			}
+
+			// If >90% of bytes are printable, likely text
+			return (printableCount / bytes.length) > 0.9;
+		} catch (error) {
+			console.error('Error checking file type:', error);
+			// Default to allowing it if we can't check
+			return true;
+		}
 	}
 
 	function handleAddAttachment() {
@@ -682,5 +843,5 @@
 	//#endregion
 
 	// Initialize - start checking for edit buttons every 2 seconds
-	setInterval(wrapEditButtons, 2000);
+	setInterval(addAdvancedEditButtons, 2000);
 })();
