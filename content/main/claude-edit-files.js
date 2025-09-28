@@ -212,20 +212,45 @@
 
 		const textarea = document.createElement('textarea');
 		textarea.className = CLAUDE_STYLES.INPUT;
-		textarea.rows = 10;
 		textarea.value = text;
 		textarea.id = 'message-text';
 		textarea.placeholder = 'Enter your message...';
-		textarea.style.resize = 'vertical';
+		textarea.style.resize = 'none'; // Disable manual resize since we're auto-sizing
 		textarea.style.minHeight = '150px';
+		textarea.style.maxHeight = '400px'; // Set maximum height
+		textarea.style.overflowY = 'auto'; // Add scrollbar when max height is reached
 		container.appendChild(textarea);
+
+		// Auto-resize function
+		const autoResize = () => {
+			// Reset height to auto to get the correct scrollHeight
+			textarea.style.height = 'auto';
+
+			// Set new height based on content, but not exceeding max height
+			const scrollHeight = textarea.scrollHeight;
+			const maxHeight = parseInt(textarea.style.maxHeight);
+
+			if (scrollHeight > maxHeight) {
+				textarea.style.height = maxHeight + 'px';
+			} else {
+				textarea.style.height = scrollHeight + 'px';
+			}
+		};
+
+		// Add event listener for auto-resize on input
+		textarea.addEventListener('input', autoResize);
+
+		// Initial auto-resize to fit existing content
+		setTimeout(autoResize, 0); // Use setTimeout to ensure DOM is ready
 
 		return container;
 	}
 
 	//#endregion
 	//#region File Item Builders and Handlers
-	function truncateFilename(filename, maxLength = 20) {
+	function truncateFilename(filename, customMaxLength = null) {
+		const maxLength = customMaxLength || (window.innerWidth < window.innerHeight ? 20 : 60);
+
 		if (filename.length <= maxLength) return filename;
 
 		// Try to preserve the extension
