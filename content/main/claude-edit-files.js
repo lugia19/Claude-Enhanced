@@ -53,6 +53,37 @@
 		customP.className = 'whitespace-pre-wrap break-words custom-edit-text';
 		customP.textContent = newText;
 		messageElement.appendChild(customP);
+
+		// Set up observer to clean up when Claude updates this message
+		const observer = new MutationObserver((mutations, obs) => {
+			// Check if Claude has added new content (not our custom text)
+			const hasRealUpdate = mutations.some(mutation =>
+				mutation.type === 'childList' &&
+				Array.from(mutation.addedNodes).some(node =>
+					node.nodeType === 1 && !node.classList?.contains('custom-edit-text')
+				)
+			);
+			console.log('Mutation observed, has real update:', hasRealUpdate);
+			if (hasRealUpdate) {
+				console.log('Claude updated message, cleaning up edit UI');
+				// Clean up our fake content
+				messageElement.querySelectorAll('.custom-edit-text').forEach(p => p.remove());
+				messageElement.querySelectorAll('.original-hidden').forEach(p => {
+					p.style.display = '';
+					p.classList.remove('original-hidden');
+				});
+				messageElement.classList.remove('stale-message');
+
+				// Disconnect observer
+				obs.disconnect();
+			}
+		});
+
+		observer.observe(messageElement, {
+			childList: true,
+			subtree: true
+		});
+
 	}
 
 
@@ -636,24 +667,6 @@
 			url = input;
 		} else if (input instanceof Request) {
 			url = input.url;
-		}
-
-		// Handle conversation fetch - remove our custom elements
-		if (url && url.includes('/chat_conversations/') && url.includes('rendering_mode=messages')) {
-			// Clean up any stale messages before Claude updates
-			const staleMessages = document.querySelectorAll('.stale-message');
-			staleMessages.forEach(msg => {
-				// Remove our custom paragraphs
-				msg.querySelectorAll('.custom-edit-text').forEach(p => p.remove());
-
-				// Unhide original paragraphs
-				msg.querySelectorAll('.original-hidden').forEach(p => {
-					p.style.display = '';
-					p.classList.remove('original-hidden');
-				});
-
-				msg.classList.remove('stale-message');
-			});
 		}
 
 		// Intercept /completion requests when edit flag is set
