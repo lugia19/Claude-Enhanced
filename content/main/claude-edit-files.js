@@ -38,9 +38,6 @@
 	function updateMessageUI(messageElement, newText) {
 		if (!messageElement) return;
 
-		// Mark this message as stale
-		messageElement.classList.add('stale-message');
-
 		// Hide original paragraphs (but keep them in DOM)
 		const originalParagraphs = messageElement.querySelectorAll('p:not(.custom-edit-text)');
 		originalParagraphs.forEach(p => {
@@ -56,32 +53,23 @@
 
 		// Set up observer to clean up when Claude updates this message
 		const observer = new MutationObserver((mutations, obs) => {
-			// Check if Claude has added new content (not our custom text)
-			const hasRealUpdate = mutations.some(mutation =>
-				mutation.type === 'childList' &&
-				Array.from(mutation.addedNodes).some(node =>
-					node.nodeType === 1 && !node.classList?.contains('custom-edit-text')
-				)
-			);
-			console.log('Mutation observed, has real update:', hasRealUpdate);
-			if (hasRealUpdate) {
-				console.log('Claude updated message, cleaning up edit UI');
-				// Clean up our fake content
-				messageElement.querySelectorAll('.custom-edit-text').forEach(p => p.remove());
-				messageElement.querySelectorAll('.original-hidden').forEach(p => {
-					p.style.display = '';
-					p.classList.remove('original-hidden');
-				});
-				messageElement.classList.remove('stale-message');
+			console.log('Claude updated message, cleaning up edit UI');
+			// Clean up our fake content
+			messageElement.querySelectorAll('.custom-edit-text').forEach(p => p.remove());
+			messageElement.querySelectorAll('.original-hidden').forEach(p => {
+				p.style.display = '';
+				p.classList.remove('original-hidden');
+			});
 
-				// Disconnect observer
-				obs.disconnect();
-			}
+			// Disconnect observer
+			obs.disconnect();
 		});
 
 		observer.observe(messageElement, {
-			childList: true,
-			subtree: true
+			childList: true,      // Node additions/removals
+			subtree: true,        // Watch all descendants
+			attributes: true,     // Attribute changes
+			characterData: true   // Text content changes
 		});
 
 	}
@@ -235,6 +223,31 @@
 		return container;
 	}
 
+	//#endregion
+	//#region File Item Builders and Handlers
+	function truncateFilename(filename, maxLength = 20) {
+		if (filename.length <= maxLength) return filename;
+
+		// Try to preserve the extension
+		const lastDotIndex = filename.lastIndexOf('.');
+		if (lastDotIndex > 0) {
+			const name = filename.substring(0, lastDotIndex);
+			const extension = filename.substring(lastDotIndex);
+
+			// If extension is reasonable length (<=5 chars like .docx)
+			if (extension.length <= 5) {
+				const availableLength = maxLength - extension.length - 3; // -3 for "..."
+				if (availableLength > 0) {
+					return name.substring(0, availableLength) + '...' + extension;
+				}
+			}
+		}
+
+		// Fallback: just truncate and add ellipsis
+		return filename.substring(0, maxLength - 3) + '...';
+	}
+
+
 	function buildUploadingFileItem(file) {
 		const item = document.createElement('div');
 		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded opacity-75';
@@ -254,7 +267,8 @@
 		// File name with uploading indicator
 		const name = document.createElement('span');
 		name.className = 'flex-1 text-sm text-text-100';
-		name.innerHTML = `${file.name} <span class="text-text-400 text-xs">(uploading...)</span>`;
+		name.innerHTML = `${truncateFilename(file.name)} <span class="text-text-400 text-xs">(uploading...)</span>`;
+		name.title = file.name;
 		item.appendChild(name);
 
 		// Remove button (disabled during upload)
@@ -266,7 +280,7 @@
 
 		return item;
 	}
-	//#endregion
+
 
 	function buildFileItem(file) {
 		const item = document.createElement('div');
@@ -291,7 +305,8 @@
 		// File name
 		const name = document.createElement('span');
 		name.className = 'flex-1 text-sm text-text-100';
-		name.textContent = file.file_name;
+		name.textContent = truncateFilename(file.file_name);
+		name.title = file.file_name;
 		item.appendChild(name);
 
 		// Remove button
@@ -319,38 +334,8 @@
 		// Attachment name
 		const name = document.createElement('span');
 		name.className = 'flex-1 text-sm text-text-100';
-		name.textContent = attachment.file_name;
-		item.appendChild(name);
-
-		// Remove button
-		const removeBtn = createClaudeButton('Remove', 'secondary');
-		removeBtn.classList.add('!min-w-0', '!px-2', '!h-7', '!text-xs');
-		removeBtn.onclick = () => item.remove();
-		item.appendChild(removeBtn);
-
-		return item;
-	}
-
-	function buildPendingFileItem(file) {
-		const item = document.createElement('div');
-		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded';
-		item.dataset.fileUuid = 'pending-' + Date.now() + '-' + Math.random();
-		item.dataset.fileType = 'files_v2';
-		item.dataset.pendingFile = 'true';
-
-		// Store the actual file object for later upload
-		item.fileObject = file;
-
-		// File icon
-		const icon = document.createElement('div');
-		icon.className = 'w-8 h-8 bg-bg-300 rounded flex items-center justify-center text-text-400';
-		icon.innerHTML = file.type.startsWith('image/') ? '🖼️' : '📄';
-		item.appendChild(icon);
-
-		// File name with pending indicator
-		const name = document.createElement('span');
-		name.className = 'flex-1 text-sm text-text-100';
-		name.textContent = `${file.name}`;
+		name.textContent = truncateFilename(attachment.file_name);
+		name.title = attachment.file_name;
 		item.appendChild(name);
 
 		// Remove button
@@ -366,17 +351,21 @@
 		const container = document.createElement('div');
 		container.className = 'space-y-2';
 
-		// Buttons container
+		// Buttons container - now with flex-wrap for responsive layout
 		const buttonsDiv = document.createElement('div');
-		buttonsDiv.className = 'flex gap-2';
+		buttonsDiv.className = 'flex gap-2 flex-wrap';  // Added flex-wrap
 
-		// Add attachment button (text files)
-		const addAttachmentBtn = createClaudeButton('+ Add Text Attachment (eg .txt, .md, .js)', 'secondary');
+		// Add attachment button (text files) - with min-width for better mobile display
+		const addAttachmentBtn = createClaudeButton('+ Add Text Attachment (eg txt, js)', 'secondary');
+		addAttachmentBtn.style.minWidth = '200px';  // Ensures minimum width
+		addAttachmentBtn.style.flex = '1';  // Allows button to grow
 		addAttachmentBtn.onclick = () => handleAddAttachment();
 		buttonsDiv.appendChild(addAttachmentBtn);
 
-		// Add file button (images, PDFs, etc)
-		const addFileBtn = createClaudeButton('+ Add File (eg .pdf, .png, .docx)', 'secondary');
+		// Add file button (images, PDFs, etc) - with min-width for better mobile display
+		const addFileBtn = createClaudeButton('+ Add File (eg pdf, png, docx)', 'secondary');
+		addFileBtn.style.minWidth = '200px';  // Ensures minimum width
+		addFileBtn.style.flex = '1';  // Allows button to grow
 		addFileBtn.onclick = () => handleAddFile();
 		buttonsDiv.appendChild(addFileBtn);
 
@@ -412,6 +401,7 @@
 	function handleAddFile() {
 		document.getElementById('file-input').click();
 	}
+	//#endregion
 
 
 	//#region File Handling
@@ -458,7 +448,8 @@
 				icon.innerHTML = '❌';
 
 				const nameSpan = uploadingItem.querySelector('span.text-text-100');
-				nameSpan.innerHTML = `${file.name} <span class="text-red-600 text-xs">(upload failed)</span>`;
+				nameSpan.innerHTML = `${truncateFilename(file.name)} <span class="text-red-600 text-xs">(upload failed)</span>`;
+				nameSpan.title = file.name;
 
 				// Mark as failed and make remove button work
 				uploadingItem.dataset.failed = 'true';
@@ -596,43 +587,6 @@
 		});
 	}
 
-	async function uploadPendingFiles(orgId) {
-		const pendingItems = document.querySelectorAll('[data-pending-file="true"]');
-		const uploadedUuids = [];
-
-		for (const item of pendingItems) {
-			if (item.fileObject) {
-				try {
-					// Update UI to show uploading status
-					const nameSpan = item.querySelector('span.text-text-100');
-					const originalHTML = nameSpan.innerHTML;
-					nameSpan.innerHTML = `${item.fileObject.name} <span class="text-text-400 text-xs">(uploading...)</span>`;
-
-					// Upload the file
-					const uuid = await uploadFile(orgId, {
-						data: item.fileObject,
-						name: item.fileObject.name
-					});
-
-					console.log(`Uploaded ${item.fileObject.name}, got UUID: ${uuid}`);
-					uploadedUuids.push(uuid);
-
-					// Update UI to show success
-					nameSpan.innerHTML = `${item.fileObject.name} <span class="text-green-600 text-xs">(uploaded)</span>`;
-
-				} catch (error) {
-					console.error(`Failed to upload ${item.fileObject.name}:`, error);
-					// Update UI to show error
-					const nameSpan = item.querySelector('span.text-text-100');
-					nameSpan.innerHTML = `${item.fileObject.name} <span class="text-red-600 text-xs">(upload failed)</span>`;
-					throw new Error(`Failed to upload file: ${item.fileObject.name}`);
-				}
-			}
-		}
-
-		return uploadedUuids;
-	}
-
 	async function formatNewRequest(url, config, modalData) {
 		const bodyData = JSON.parse(config.body);
 		const modifiedData = modalData || collectModalData();
@@ -687,7 +641,7 @@
 					if (lastMessage) {
 						updateMessageUI(lastMessage, bodyData.prompt);
 					}
-				}, 100);
+				}, 200);
 
 				// User confirmed - make the modified request
 				return originalFetch(modifiedRequest.url, modifiedRequest.config);
