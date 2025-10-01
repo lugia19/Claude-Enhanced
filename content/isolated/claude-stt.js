@@ -80,7 +80,7 @@
 			apiKeyContainer.className = 'mb-4';
 
 			const apiKeyLabel = document.createElement('label');
-			apiKeyLabel.className = CLAUDE_STYLES.LABEL;
+			apiKeyLabel.className = CLAUDE_CLASSES.LABEL;
 			apiKeyLabel.textContent = 'Groq API Key';
 			apiKeyContainer.appendChild(apiKeyLabel);
 
@@ -98,7 +98,7 @@
 			audioDeviceContainer.className = 'mb-4';
 
 			const audioDeviceLabel = document.createElement('label');
-			audioDeviceLabel.className = CLAUDE_STYLES.LABEL;
+			audioDeviceLabel.className = CLAUDE_CLASSES.LABEL;
 			audioDeviceLabel.textContent = 'Audio Input Device';
 			audioDeviceContainer.appendChild(audioDeviceLabel);
 
@@ -108,7 +108,7 @@
 			// Add permission message if needed
 			if (needsPermission) {
 				const permissionNote = document.createElement('div');
-				permissionNote.className = CLAUDE_STYLES.TEXT_MUTED + ' mt-1';
+				permissionNote.className = CLAUDE_CLASSES.TEXT_MUTED + ' mt-1';
 				permissionNote.textContent = 'Grant microphone permission to see available devices';
 				audioDeviceContainer.appendChild(permissionNote);
 

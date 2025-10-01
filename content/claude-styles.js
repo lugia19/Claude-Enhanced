@@ -2,7 +2,7 @@
 // Shared style utilities for Claude.ai extension
 // No IIFE - runs in shared global context
 
-const CLAUDE_STYLES = {
+const CLAUDE_CLASSES = {
 	// Buttons
 	ICON_BTN: 'inline-flex items-center justify-center relative shrink-0 ring-offset-2 ring-offset-bg-300 ring-accent-main-100 focus-visible:outline-none focus-visible:ring-1 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:drop-shadow-none text-text-200 border-transparent transition-colors font-styrene active:bg-bg-400 hover:bg-bg-500/40 hover:text-text-100 h-9 w-9 rounded-md active:scale-95',
 	BTN_PRIMARY: 'inline-flex items-center justify-center px-4 py-2 font-base-bold bg-text-000 text-bg-000 rounded hover:bg-text-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-w-[5rem] h-9',
@@ -39,17 +39,17 @@ function createClaudeButton(content, variant = 'primary', onClick = null, conten
 
 	switch (variant) {
 		case 'primary':
-			button.className = CLAUDE_STYLES.BTN_PRIMARY;
+			button.className = CLAUDE_CLASSES.BTN_PRIMARY;
 			break;
 		case 'secondary':
-			button.className = CLAUDE_STYLES.BTN_SECONDARY;
+			button.className = CLAUDE_CLASSES.BTN_SECONDARY;
 			break;
 		case 'icon':
-			button.className = CLAUDE_STYLES.ICON_BTN;
+			button.className = CLAUDE_CLASSES.ICON_BTN;
 			contentIsHTML = true; // Always use innerHTML for icon variant
 			break;
 		default:
-			button.className = CLAUDE_STYLES.BTN_PRIMARY;
+			button.className = CLAUDE_CLASSES.BTN_PRIMARY;
 	}
 
 	if (contentIsHTML) {
@@ -64,14 +64,14 @@ function createClaudeButton(content, variant = 'primary', onClick = null, conten
 
 function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 'Confirm', cancelText = 'Cancel' }) {
 	const backdrop = document.createElement('div');
-	backdrop.className = CLAUDE_STYLES.MODAL_BACKDROP;
+	backdrop.className = CLAUDE_CLASSES.MODAL_BACKDROP;
 
 	const modal = document.createElement('div');
-	modal.className = CLAUDE_STYLES.MODAL_CONTAINER;
+	modal.className = CLAUDE_CLASSES.MODAL_CONTAINER;
 
 	if (title) {
 		const heading = document.createElement('h2');
-		heading.className = CLAUDE_STYLES.MODAL_HEADING;
+		heading.className = CLAUDE_CLASSES.MODAL_HEADING;
 		heading.textContent = title;
 		modal.appendChild(heading);
 	}
@@ -92,11 +92,17 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 
 	if (onCancel) {
 		const cancelBtn = createClaudeButton(cancelText, 'secondary');
-		cancelBtn.onclick = () => {
+		cancelBtn.onclick = async () => {
 			try {
-				onCancel();
-			} finally {
-				backdrop.remove();
+				let result = onCancel();
+				if (result instanceof Promise) {
+					result = await result;
+				}
+				if (result !== false) {
+					backdrop.remove();
+				}
+			} catch (error) {
+				console.error('Modal cancel handler error:', error);
 			}
 		};
 		buttonContainer.appendChild(cancelBtn);
@@ -104,11 +110,18 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 
 	if (onConfirm) {
 		const confirmBtn = createClaudeButton(confirmText, 'primary');
-		confirmBtn.onclick = () => {
+		confirmBtn.onclick = async () => {
 			try {
-				onConfirm();
-			} finally {
-				backdrop.remove();
+				let result = onConfirm();
+				if (result instanceof Promise) {
+					result = await result;
+				}
+				if (result !== false) {
+					backdrop.remove();
+				}
+			} catch (error) {
+				// Error thrown, don't close modal
+				console.error('Modal confirm handler error:', error);
 			}
 		};
 		buttonContainer.appendChild(confirmBtn);
@@ -131,7 +144,7 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 function createClaudeInput({ type = 'text', placeholder = '', value = '', onChange = null } = {}) {
 	const input = document.createElement('input');
 	input.type = type;
-	input.className = CLAUDE_STYLES.INPUT;
+	input.className = CLAUDE_CLASSES.INPUT;
 	input.placeholder = placeholder;
 	input.value = value;
 
@@ -144,7 +157,7 @@ function createClaudeInput({ type = 'text', placeholder = '', value = '', onChan
 
 function createClaudeSelect(options, selectedValue = '', onChange = null) {
 	const select = document.createElement('select');
-	select.className = CLAUDE_STYLES.SELECT;
+	select.className = CLAUDE_CLASSES.SELECT;
 
 	options.forEach(option => {
 		const optionEl = document.createElement('option');
@@ -163,11 +176,11 @@ function createClaudeSelect(options, selectedValue = '', onChange = null) {
 
 function createClaudeCheckbox(labelText = '', checked = false, onChange = null) {
 	const container = document.createElement('div');
-	container.className = CLAUDE_STYLES.FLEX_GAP_2;
+	container.className = CLAUDE_CLASSES.FLEX_GAP_2;
 
 	const checkbox = document.createElement('input');
 	checkbox.type = 'checkbox';
-	checkbox.className = CLAUDE_STYLES.CHECKBOX;
+	checkbox.className = CLAUDE_CLASSES.CHECKBOX;
 	checkbox.checked = checked;
 
 	if (onChange) {
@@ -248,13 +261,13 @@ function createClaudeToggle(labelText = '', checked = false, onChange = null) {
 function createClaudeTooltip(element, tooltipText, deleteOnClick) {
 	// Create tooltip wrapper
 	const tooltipWrapper = document.createElement('div');
-	tooltipWrapper.className = CLAUDE_STYLES.TOOLTIP_WRAPPER;
+	tooltipWrapper.className = CLAUDE_CLASSES.TOOLTIP_WRAPPER;
 	tooltipWrapper.style.display = 'none';
 	tooltipWrapper.setAttribute('data-radix-popper-content-wrapper', '');
 
 	// Add tooltip content
 	const tooltipContent = document.createElement('div');
-	tooltipContent.className = CLAUDE_STYLES.TOOLTIP_CONTENT + ' tooltip-content';
+	tooltipContent.className = CLAUDE_CLASSES.TOOLTIP_CONTENT + ' tooltip-content';
 	tooltipContent.setAttribute('data-side', 'bottom');
 	tooltipContent.setAttribute('data-align', 'center');
 	tooltipContent.setAttribute('data-state', 'delayed-open');

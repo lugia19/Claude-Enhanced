@@ -193,7 +193,7 @@
 			});
 
 			// Override max width
-			const modalContainer = modal.querySelector('.' + CLAUDE_STYLES.MODAL_CONTAINER.split(' ')[0]);
+			const modalContainer = modal.querySelector('.' + CLAUDE_CLASSES.MODAL_CONTAINER.split(' ')[0]);
 			if (modalContainer) {
 				modalContainer.style.maxWidth = '24rem';
 			}

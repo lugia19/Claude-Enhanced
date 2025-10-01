@@ -5,6 +5,9 @@
 	//#region Constants and State
 
 	let pendingEditIntercept = false;
+
+	const TEMP_STYLE_NAME = 'advanced_edit_temporary_style';
+	const TEMP_STYLE_STORAGE_KEY = 'temp_style_id';
 	//#endregion
 
 	//#region Edit Button Interception
@@ -28,7 +31,7 @@
 			// Create our advanced edit button using the Claude styles
 			const svgContent = `
 				<div class="flex items-center justify-center" style="width: 16px; height: 16px;">
-					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" class="shrink-0" aria-hidden="true" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #2c84db;">
+					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" class="shrink-0" aria-hidden="true" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" style="color: currentColor;">
 						<!-- File/document -->
 						<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h9"/>
 						<polyline points="13 2 13 7 18 7"/>
@@ -138,36 +141,35 @@
 	//#region Modal UI Construction
 	async function createEditModal(url, config) {
 		const bodyData = JSON.parse(config.body);
-		// Get conversation ID and org ID from URL
 		const urlParts = url.split('/');
 		const orgId = urlParts[urlParts.indexOf('organizations') + 1];
 		const conversationId = urlParts[urlParts.indexOf('chat_conversations') + 1];
 
-		// Fetch the full message data to get file details
 		const messageData = await getMessageBeingEdited(orgId, conversationId, bodyData.parent_message_uuid);
 
-		// Merge request data with fetched message data
+		// Extract style text from personalized_styles array
+		const originalStyle = bodyData.personalized_styles?.[0];
+		let originalStyleText = originalStyle?.prompt || '';
+		if (originalStyleText == "Normal") originalStyleText = '';
+
 		const enrichedData = {
 			prompt: bodyData.prompt,
 			files: bodyData.files || [],
 			attachments: bodyData.attachments || [],
 			parent_message_uuid: bodyData.parent_message_uuid,
 			filesMetadata: messageData?.files_v2 || [],
-			originalMessageUuid: messageData?.uuid
+			styleText: originalStyleText
 		};
 
-		// Return a promise that resolves when user makes a choice
 		return new Promise((resolve, reject) => {
 			const content = document.createElement('div');
 			content.className = 'space-y-4';
 
-			// Files section with real data
 			const filesSection = buildFilesSection(enrichedData);
 			content.appendChild(filesSection);
 
-			// Text editor section
-			const textSection = buildTextEditor(enrichedData.prompt);
-			content.appendChild(textSection);
+			const editorSection = buildEditorSection(enrichedData);
+			content.appendChild(editorSection);
 
 			const modal = createClaudeModal({
 				title: 'Edit Message',
@@ -175,21 +177,38 @@
 				confirmText: 'Submit Edit',
 				cancelText: 'Cancel',
 				onConfirm: async () => {
-					// No more upload wait - just format and send!
+					modal.submitButton.disabled = true;
+					modal.submitButton.style.opacity = '0.5';
+					modal.submitButton.style.cursor = 'not-allowed';
+					const originalText = modal.submitButton.textContent;
+					modal.submitButton.textContent = 'Submitting...';
+
 					const modalData = collectModalData();
-					const modifiedRequest = await formatNewRequest(url, config, modalData);
-					modal.remove();
-					resolve(modifiedRequest);
+
+					try {
+						const modifiedRequest = await formatNewRequest(url, config, modalData);
+						console.log("Resolving request with modified data:", modifiedRequest);
+						resolve(modifiedRequest);
+					} catch (error) {
+						console.error('Error formatting new request:', error);
+						modal.submitButton.disabled = false;
+						modal.submitButton.style.opacity = '1';
+						modal.submitButton.style.cursor = 'pointer';
+						modal.submitButton.style.backgroundColor = '#dc2626';
+						modal.submitButton.textContent = 'Style Error: ' + error.message;
+						setTimeout(() => {
+							modal.submitButton.style.backgroundColor = '';
+							modal.submitButton.textContent = 'Submit Edit';
+						}, 3000);
+						return false; // Keep modal open
+					}
 				},
 				onCancel: () => {
-					// Remove modal and reject
-					modal.remove();
 					reject(new Error('Edit cancelled by user'));
 				}
 			});
-			modal.classList.add('claude-edit-modal');
 
-			// Store submit button reference for enable/disable
+			modal.classList.add('claude-edit-modal');
 			modal.submitButton = Array.from(modal.querySelectorAll('button')).find(
 				btn => btn.textContent === 'Submit Edit'
 			);
@@ -198,7 +217,6 @@
 			modalContainer.classList.remove('max-w-md');
 			modalContainer.classList.add('max-w-2xl');
 
-			// Add modal to document
 			document.body.appendChild(modal);
 		});
 	}
@@ -246,51 +264,82 @@
 		return container;
 	}
 
-	function buildTextEditor(text) {
+	function buildEditorSection(data) {
 		const container = document.createElement('div');
+		container.className = 'border border-border-300 rounded-lg p-3';
 
-		const label = document.createElement('label');
-		label.className = CLAUDE_STYLES.LABEL;
-		label.textContent = 'Message Text';
-		container.appendChild(label);
+		// Toggle header
+		const header = document.createElement('div');
+		header.className = CLAUDE_CLASSES.FLEX_BETWEEN + ' mb-3';
+		const label = document.createElement('span');
+		label.className = 'text-sm font-medium text-text-200';
+		label.textContent = 'Editing:';
+		header.appendChild(label);
 
-		const textarea = document.createElement('textarea');
-		textarea.className = CLAUDE_STYLES.INPUT;
-		textarea.value = text;
-		textarea.id = 'message-text';
-		textarea.placeholder = 'Enter your message...';
-		textarea.style.resize = 'none'; // Disable manual resize since we're auto-sizing
-		textarea.style.minHeight = '150px';
-		textarea.style.maxHeight = '400px'; // Set maximum height
-		textarea.style.overflowY = 'auto'; // Add scrollbar when max height is reached
-		container.appendChild(textarea);
+		const { container: toggle, input: toggleInput } = createClaudeToggle('', false);
+		const promptLabel = document.createElement('span');
+		promptLabel.className = 'text-sm text-text-200';
+		promptLabel.textContent = 'Prompt';
+		const styleLabel = document.createElement('span');
+		styleLabel.className = 'text-sm text-text-200';
+		styleLabel.textContent = 'Style';
+		toggle.insertBefore(promptLabel, toggle.firstChild);
+		toggle.appendChild(styleLabel);
+		header.appendChild(toggle);
+		container.appendChild(header);
 
-		// Auto-resize function
-		const autoResize = () => {
-			// Reset height to auto to get the correct scrollHeight
-			textarea.style.height = 'auto';
+		// Textareas
+		const promptTA = document.createElement('textarea');
+		promptTA.id = 'message-text';
+		promptTA.className = CLAUDE_CLASSES.INPUT;
+		promptTA.value = data.prompt;
+		promptTA.placeholder = 'Enter your message...';
+		promptTA.style.resize = 'none';
+		promptTA.style.minHeight = '150px';
+		promptTA.style.maxHeight = '400px';
+		promptTA.style.overflowY = 'auto';
+		container.appendChild(promptTA);
 
-			// Set new height based on content, but not exceeding max height
-			const scrollHeight = textarea.scrollHeight;
-			const maxHeight = parseInt(textarea.style.maxHeight);
+		const styleTA = document.createElement('textarea');
+		styleTA.id = 'style-text';
+		styleTA.className = CLAUDE_CLASSES.INPUT;
+		styleTA.value = data.styleText;
+		styleTA.placeholder = 'Enter style instructions...';
+		styleTA.style.resize = 'none';
+		styleTA.style.minHeight = '150px';
+		styleTA.style.maxHeight = '400px';
+		styleTA.style.overflowY = 'auto';
+		styleTA.style.display = 'none';
+		container.appendChild(styleTA);
 
-			if (scrollHeight > maxHeight) {
-				textarea.style.height = maxHeight + 'px';
+		// Auto-resize each independently
+		const resize = (ta) => {
+			const maxHeight = parseInt(getComputedStyle(ta).maxHeight);
+			ta.style.height = 'auto';
+			ta.style.height = Math.min(ta.scrollHeight, maxHeight) + 'px';
+		};
+		promptTA.oninput = () => resize(promptTA);
+		styleTA.oninput = () => resize(styleTA);
+
+		// Toggle behavior
+		toggleInput.onchange = (e) => {
+			if (e.target.checked) {
+				promptTA.style.display = 'none';
+				styleTA.style.display = 'block';
+				setTimeout(() => resize(styleTA), 0);
 			} else {
-				textarea.style.height = scrollHeight + 'px';
+				styleTA.style.display = 'none';
+				promptTA.style.display = 'block';
+				setTimeout(() => resize(promptTA), 0);
 			}
 		};
 
-		// Add event listener for auto-resize on input
-		textarea.addEventListener('input', autoResize);
-
-		// Initial auto-resize to fit existing content
-		setTimeout(autoResize, 0); // Use setTimeout to ensure DOM is ready
-
+		setTimeout(() => resize(promptTA), 0);
 		return container;
 	}
 
 	//#endregion
+
 	//#region File Item Builders and Handlers
 	function truncateFilename(filename, customMaxLength = null) {
 		const maxLength = customMaxLength || (window.innerWidth < window.innerHeight ? 20 : 60);
@@ -589,7 +638,6 @@
 	}
 	//#endregion
 
-
 	//#region File Handling
 	async function processSelectedFiles(files) {
 		const filesList = document.getElementById('files-list');
@@ -707,36 +755,32 @@
 
 	function collectModalData() {
 		const messageText = document.getElementById('message-text').value;
+		const styleText = document.getElementById('style-text').value;
 		const fileItems = document.querySelectorAll('#files-list > div');
 		const fileUuids = [];
 		const attachments = [];
 
 		fileItems.forEach(item => {
-			// Skip failed uploads
 			if (item.dataset.failed === 'true' || item.dataset.uploading === 'true') {
 				return;
 			}
 
 			if (item.dataset.fileType === 'files_v2') {
 				const uuid = item.dataset.fileUuid;
-				if (uuid) {
-					fileUuids.push(uuid);
-				}
+				if (uuid) fileUuids.push(uuid);
 			} else if (item.dataset.fileType === 'attachment') {
 				const attachment = item.dataset.attachmentData;
-				if (attachment) {
-					attachments.push(JSON.parse(attachment));
-				}
+				if (attachment) attachments.push(JSON.parse(attachment));
 			}
 		});
 
 		return {
 			text: messageText,
+			styleText: styleText,
 			fileUuids: fileUuids,
 			attachments: attachments
 		};
 	}
-	//#endregion
 
 	async function getMessageBeingEdited(orgId, conversationId, parentUuid) {
 		try {
@@ -775,15 +819,48 @@
 
 	async function formatNewRequest(url, config, modalData) {
 		const bodyData = JSON.parse(config.body);
-		const modifiedData = modalData || collectModalData();
+		const originalStyle = bodyData.personalized_styles?.[0];
+		let originalStyleText = originalStyle?.prompt || '';
+		if (originalStyleText == "Normal") originalStyleText = '';
 
-		// All files are already uploaded, just use their UUIDs
+		// Extract orgId from URL
+		const urlParts = url.split('/');
+		const orgId = urlParts[urlParts.indexOf('organizations') + 1];
+
 		const modifiedBody = {
 			...bodyData,
-			prompt: modifiedData.text,
-			attachments: modifiedData.attachments,
-			files: modifiedData.fileUuids  // These are all real UUIDs now
+			prompt: modalData.text,
+			attachments: modalData.attachments,
+			files: modalData.fileUuids
 		};
+
+		// Only update style if it changed
+		if (modalData.styleText !== originalStyleText) {
+			const tempStyleId = await ensureTempStyle(orgId, modalData.styleText);
+			modifiedBody.personalized_styles = [{
+				key: tempStyleId,
+				uuid: tempStyleId,
+				prompt: modalData.styleText,
+				name: TEMP_STYLE_NAME,
+				isDefault: false,
+				type: "custom",
+				summary: "This is a temporary style created for editing.",
+				attributes: [
+					{
+						"name": "Assertive",
+						"percentage": 0.7
+					},
+					{
+						"name": "Direct",
+						"percentage": 0.8
+					},
+					{
+						"name": "Uncompromising",
+						"percentage": 0.6
+					}
+				]
+			}];
+		}
 
 		return {
 			url,
@@ -792,6 +869,99 @@
 				body: JSON.stringify(modifiedBody)
 			}
 		};
+	}
+	//#endregion
+
+	//#region Style injector for temporary style
+	function getTempStyleId() {
+		return localStorage.getItem(TEMP_STYLE_STORAGE_KEY);
+	}
+
+	function setTempStyleId(styleId) {
+		localStorage.setItem(TEMP_STYLE_STORAGE_KEY, styleId);
+	}
+
+	async function createTempStyle(orgId, text) {
+		try {
+			// Create style without name (auto-generated)
+			const createResponse = await fetch(`/api/organizations/${orgId}/styles/create`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ prompt: text })
+			});
+
+			if (!createResponse.ok) {
+				const error = await createResponse.json();
+				throw new Error(error.message || 'Failed to create style');
+			}
+
+			const createData = await createResponse.json();
+			const styleId = createData.uuid;
+
+			// Now edit to set the name
+			const editResponse = await fetch(`/api/organizations/${orgId}/styles/${styleId}/edit`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					prompt: text,
+					name: TEMP_STYLE_NAME
+				})
+			});
+
+			if (!editResponse.ok) {
+				const error = await editResponse.json();
+				throw new Error(error.message || 'Failed to name style');
+			}
+
+			setTempStyleId(styleId);
+			return styleId;
+		} catch (error) {
+			console.error('Error creating temp style:', error);
+			throw error;
+		}
+	}
+
+	async function updateTempStyle(orgId, styleId, text) {
+		const response = await fetch(`/api/organizations/${orgId}/styles/${styleId}/edit`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				prompt: text,
+				name: TEMP_STYLE_NAME
+			})
+		});
+
+		if (!response.ok) {
+			const error = await response.json();
+			throw {
+				status: response.status,
+				message: error.message || 'Failed to update style'
+			};
+		}
+
+		return await response.json();
+	}
+
+	async function ensureTempStyle(orgId, text) {
+		let styleId = getTempStyleId();
+
+		if (!styleId) {
+			return await createTempStyle(orgId, text);
+		}
+
+		try {
+			await updateTempStyle(orgId, styleId, text);
+			return styleId;
+		} catch (error) {
+			// Only recreate if style is missing (404), otherwise re-throw
+			if (error.status === 404) {
+				console.log('Temp style not found, creating new one');
+				return await createTempStyle(orgId, text);
+			}
+
+			// For any other error (like 400 content filter), throw it
+			throw new Error(error.message);
+		}
 	}
 	//#endregion
 
@@ -807,6 +977,31 @@
 			url = input;
 		} else if (input instanceof Request) {
 			url = input.url;
+		}
+
+		// Intercept list_styles to filter out temp style
+		if (url && url.includes('/list_styles')) {
+			const response = await originalFetch(...args);
+
+			if (!response.ok) {
+				return response;
+			}
+
+			const data = await response.json();
+
+			// Filter out temp style from customStyles
+			if (data.customStyles) {
+				data.customStyles = data.customStyles.filter(
+					style => style.name !== TEMP_STYLE_NAME
+				);
+			}
+
+			// Return modified response
+			return new Response(JSON.stringify(data), {
+				status: response.status,
+				statusText: response.statusText,
+				headers: response.headers
+			});
 		}
 
 		// Intercept /completion requests when edit flag is set

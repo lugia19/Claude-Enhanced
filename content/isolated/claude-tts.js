@@ -624,7 +624,7 @@
 		} catch (error) {
 			// Actor mode failed - fall back to regular playback with default voice
 			console.error('Actor mode failed, falling back to regular playback:', error);
-			
+
 			// Play the entire text with the default voice
 			return playbackManager.play(text, defaultVoiceId, settings.model, settings.apiKey);
 		}
@@ -922,7 +922,7 @@
 		const apiKeySection = document.createElement('div');
 		apiKeySection.className = 'mb-4';
 		const apiKeyLabel = document.createElement('label');
-		apiKeyLabel.className = CLAUDE_STYLES.LABEL;
+		apiKeyLabel.className = CLAUDE_CLASSES.LABEL;
 		apiKeyLabel.textContent = 'ElevenLabs API Key';
 		apiKeySection.appendChild(apiKeyLabel);
 		const apiKeyInput = createClaudeInput({
@@ -938,7 +938,7 @@
 		const voiceSection = document.createElement('div');
 		voiceSection.className = 'mb-4';
 		const voiceLabel = document.createElement('label');
-		voiceLabel.className = CLAUDE_STYLES.LABEL;
+		voiceLabel.className = CLAUDE_CLASSES.LABEL;
 		voiceLabel.textContent = 'Voice';
 		voiceSection.appendChild(voiceLabel);
 		const voiceSelect = createClaudeSelect(
@@ -954,7 +954,7 @@
 		const modelSection = document.createElement('div');
 		modelSection.className = 'mb-4';
 		const modelLabel = document.createElement('label');
-		modelLabel.className = CLAUDE_STYLES.LABEL;
+		modelLabel.className = CLAUDE_CLASSES.LABEL;
 		modelLabel.textContent = 'Model';
 		modelSection.appendChild(modelLabel);
 		const modelSelect = createClaudeSelect(
@@ -993,7 +993,7 @@
 		const overrideSection = document.createElement('div');
 		overrideSection.className = 'mb-4';
 		const overrideLabel = document.createElement('label');
-		overrideLabel.className = CLAUDE_STYLES.LABEL;
+		overrideLabel.className = CLAUDE_CLASSES.LABEL;
 		overrideLabel.textContent = 'Voice Override';
 		overrideSection.appendChild(overrideLabel);
 		const chatVoiceOverrideSelect = createClaudeSelect(
@@ -1341,7 +1341,7 @@
 		});
 
 		// Adjust modal max width
-		const modalContent = modal.querySelector('.' + CLAUDE_STYLES.MODAL_CONTAINER.split(' ').join('.'));
+		const modalContent = modal.querySelector('.' + CLAUDE_CLASSES.MODAL_CONTAINER.split(' ').join('.'));
 		if (modalContent) {
 			modalContent.style.maxWidth = '700px';
 			modalContent.style.width = '90%';

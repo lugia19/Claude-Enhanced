@@ -95,7 +95,7 @@
 
 		// Full chatlog radio
 		const fullLabel = document.createElement('label');
-		fullLabel.className = CLAUDE_STYLES.FLEX_GAP_2 + ' space-x-2';
+		fullLabel.className = CLAUDE_CLASSES.FLEX_GAP_2 + ' space-x-2';
 		const fullRadio = document.createElement('input');
 		fullRadio.type = 'radio';
 		fullRadio.id = 'fullChatlog';
@@ -110,7 +110,7 @@
 
 		// Summary radio
 		const summaryLabel = document.createElement('label');
-		summaryLabel.className = CLAUDE_STYLES.FLEX_GAP_2 + ' space-x-2';
+		summaryLabel.className = CLAUDE_CLASSES.FLEX_GAP_2 + ' space-x-2';
 		const summaryRadio = document.createElement('input');
 		summaryRadio.type = 'radio';
 		summaryRadio.id = 'summaryMode';
@@ -140,7 +140,7 @@
 
 		// Note text
 		const note = document.createElement('p');
-		note.className = CLAUDE_STYLES.TEXT_SM;
+		note.className = CLAUDE_CLASSES.TEXT_SM;
 		note.textContent = 'Note: Should you choose a slow model such as Opus, you may need to wait and refresh the page for the response to appear.';
 		content.appendChild(note);
 

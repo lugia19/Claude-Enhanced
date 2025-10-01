@@ -71,6 +71,10 @@
 			// Process custom styles
 			if (data.customStyles) {
 				data.customStyles.forEach(style => {
+					// Skip our temporary style
+					if (style.name === 'advanced_edit_temporary_style') {
+						return;
+					}
 					styles.push({
 						...style,
 						key: style.uuid
@@ -137,7 +141,7 @@
 
 		// Info text
 		const infoText = document.createElement('div');
-		infoText.className = CLAUDE_STYLES.TEXT_MUTED + ' mb-4';
+		infoText.className = CLAUDE_CLASSES.TEXT_MUTED + ' mb-4';
 		infoText.textContent = 'This style will override your default style for this chat only.';
 
 		contentContainer.appendChild(select);
