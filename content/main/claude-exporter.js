@@ -133,29 +133,39 @@
 	}
 
 	//#region Import functionality
-
 	function parseAndValidateText(text) {
 		const warnings = [];
 
+		// Parse header
+		const titleMatch = text.match(/^Title: (.+)/m);
+		const title = titleMatch ? titleMatch[1].trim() : 'Imported Conversation';
+
+		// Remove header (everything before first message marker)
+		const contentStart = text.search(/\n\[(User|Assistant)\]\n/);
+		if (contentStart === -1) {
+			throw new Error('No messages found in file');
+		}
+		const content = text.slice(contentStart);
+
 		// Basic counts
-		const userCount = (text.match(/\[User\]/g) || []).length;
-		const assistantCount = (text.match(/\[Assistant\]/g) || []).length;
+		const userCount = (content.match(/\[User\]/g) || []).length;
+		const assistantCount = (content.match(/\[Assistant\]/g) || []).length;
 
 		if (userCount === 0 && assistantCount === 0) {
 			throw new Error('No messages found in file');
 		}
 
-		if (Math.abs(userCount - assistantCount) > 1) {
+		if (Math.abs(userCount - assistantCount) > 0) {
 			throw new Error(`Message count mismatch: ${userCount} User, ${assistantCount} Assistant messages`);
 		}
 
-		if (!text.trim().match(/^\[User\]/)) {
+		if (!content.trim().match(/^\n?\[User\]/)) {
 			throw new Error('Conversation must start with a User message');
 		}
 
 		// Parse messages
 		const messages = [];
-		const parts = text.split(/\n\[(User|Assistant)\]\n/);
+		const parts = content.split(/\n\[(User|Assistant)\]\n/);
 
 		let lastRole = null;
 		let currentText = '';
@@ -163,8 +173,6 @@
 		for (let i = 1; i < parts.length; i += 2) {
 			const role = parts[i];
 			const content = parts[i + 1]?.trim();
-
-			if (!content) continue; // Skip empty
 
 			if (role === lastRole) {
 				warnings.push(`Sequential ${role} messages were merged`);
@@ -188,7 +196,7 @@
 			});
 		}
 
-		return { messages, warnings };
+		return { title, messages, warnings };
 	}
 
 	function convertToPhantomMessages(messages) {
@@ -197,12 +205,20 @@
 
 		for (const message of messages) {
 			const messageId = crypto.randomUUID();
+			const timestamp = new Date().toISOString();
+
 			phantomMessages.push({
 				uuid: messageId,
 				parent_message_uuid: parentId,
 				sender: message.role,
-				content: [{ text: message.text }],
-				created_at: new Date().toISOString(),
+				content: [{
+					type: "text",
+					text: message.text,
+					start_timestamp: timestamp,
+					stop_timestamp: timestamp,
+					citations: []
+				}],
+				created_at: timestamp,
 				files_v2: [],
 				files: [],
 				attachments: [],
@@ -214,12 +230,12 @@
 		return phantomMessages;
 	}
 
-	async function performImport(fileContent, messages, model) {
+	async function performImport(fileContent, title, messages, model) {
 		const orgId = getOrgId();
 
-		// Create new conversation
+		// Create new conversation with parsed title
 		const conversation = new ClaudeConversation(orgId);
-		const newConvoId = await conversation.create("Imported Conversation", model);
+		const newConvoId = await conversation.create(title, model);
 
 		// Build chatlog attachment
 		const chatlogAttachment = {
@@ -242,11 +258,13 @@
 		);
 
 		// Convert and store phantom messages
+		console.log("Imported messages:", messages);
 		const phantomMessages = convertToPhantomMessages(messages);
+		console.log("Converted to phantom messages:", phantomMessages);
 		storePhantomMessages(newConvoId, phantomMessages);
 
 		// Navigate to new conversation
-		window.location.href = `/chat/${newConvoId}`;
+		//window.location.href = `/chat/${newConvoId}`;
 	}
 
 	function showWarningsModal(warnings) {
@@ -290,10 +308,11 @@
 
 		// Parse and validate
 		const fileContent = await file.text();
-		let messages, warnings;
+		let title, messages, warnings;
 
 		try {
 			const result = parseAndValidateText(fileContent);
+			title = result.title;
 			messages = result.messages;
 			warnings = result.warnings;
 		} catch (error) {
@@ -318,8 +337,8 @@
 		importButton.textContent = 'Importing...';
 
 		try {
-			// Create conversation and import
-			await performImport(fileContent, messages, modelSelect.value);
+			// Create conversation and import with parsed title
+			await performImport(fileContent, title, messages, modelSelect.value);
 			// Navigation happens in performImport, button state doesn't matter
 		} catch (error) {
 			console.error('Import failed:', error);
@@ -400,7 +419,7 @@
 		importContainer.className = 'mb-2 flex gap-2';
 
 		// Model select
-		const modelSelect = createClaudeSelect([
+		const modelList = [
 			{ value: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5' },
 			{ value: 'claude-sonnet-4-20250514', label: 'Sonnet 4' },
 			{ value: 'claude-opus-4-1-20250805', label: 'Opus 4.1' },
@@ -408,7 +427,8 @@
 			{ value: 'claude-3-7-sonnet-20250219', label: 'Sonnet 3.7' },
 			{ value: 'claude-3-opus-20240229', label: 'Opus 3' },
 			{ value: 'claude-3-5-haiku-20241022', label: 'Haiku 3.5' }
-		], 'claude-sonnet-4-20250514');
+		]
+		const modelSelect = createClaudeSelect(modelList, modelList[0].value);
 		modelSelect.style.flex = '1';
 		importContainer.appendChild(modelSelect);
 

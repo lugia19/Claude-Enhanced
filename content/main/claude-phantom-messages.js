@@ -105,6 +105,35 @@ window.fetch = async (...args) => {
 };
 
 function injectPhantomMessages(data, phantomMessages) {
+	const timestamp = new Date().toISOString();
+
+	// Belt and suspenders: ensure all phantom messages have required fields
+	phantomMessages = phantomMessages.map(msg => {
+		// Ensure message-level fields
+		const completeMsg = {
+			uuid: msg.uuid || crypto.randomUUID(),
+			parent_message_uuid: msg.parent_message_uuid || "00000000-0000-4000-8000-000000000000",
+			sender: msg.sender || 'human',
+			content: msg.content || [],
+			created_at: msg.created_at || timestamp,
+			files_v2: msg.files_v2 || [],
+			files: msg.files || [],
+			attachments: msg.attachments || [],
+			sync_sources: msg.sync_sources || []
+		};
+
+		// Ensure content array items have required fields
+		completeMsg.content = completeMsg.content.map(item => ({
+			type: item.type || "text",
+			text: item.text || "",
+			start_timestamp: item.start_timestamp || timestamp,
+			stop_timestamp: item.stop_timestamp || timestamp,
+			citations: item.citations || []
+		}));
+
+		return completeMsg;
+	});
+
 	// Find the first assistant message and modify it
 	const firstRealAssistantIndex = data.chat_messages.findIndex(
 		msg => msg.sender === 'assistant'
@@ -139,4 +168,6 @@ function injectPhantomMessages(data, phantomMessages) {
 
 	// Prepend phantom messages to the conversation
 	data.chat_messages = [...phantomMessages, ...data.chat_messages];
+	console.log(`Prepended ${phantomMessages.length} phantom messages to conversation data`);
+	console.log(data.chat_messages);
 }
