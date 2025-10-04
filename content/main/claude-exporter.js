@@ -350,6 +350,75 @@
 		}
 	}
 
+	async function handleReplacePhantom(replaceButton) {
+		const conversationId = getConversationId();
+		if (!conversationId) {
+			replaceButton.disabled = true;
+			replaceButton.textContent = 'Not in a conversation';
+			setTimeout(() => {
+				replaceButton.disabled = false;
+				replaceButton.textContent = 'Replace from File';
+			}, 2000);
+			return;
+		}
+
+		// Trigger file picker
+		const fileInput = document.createElement('input');
+		fileInput.type = 'file';
+		fileInput.accept = '.txt';
+
+		const file = await new Promise(resolve => {
+			fileInput.onchange = e => resolve(e.target.files[0]);
+			fileInput.click();
+		});
+
+		if (!file) return;
+
+		// Parse and validate
+		const fileContent = await file.text();
+		let messages, warnings;
+
+		try {
+			const result = parseAndValidateText(fileContent);
+			messages = result.messages;
+			warnings = result.warnings;
+		} catch (error) {
+			// Show error on button
+			replaceButton.disabled = true;
+			replaceButton.textContent = 'Invalid format';
+			setTimeout(() => {
+				replaceButton.disabled = false;
+				replaceButton.textContent = 'Replace from File';
+			}, 2000);
+			return;
+		}
+
+		// Show warnings modal if needed
+		if (warnings.length > 0) {
+			const proceed = await showWarningsModal(warnings);
+			if (!proceed) return;
+		}
+
+		// Update button state
+		replaceButton.disabled = true;
+		replaceButton.textContent = 'Replacing...';
+
+		try {
+			// Convert and store phantom messages
+			const phantomMessages = convertToPhantomMessages(messages);
+			storePhantomMessages(conversationId, phantomMessages);
+
+			// Reload to show changes
+			window.location.reload();
+		} catch (error) {
+			console.error('Replace failed:', error);
+			replaceButton.textContent = 'Replace failed';
+			setTimeout(() => {
+				replaceButton.disabled = false;
+				replaceButton.textContent = 'Replace from File';
+			}, 2000);
+		}
+	}
 	//#endregion
 
 	async function showExportImportModal() {
@@ -443,7 +512,41 @@
 		const note = document.createElement('p');
 		note.className = CLAUDE_CLASSES.TEXT_SM + ' text-text-400';
 		note.textContent = 'Note: File attachments and images cannot be imported.';
+		const note2 = document.createElement('p');
+		note2.className = CLAUDE_CLASSES.TEXT_SM + ' text-text-400';
+		note2.textContent = 'Imports txt format only.';
+
 		content.appendChild(note);
+		content.appendChild(note2);
+
+		// Another divider
+		const divider2 = document.createElement('hr');
+		divider2.className = 'my-4 border-border-300';
+		content.appendChild(divider2);
+
+		// Replace phantom messages section
+		const replaceLabel = document.createElement('label');
+		replaceLabel.className = CLAUDE_CLASSES.LABEL;
+		replaceLabel.textContent = 'Replace Phantom Messages';
+		content.appendChild(replaceLabel);
+
+		const replaceNote = document.createElement('p');
+		replaceNote.className = CLAUDE_CLASSES.TEXT_SM + ' text-text-400';
+		replaceNote.textContent = `Replaces the "fake" message history for this conversation.`;
+		content.appendChild(replaceNote);
+
+		const replaceButton = createClaudeButton('Replace from File', 'secondary');
+		replaceButton.className += ' mb-2';
+		content.appendChild(replaceButton);
+		replaceButton.onclick = () => handleReplacePhantom(replaceButton);
+
+		// Warning note
+		const warningNote = document.createElement('p');
+		warningNote.className = CLAUDE_CLASSES.TEXT_SM;
+		warningNote.style.color = '#de2929';
+		warningNote.innerHTML = '⚠️ <strong>Visual change only:</strong> This replaces what you see in the chat history. The AI\'s context (what it can actually read) remains unchanged.';
+		warningNote.className += ' mb-3';
+		content.appendChild(warningNote);
 
 		// Create modal
 		const modal = createClaudeModal({

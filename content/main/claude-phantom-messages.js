@@ -4,7 +4,7 @@
 
 const PHANTOM_PREFIX = 'phantom_messages_';
 const OLD_FORK_PREFIX = 'fork_history_'; // Backward compatibility
-const PHANTOM_DELIMITER = '===BEGINNING OF IMPORTED/FORKED CONVERSATION===';
+const PHANTOM_DELIMITER = '===BEGINNING OF REAL CONVERSATION===';
 
 // Migrate old fork history to new format
 function migrateOldPhantomStorage(conversationId) {
@@ -153,17 +153,26 @@ function injectPhantomMessages(data, phantomMessages) {
 		}
 	}
 
-	// Update parent UUID of first real message to link to last phantom
+	// Update parent UUID of ALL root messages to link to last phantom
 	const lastPhantom = phantomMessages[phantomMessages.length - 1];
-	const firstRealMessage = data.chat_messages[0];
-	if (firstRealMessage && lastPhantom) {
-		// Add delimiter as first message content
-		firstRealMessage.content[0].text = PHANTOM_DELIMITER;
-		// Clear any attachments from the delimiter message
-		firstRealMessage.files_v2 = [];
-		firstRealMessage.files = [];
-		// Link to phantom history
-		firstRealMessage.parent_message_uuid = lastPhantom.uuid;
+	const rootMessages = data.chat_messages.filter(
+		msg => msg.parent_message_uuid === "00000000-0000-4000-8000-000000000000"
+	);
+
+	if (rootMessages.length > 0 && lastPhantom) {
+		// Link all root messages to phantom history and add delimiter
+		rootMessages.forEach(msg => {
+			msg.parent_message_uuid = lastPhantom.uuid;
+
+			// Add delimiter to the bottom of the message content
+			if (msg.content && msg.content.length > 0) {
+				// Append to the last text content item
+				const lastContent = msg.content[msg.content.length - 1];
+				if (lastContent.text !== undefined) {
+					lastContent.text = PHANTOM_DELIMITER + '\n\n' + lastContent.text;
+				}
+			}
+		});
 	}
 
 	// Prepend phantom messages to the conversation
