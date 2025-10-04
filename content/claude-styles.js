@@ -201,6 +201,11 @@ function createClaudeCheckbox(labelText = '', checked = false, onChange = null) 
 	checkbox.className = CLAUDE_CLASSES.CHECKBOX;
 	checkbox.checked = checked;
 
+	// Add aria-label for screen readers
+	if (labelText) {
+		checkbox.setAttribute('aria-label', labelText);
+	}
+
 	if (onChange) {
 		checkbox.addEventListener('change', (e) => onChange(e.target.checked));
 	}
@@ -217,6 +222,7 @@ function createClaudeCheckbox(labelText = '', checked = false, onChange = null) 
 
 	return { container, checkbox };
 }
+
 function createClaudeToggle(labelText = '', checked = false, onChange = null) {
 	// Container for toggle + label
 	const container = document.createElement('div');
@@ -235,6 +241,11 @@ function createClaudeToggle(labelText = '', checked = false, onChange = null) {
 	input.checked = checked;
 	input.style.width = '36px';
 	input.style.height = '20px';
+
+	if (labelText) {
+		input.setAttribute('aria-label', labelText);
+	}
+
 
 	const track = document.createElement('div');
 	track.className = 'border-border-300 rounded-full bg-bg-500 transition-colors peer-checked:bg-accent-secondary-100 peer-disabled:opacity-50';
