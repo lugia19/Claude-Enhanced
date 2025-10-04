@@ -69,8 +69,15 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 	const modal = document.createElement('div');
 	modal.className = CLAUDE_CLASSES.MODAL_CONTAINER;
 
+	modal.setAttribute('role', 'dialog');
+	modal.setAttribute('aria-modal', 'true');
+	if (title) {
+		modal.setAttribute('aria-labelledby', 'modal-title');
+	}
+
 	if (title) {
 		const heading = document.createElement('h2');
+		heading.id = 'modal-title'; // Link to aria-labelledby
 		heading.className = CLAUDE_CLASSES.MODAL_HEADING;
 		heading.textContent = title;
 		modal.appendChild(heading);
@@ -130,11 +137,22 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 	modal.appendChild(buttonContainer);
 	backdrop.appendChild(modal);
 
-	// Close on backdrop click
+	// Escape key
+	const handleEscape = (e) => {
+		if (e.key === 'Escape') {
+			backdrop.remove();
+			if (onCancel) onCancel();
+			document.removeEventListener('keydown', handleEscape);
+		}
+	};
+	document.addEventListener('keydown', handleEscape);
+
+	// Exit on click
 	backdrop.onclick = (e) => {
 		if (e.target === backdrop) {
 			backdrop.remove();
 			if (onCancel) onCancel();
+			document.removeEventListener('keydown', handleEscape);
 		}
 	};
 
@@ -259,14 +277,20 @@ function createClaudeToggle(labelText = '', checked = false, onChange = null) {
 // In claude-styles.js, update the createClaudeTooltip function:
 
 function createClaudeTooltip(element, tooltipText, deleteOnClick) {
+	const tooltipId = `tooltip-${Math.random().toString(36).substring(2, 11)}`;
+
+	// Link element to tooltip for screen readers
+	element.setAttribute('aria-describedby', tooltipId);
+
 	// Create tooltip wrapper
 	const tooltipWrapper = document.createElement('div');
 	tooltipWrapper.className = CLAUDE_CLASSES.TOOLTIP_WRAPPER;
 	tooltipWrapper.style.display = 'none';
 	tooltipWrapper.setAttribute('data-radix-popper-content-wrapper', '');
 
-	// Add tooltip content
+	// Add tooltip content with the ID
 	const tooltipContent = document.createElement('div');
+	tooltipContent.id = tooltipId;
 	tooltipContent.className = CLAUDE_CLASSES.TOOLTIP_CONTENT + ' tooltip-content';
 	tooltipContent.setAttribute('data-side', 'bottom');
 	tooltipContent.setAttribute('data-align', 'center');
@@ -279,7 +303,7 @@ function createClaudeTooltip(element, tooltipText, deleteOnClick) {
     `;
 	tooltipWrapper.appendChild(tooltipContent);
 
-	// Add hover events to element
+	// Add hover events
 	element.addEventListener('mouseenter', () => {
 		tooltipWrapper.style.display = 'block';
 		const rect = element.getBoundingClientRect();
@@ -292,13 +316,12 @@ function createClaudeTooltip(element, tooltipText, deleteOnClick) {
 		tooltipWrapper.style.display = 'none';
 	});
 
-	// Handle click behavior based on deleteOnClick parameter
+	// Handle click behavior
 	const shouldHideOnClick = deleteOnClick === undefined
-		? (element.onclick !== null)  // Default: hide if element has onclick handler
-		: deleteOnClick;  // Otherwise use explicit setting
+		? (element.onclick !== null)
+		: deleteOnClick;
 
 	if (shouldHideOnClick) {
-		// Hide tooltip on any click event
 		element.addEventListener('click', () => {
 			tooltipWrapper.style.display = 'none';
 		});
@@ -306,14 +329,31 @@ function createClaudeTooltip(element, tooltipText, deleteOnClick) {
 
 	document.body.appendChild(tooltipWrapper);
 
-	// Clean up tooltip when element is removed
+	// Clean up when element is removed
 	const originalRemove = element.remove.bind(element);
 	element.remove = () => {
 		tooltipWrapper.remove();
 		originalRemove();
 	};
 
-	return tooltipWrapper;
+	// Create tooltip API object
+	const tooltipAPI = {
+		wrapper: tooltipWrapper,
+		updateText: (newText) => {
+			tooltipContent.innerHTML = `
+                ${newText}
+                <span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
+                    ${newText}
+                </span>
+            `;
+		}
+	};
+
+	// Store tooltip on the element itself
+	element.tooltip = tooltipAPI;
+
+	// Still return it for convenience
+	return tooltipAPI;
 }
 
 

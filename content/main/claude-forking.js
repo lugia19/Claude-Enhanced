@@ -68,6 +68,7 @@
 
 		// Model select
 		const selectOptions = [
+			{ value: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5' },
 			{ value: 'claude-sonnet-4-20250514', label: 'Sonnet 4' },
 			{ value: 'claude-opus-4-1-20250805', label: 'Opus 4.1' },
 			{ value: 'claude-opus-4-20250514', label: 'Opus 4' },
@@ -381,7 +382,7 @@
 
 		// Store the fork history BEFORE sending the initial message
 		if (context.fullMessageObjects && context.fullMessageObjects.length > 0) {
-			await storeForkHistory(newUuid, context.fullMessageObjects);
+			storePhantomMessages(newUuid, context.fullMessageObjects);
 		}
 
 		// Create the chatlog (existing code)
@@ -459,52 +460,6 @@
 		} finally {
 			// Delete the temporary summarization conversation
 			await conversation.delete();
-		}
-	}
-	//#endregion
-
-	//#region Fork history storage and retrieval
-	const FORK_HISTORY_PREFIX = 'fork_history_';
-	const FORK_DELIMITER = '===BEGINNING OF FORKED CONVERSATION - NO EDITS CAN BE MADE BEFORE THIS POINT===';
-
-	async function storeForkHistory(newConversationId, originalMessages) {
-		const key = `${FORK_HISTORY_PREFIX}${newConversationId}`;
-		const storageData = {};
-		storageData[key] = originalMessages;
-
-		try {
-			// Try chrome.storage.local first (for extension context)
-			if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-				await chrome.storage.local.set(storageData);
-			} else {
-				// Fallback to localStorage
-				localStorage.setItem(key, JSON.stringify(originalMessages));
-			}
-			console.log(`Stored fork history for ${newConversationId}, ${originalMessages.length} messages`);
-		} catch (error) {
-			console.error('Failed to store fork history:', error);
-		}
-	}
-
-	async function getForkHistory(conversationId) {
-		const key = `${FORK_HISTORY_PREFIX}${conversationId}`;
-
-		try {
-			// Try chrome.storage.local first
-			if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-				return new Promise((resolve) => {
-					chrome.storage.local.get(key, (result) => {
-						resolve(result[key] || null);
-					});
-				});
-			} else {
-				// Fallback to localStorage
-				const data = localStorage.getItem(key);
-				return data ? JSON.parse(data) : null;
-			}
-		} catch (error) {
-			console.error('Failed to get fork history:', error);
-			return null;
 		}
 	}
 	//#endregion
@@ -601,69 +556,6 @@
 			}
 
 			return new Response(JSON.stringify({ success: true }));
-		}
-
-		// NEW: Handle GET requests for conversation data
-		if (url && url.includes('/chat_conversations/') &&
-			url.includes('rendering_mode=messages') &&
-			(!config || config.method === 'GET' || !config.method)) {
-
-			// Extract conversation ID from URL
-			const urlParts = url.split('/');
-			const conversationIdIndex = urlParts.findIndex(part => part === 'chat_conversations') + 1;
-			const conversationId = urlParts[conversationIdIndex]?.split('?')[0];
-
-			if (conversationId) {
-				// Fetch the original data
-				const response = await originalFetch(...args);
-				const originalData = await response.json();
-				// Check if this conversation has fork history
-				const forkHistory = await getForkHistory(conversationId);
-
-				if (forkHistory && forkHistory.length > 0) {
-					console.log(`Injecting ${forkHistory.length} ghost messages into conversation ${conversationId}`);
-
-					// Find the first assistant message and modify it
-					const firstRealAssistantIndex = originalData.chat_messages.findIndex(
-						msg => msg.sender === 'assistant'
-					);
-
-					if (firstRealAssistantIndex !== -1) {
-						const firstAssistant = originalData.chat_messages[firstRealAssistantIndex];
-
-						// Modify the text content to include delimiter
-						if (firstAssistant.content && firstAssistant.content.length > 0) {
-							for (let content of firstAssistant.content) {
-								if (content.text) {
-									// Replace the "Acknowledged" message with delimiter
-									content.text = "I've loaded the conversation history from the attached file. Please continue from here.";
-									break;
-								}
-							}
-						}
-
-						// Update parent UUID of first real message to link to last ghost
-						const lastGhost = forkHistory[forkHistory.length - 1];
-						const firstRealMessage = originalData.chat_messages[0];
-						if (firstRealMessage && lastGhost) {
-							firstRealMessage.content[0].text = FORK_DELIMITER
-							firstRealMessage.files_v2 = [];
-							firstRealMessage.files = [];
-							firstRealMessage.parent_message_uuid = lastGhost.uuid;
-						}
-					}
-
-					// Prepend ghost messages to the conversation
-					originalData.chat_messages = [...forkHistory, ...originalData.chat_messages];
-				}
-
-				// Return modified response
-				return new Response(JSON.stringify(originalData), {
-					status: response.status,
-					statusText: response.statusText,
-					headers: response.headers
-				});
-			}
 		}
 
 		return originalFetch(...args);

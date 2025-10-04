@@ -100,8 +100,7 @@
 		button.classList.add('shrink-0', 'style-selector-button');
 
 		// Create tooltip and store reference for updates
-		const tooltipWrapper = createClaudeTooltip(button, 'Chat style: Use current');
-		button.tooltipWrapper = tooltipWrapper;
+		createClaudeTooltip(button, 'Chat style: Use current');;
 
 		button.onclick = async () => {
 			await showStyleModal();
@@ -200,15 +199,7 @@
 				await chrome.storage.local.remove(`style_${conversationId}`);
 				// Reset to show "Use current"
 				button.style.color = '';
-				const tooltipContent = button.tooltipWrapper?.querySelector('.tooltip-content');
-				if (tooltipContent) {
-					tooltipContent.innerHTML = `
-                        Chat style: Use current
-                        <span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
-                            Chat style: Use current
-                        </span>
-			`;
-				}
+				button.tooltip?.updateText("Chat style: Use current");
 				return;
 			}
 		}
@@ -216,28 +207,11 @@
 		if (currentStyle) {
 			// Style is selected and valid - make button blue
 			button.style.color = '#0084ff';
-			const tooltipContent = button.tooltipWrapper?.querySelector('.tooltip-content');
-			if (tooltipContent) {
-				const styleName = currentStyle.name;
-				tooltipContent.innerHTML = `
-                    Chat style: ${styleName}
-                    <span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
-                        Chat style: ${styleName}
-                    </span>
-                `;
-			}
+			button.tooltip?.updateText(`Chat style: ${currentStyle.name}`);
 		} else {
 			// No style selected - using global default
 			button.style.color = '';
-			const tooltipContent = button.tooltipWrapper?.querySelector('.tooltip-content');
-			if (tooltipContent) {
-				tooltipContent.innerHTML = `
-                    Chat style: Use current
-                    <span role="tooltip" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
-                        Chat style: Use current
-                    </span>
-                `;
-			}
+			button.tooltip?.updateText("Chat style: Use current");
 		}
 	}
 

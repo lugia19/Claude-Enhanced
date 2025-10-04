@@ -390,9 +390,6 @@
 		updateSettingsButton() {
 			const button = document.querySelector('.tts-settings-button');
 			if (!button) return;
-
-			const tooltip = document.querySelector('.tts-settings-tooltip');
-
 			if (this.state === 'loading' || this.state === 'stopping') {
 				// Show pause icon with spinning segmented circle
 				button.innerHTML = `
@@ -406,20 +403,15 @@
                     </div>
                 </div>
             `;
-				if (tooltip) {
-					const text = this.state === 'loading' ? 'Loading audio...' : 'Stopping...';
-					tooltip.querySelector('.tooltip-content').textContent = text;
-				}
+				button.tooltip?.updateText(this.state === 'loading' ? 'Loading audio...' : 'Stopping...');
+
 			} else if (this.state === 'playing' || this.isProcessing) {
 				button.innerHTML = PAUSE_ICON;
-				if (tooltip) {
-					tooltip.querySelector('.tooltip-content').textContent = 'Stop playback';
-				}
+				button.tooltip?.updateText('Stop playback');
+
 			} else {
 				button.innerHTML = SPEAKER_ICON;
-				if (tooltip) {
-					tooltip.querySelector('.tooltip-content').textContent = 'TTS Settings';
-				}
+				button.tooltip?.updateText('TTS Settings');
 			}
 		}
 
@@ -1511,7 +1503,6 @@
 		button.classList.add('tts-settings-button'); // Keep for identification/priority
 
 		const tooltip = createClaudeTooltip(button, 'TTS Settings');
-		tooltip.classList.add('tts-settings-tooltip');
 
 		return button;
 	}
