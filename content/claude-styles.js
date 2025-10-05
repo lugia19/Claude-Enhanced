@@ -96,7 +96,7 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 	// Buttons
 	const buttonContainer = document.createElement('div');
 	buttonContainer.className = 'flex justify-end gap-2';
-	
+
 	let cancelBtn = null;
 	if (onCancel) {
 		cancelBtn = createClaudeButton(cancelText, 'secondary');
@@ -375,6 +375,7 @@ function tryAddTopRightButton(buttonClass, createButtonFn) {
 
 	const BUTTON_PRIORITY = [
 		'tts-settings-button',
+		'search-button',
 		'style-selector-button',
 		'stt-settings-button',
 		'export-button'
