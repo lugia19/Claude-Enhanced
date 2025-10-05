@@ -122,15 +122,19 @@ function injectPhantomMessages(data, phantomMessages) {
 			sync_sources: msg.sync_sources || []
 		};
 
-		// Ensure content array items have required fields
+
+		// Property order MUST BE MAINTAINED. ELSE IT ALL BREAKS.
 		completeMsg.content = completeMsg.content.map(item => ({
-			type: item.type || "text",
-			text: item.text || "",
-			start_timestamp: item.start_timestamp || timestamp,
-			stop_timestamp: item.stop_timestamp || timestamp,
-			citations: item.citations || []
+			start_timestamp: timestamp,
+			stop_timestamp: timestamp,
+			type: "text",
+			text: "",
+			citations: [],
+			...item // Original properties override defaults
 		}));
 
+
+ 
 		return completeMsg;
 	});
 

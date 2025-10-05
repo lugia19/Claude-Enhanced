@@ -96,12 +96,13 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 	// Buttons
 	const buttonContainer = document.createElement('div');
 	buttonContainer.className = 'flex justify-end gap-2';
-
+	
+	let cancelBtn = null;
 	if (onCancel) {
-		const cancelBtn = createClaudeButton(cancelText, 'secondary');
+		cancelBtn = createClaudeButton(cancelText, 'secondary');
 		cancelBtn.onclick = async () => {
 			try {
-				let result = onCancel();
+				let result = onCancel(cancelBtn);
 				if (result instanceof Promise) {
 					result = await result;
 				}
@@ -115,11 +116,12 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 		buttonContainer.appendChild(cancelBtn);
 	}
 
+	let confirmBtn = null;
 	if (onConfirm) {
-		const confirmBtn = createClaudeButton(confirmText, 'primary');
+		confirmBtn = createClaudeButton(confirmText, 'primary');
 		confirmBtn.onclick = async () => {
 			try {
-				let result = onConfirm();
+				let result = onConfirm(confirmBtn);
 				if (result instanceof Promise) {
 					result = await result;
 				}
@@ -141,7 +143,7 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 	const handleEscape = (e) => {
 		if (e.key === 'Escape') {
 			backdrop.remove();
-			if (onCancel) onCancel();
+			if (onCancel) onCancel(cancelBtn);
 			document.removeEventListener('keydown', handleEscape);
 		}
 	};
@@ -151,7 +153,7 @@ function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 
 	backdrop.onclick = (e) => {
 		if (e.target === backdrop) {
 			backdrop.remove();
-			if (onCancel) onCancel();
+			if (onCancel) onCancel(cancelBtn);
 			document.removeEventListener('keydown', handleEscape);
 		}
 	};
@@ -268,6 +270,7 @@ function createClaudeToggle(labelText = '', checked = false, onChange = null) {
 	toggleContainer.appendChild(input);
 	toggleContainer.appendChild(track);
 	toggleContainer.appendChild(thumb);
+	toggleContainer.style.transform = 'translateY(3px)'; // Slight vertical align
 	toggleWrapper.appendChild(toggleContainer);
 
 	container.appendChild(toggleWrapper);
@@ -276,7 +279,6 @@ function createClaudeToggle(labelText = '', checked = false, onChange = null) {
 	if (labelText) {
 		const label = document.createElement('span');
 		label.className = 'text-text-100 select-none cursor-pointer';
-		label.style.transform = 'translateY(-3px)'; // Slight upward adjustment
 		label.textContent = labelText;
 		label.onclick = () => input.click(); // Make label clickable
 		container.appendChild(label);

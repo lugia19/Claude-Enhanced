@@ -1,11 +1,15 @@
 // claude-forking.js
 (function () {
 	'use strict';
+	const defaultSummaryPrompt = "I've attached a chatlog from a previous conversation. Please create a complete, detailed summary of the conversation that covers all important points, questions, and responses. This summary will be used to continue the conversation in a new chat, so make sure it provides enough context to understand the full discussion. Be through, and think things through. Don't include any information already present in the other attachments, as those will be forwarded to the new chat as well.";
 
-	let pendingForkModel = null;
-	let includeAttachments = true;
-	let pendingUseSummary = false;
-	let originalSettings = null;
+	let pendingFork = {
+		model: null,
+		includeAttachments: true,
+		useSummary: false,
+		summaryPrompt: defaultSummaryPrompt,
+		originalSettings: null
+	};
 
 	//#region UI elements creation
 	function createBranchButton() {
@@ -32,37 +36,14 @@
 			e.preventDefault();
 			e.stopPropagation();
 
-			const modal = await createModal();
+			const modal = await createModal(button);
 			document.body.appendChild(modal);
-
-			// Add event listeners
-			modal.querySelector('#cancelFork').onclick = () => {
-				modal.remove();
-			};
-
-			modal.querySelector('#confirmFork').onclick = async () => {
-				const model = modal.querySelector('select').value;
-				const useSummary = modal.querySelector('#summaryMode').checked;
-
-				const confirmBtn = modal.querySelector('#confirmFork');
-				confirmBtn.disabled = true;
-				confirmBtn.textContent = 'Processing...';
-
-				await forkConversationClicked(model, button, modal, useSummary);
-				modal.remove();
-			};
-
-			modal.onclick = (e) => {
-				if (e.target === modal) {
-					modal.remove();
-				}
-			};
 		};
 
 		return button;
 	}
 
-	async function createModal() {
+	async function createModal(forkButton) {
 		// Create the content programmatically
 		const content = document.createElement('div');
 
@@ -76,74 +57,80 @@
 			{ value: 'claude-3-opus-20240229', label: 'Opus 3' },
 			{ value: 'claude-3-5-haiku-20241022', label: 'Haiku 3.5' }
 		];
-		const modelSelect = createClaudeSelect(selectOptions, 'claude-sonnet-4-20250514');
+		const modelSelect = createClaudeSelect(selectOptions, selectOptions[0].value);
 		modelSelect.classList.add('mb-4');
 		content.appendChild(modelSelect);
 
-		// Fork type section
+		// Fork type section with toggle
 		const forkTypeContainer = document.createElement('div');
-		forkTypeContainer.className = 'mb-4 space-y-2';
+		forkTypeContainer.className = 'mb-4 space-y-2 border border-border-300 rounded p-3';
 
 		const forkTypeBox = document.createElement('div');
-		forkTypeBox.className = 'flex items-center justify-between mb-3 p-2 bg-bg-200 rounded';
+		forkTypeBox.className = 'flex items-center justify-between rounded';
 
 		const forkTypeLabel = document.createElement('span');
 		forkTypeLabel.className = 'text-text-100 font-medium';
 		forkTypeLabel.textContent = 'Fork Type:';
 
-		const radioContainer = document.createElement('div');
-		radioContainer.className = 'flex items-center gap-4';
+		const toggleContainer = document.createElement('div');
+		toggleContainer.className = 'flex items-center gap-2';
 
-		// Full chatlog radio
-		const fullLabel = document.createElement('label');
-		fullLabel.className = CLAUDE_CLASSES.FLEX_GAP_2 + ' space-x-2';
-		const fullRadio = document.createElement('input');
-		fullRadio.type = 'radio';
-		fullRadio.id = 'fullChatlog';
-		fullRadio.name = 'forkType';
-		fullRadio.value = 'full';
-		fullRadio.checked = true;
-		fullRadio.className = 'accent-accent-main-100';
-		const fullSpan = document.createElement('span');
-		fullSpan.textContent = 'Full Chatlog';
-		fullLabel.appendChild(fullRadio);
-		fullLabel.appendChild(fullSpan);
+		const fullLabel = document.createElement('span');
+		fullLabel.className = 'text-text-100 select-none';
+		fullLabel.textContent = 'Full';
 
-		// Summary radio
-		const summaryLabel = document.createElement('label');
-		summaryLabel.className = CLAUDE_CLASSES.FLEX_GAP_2 + ' space-x-2';
-		const summaryRadio = document.createElement('input');
-		summaryRadio.type = 'radio';
-		summaryRadio.id = 'summaryMode';
-		summaryRadio.name = 'forkType';
-		summaryRadio.value = 'summary';
-		summaryRadio.className = 'accent-accent-main-100';
-		const summarySpan = document.createElement('span');
-		summarySpan.textContent = 'Summary';
-		summaryLabel.appendChild(summaryRadio);
-		summaryLabel.appendChild(summarySpan);
+		const summaryToggle = createClaudeToggle('', false);
+		summaryToggle.input.id = 'summaryMode';
 
-		radioContainer.appendChild(fullLabel);
-		radioContainer.appendChild(summaryLabel);
+		const summaryLabel = document.createElement('span');
+		summaryLabel.className = 'text-text-100 select-none';
+		summaryLabel.textContent = 'Summary';
+
+		toggleContainer.appendChild(fullLabel);
+		toggleContainer.appendChild(summaryToggle.container);
+		toggleContainer.appendChild(summaryLabel);
+
 		forkTypeBox.appendChild(forkTypeLabel);
-		forkTypeBox.appendChild(radioContainer);
+		forkTypeBox.appendChild(toggleContainer);
 		forkTypeContainer.appendChild(forkTypeBox);
 
-		// Include files container
+		// Summary prompt input (initially hidden)
+		const summaryPromptContainer = document.createElement('div');
+		summaryPromptContainer.id = 'summaryPromptContainer';
+		summaryPromptContainer.style.display = 'none';
+		summaryPromptContainer.className = 'mt-2';
+
+		const promptLabel = document.createElement('label');
+		promptLabel.className = CLAUDE_CLASSES.LABEL;
+		promptLabel.textContent = 'Summary Prompt:';
+		summaryPromptContainer.appendChild(promptLabel);
+
+
+		const promptInput = document.createElement('textarea');
+		promptInput.className = CLAUDE_CLASSES.INPUT;
+		promptInput.placeholder = 'Enter custom summary prompt...';
+		promptInput.value = defaultSummaryPrompt;
+		promptInput.rows = 10;
+		promptInput.style.resize = 'vertical'; // Allow vertical resizing
+		promptInput.id = 'summaryPrompt';
+		summaryPromptContainer.appendChild(promptInput);
+
+		forkTypeContainer.appendChild(summaryPromptContainer);
+		content.appendChild(forkTypeContainer);
+
+		// Toggle visibility of summary prompt input
+		summaryToggle.input.addEventListener('change', (e) => {
+			summaryPromptContainer.style.display = e.target.checked ? 'block' : 'none';
+		});
+
+		// Include files toggle
 		const includeFilesContainer = document.createElement('div');
+		includeFilesContainer.className = 'mb-4';
 		includeFilesContainer.id = 'includeFilesContainer';
 		const includeFilesToggle = createClaudeToggle('Include files', true);
 		includeFilesToggle.input.id = 'includeFiles';
 		includeFilesContainer.appendChild(includeFilesToggle.container);
-		forkTypeContainer.appendChild(includeFilesContainer);
-
-		content.appendChild(forkTypeContainer);
-
-		// Note text
-		const note = document.createElement('p');
-		note.className = CLAUDE_CLASSES.TEXT_SM;
-		note.textContent = 'Note: Should you choose a slow model such as Opus, you may need to wait and refresh the page for the response to appear.';
-		content.appendChild(note);
+		content.appendChild(includeFilesContainer);
 
 		// Create modal
 		const modal = createClaudeModal({
@@ -151,26 +138,34 @@
 			content: content,
 			confirmText: 'Fork Chat',
 			cancelText: 'Cancel',
-			onConfirm: () => { },  // Will be set by the caller
-			onCancel: () => { }    // Will be set by the caller
-		});
+			onConfirm: async (confirmBtn) => {
+				const model = modelSelect.value;
+				const useSummary = modal.querySelector('#summaryMode').checked;
+				const customPrompt = modal.querySelector('#summaryPrompt')?.value;
 
-		// Add IDs to buttons for external reference
-		const buttons = modal.querySelectorAll('button');
-		buttons.forEach(btn => {
-			if (btn.textContent === 'Fork Chat') {
-				btn.id = 'confirmFork';
-			} else if (btn.textContent === 'Cancel') {
-				btn.id = 'cancelFork';
+				confirmBtn.disabled = true;
+				confirmBtn.textContent = 'Processing...';
+
+				await forkConversationClicked(model, forkButton, modal, useSummary, customPrompt);
+				return false; // Prevent auto-close
+			},
+			onCancel: () => {
+				// Auto-closes, no need to do anything
 			}
 		});
+
+		const modalContainer = modal.querySelector('.' + CLAUDE_CLASSES.MODAL_CONTAINER.split(' ')[0]);
+		if (modalContainer) {
+			modalContainer.classList.remove('max-w-md');
+			modalContainer.classList.add('max-w-lg');
+		}
 
 		// Store reference to select for easy access
 		modal.modelSelect = modelSelect;
 
 		try {
 			const accountData = await getAccountSettings();
-			originalSettings = accountData.settings;
+			pendingFork.originalSettings = accountData.settings;
 		} catch (error) {
 			console.error('Failed to fetch account settings:', error);
 		}
@@ -187,22 +182,23 @@
 	}
 	//#endregion
 
-	async function forkConversationClicked(model, forkButton, modal, useSummary = false) {
+	async function forkConversationClicked(model, forkButton, modal) {
 		// Get conversation ID from URL
 		const conversationId = window.location.pathname.split('/').pop();
 		console.log('Forking conversation', conversationId, 'with model', model);
 
-		if (originalSettings) {
-			const newSettings = { ...originalSettings };
+		if (pendingFork.originalSettings) {
+			const newSettings = { ...pendingFork.originalSettings };
 			newSettings.paprika_mode = null; // Ensure it's off when we create the conversation (will be overridden to on if needed)
 			console.log('Updating settings:', newSettings);
 			await updateAccountSettings(newSettings);
 		}
 
 		// Set up our global to catch the next retry request
-		pendingForkModel = model;
-		includeAttachments = modal.querySelector('#includeFiles')?.checked ?? true;
-		pendingUseSummary = useSummary;
+		pendingFork.model = model;
+		pendingFork.includeAttachments = modal.querySelector('#includeFiles')?.checked ?? true;
+		pendingFork.useSummary = modal.querySelector('#summaryMode').checked;
+		pendingFork.summaryPrompt = modal.querySelector('#summaryPrompt')?.value || defaultSummaryPrompt;
 
 		// Find and click the retry button in the same control group as our fork button
 		const buttonGroup = forkButton.closest('.justify-between');
@@ -324,7 +320,7 @@
 			}
 		}
 
-		if (!includeAttachments) {
+		if (!pendingFork.includeAttachments) {
 			return {
 				chatName,
 				messages,
@@ -418,7 +414,7 @@
 	}
 
 
-	async function generateSummary(orgId, context) {
+	async function generateSummary(orgId, context, summaryPrompt) {
 		// Create a temporary conversation for summarization
 		const summaryConvoName = `Temp_Summary_${Date.now()}`;
 		const conversation = new ClaudeConversation(orgId);
@@ -444,8 +440,6 @@
 			}];
 
 			// Ask the model to create a summary
-			const summaryPrompt = "I've attached a chatlog from a previous conversation. Please create a complete, detailed summary of the conversation that covers all important points, questions, and responses. This summary will be used to continue the conversation in a new chat, so make sure it provides enough context to understand the full discussion. Be through, and think things through. Don't include any information already present in the other attachments, as those will be forwarded to the new chat as well.";
-
 			const assistantMessage = await conversation.sendMessageAndWaitForResponse(summaryPrompt, {
 				attachments: summaryAttachments,
 				files: [],
@@ -480,7 +474,7 @@
 		}
 
 		// In the fetch patching section
-		if (url && url.includes('/retry_completion') && pendingForkModel) {
+		if (url && url.includes('/retry_completion') && pendingFork.model) {
 			console.log('Intercepted retry request:', config?.body);
 			const bodyJSON = JSON.parse(config?.body);
 			const messageID = bodyJSON?.parent_message_uuid;
@@ -492,11 +486,11 @@
 
 			try {
 				// Get conversation context
-				console.log('Getting conversation context, includeAttachments:', includeAttachments);
+				console.log('Getting conversation context, pendingFork.includeAttachments:', pendingFork.includeAttachments);
 				const context = await getConversationContext(orgId, conversationId, messageID);
 
 				// Process files and sync sources if needed
-				if (includeAttachments) {
+				if (pendingFork.includeAttachments) {
 					const downloadedFiles = await downloadFiles(context.files);
 
 					// Parallel processing of files and syncs
@@ -514,10 +508,10 @@
 
 				let newConversationId;
 
-				if (pendingUseSummary) {
+				if (pendingFork.useSummary) {
 					// Generate summary
 					console.log("Generating summary for forking");
-					const summary = await generateSummary(orgId, context);
+					const summary = await generateSummary(orgId, context, pendingFork.summaryPrompt);
 					if (summary === null) {
 						throw new Error('Failed to generate summary. This may be due to service disruption or usage limits.');
 					} else {
@@ -531,11 +525,11 @@
 							"file_type": "text/plain"
 						}];
 						// Create forked conversation with summary
-						newConversationId = await createForkedConversation(orgId, summaryContext, pendingForkModel, styleData);
+						newConversationId = await createForkedConversation(orgId, summaryContext, pendingFork.model, styleData);
 					}
 				} else {
 					// Standard workflow with full chatlog
-					newConversationId = await createForkedConversation(orgId, context, pendingForkModel, styleData);
+					newConversationId = await createForkedConversation(orgId, context, pendingFork.model, styleData);
 				}
 
 				// Navigate to new conversation in 100ms
@@ -547,12 +541,16 @@
 			} catch (error) {
 				console.error('Failed to fork conversation:', error);
 			} finally {
-				if (originalSettings) {
-					await updateAccountSettings(originalSettings);
+				if (pendingFork.originalSettings) {
+					await updateAccountSettings(pendingFork.originalSettings);
 				}
-				originalSettings = null;
-				pendingForkModel = null;
-				pendingUseSummary = false;
+				pendingFork = {
+					model: null,
+					includeAttachments: true,
+					useSummary: false,
+					summaryPrompt: defaultSummaryPrompt,
+					originalSettings: null
+				};
 			}
 
 			return new Response(JSON.stringify({ success: true }));
