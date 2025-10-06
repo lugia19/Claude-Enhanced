@@ -25,121 +25,15 @@
 		return 'just now';
 	}
 
-	// ======== API AND DATA FETCHING ========
-	function getConversationId() {
-		const match = window.location.pathname.match(/\/chat\/([a-f0-9-]+)/);
-		return match ? match[1] : null;
-	}
-
-	async function fetchConversationData() {
-		const conversationId = getConversationId();
-		if (!conversationId) {
-			throw new Error('Not in a conversation');
-		}
-
-		const orgId = getOrgId();
-		const url = `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=true&rendering_mode=messages&render_all_tools=true`;
-
-		const response = await fetch(url, {
-			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json'
-			}
-		});
-
-		if (!response.ok) {
-			throw new Error('Failed to fetch conversation');
-		}
-
-		return await response.json();
-	}
-
-	function extractTextFromMessage(message) {
-		let text = '';
-
-		if (message.content && Array.isArray(message.content)) {
-			for (const content of message.content) {
-				if (content.type === 'text' && content.text) {
-					text += content.text + ' ';
-				}
-			}
-		}
-
-		return text.trim();
-	}
-
-	// ======== TREE TRAVERSAL ========
-	// ======== TREE TRAVERSAL ========
-	function findLongestLeaf(messageId, messageMap) {
-		// Find all children of this message
-		const children = Array.from(messageMap.values()).filter(
-			msg => msg.parent_message_uuid === messageId
-		);
-
-		// If no children, this is a leaf
-		if (children.length === 0) {
-			const message = messageMap.get(messageId);
-			return {
-				leafId: messageId,
-				depth: 0,
-				timestamp: new Date(message.created_at).getTime()
-			};
-		}
-
-		// Recursively find longest path through children
-		let longestPath = { leafId: null, depth: -1, timestamp: 0 };
-
-		for (const child of children) {
-			const result = findLongestLeaf(child.uuid, messageMap);
-			const totalDepth = result.depth + 1;
-
-			// Prefer deeper paths, but if equal depth, prefer more recent
-			if (totalDepth > longestPath.depth ||
-				(totalDepth === longestPath.depth && result.timestamp > longestPath.timestamp)) {
-				longestPath = {
-					leafId: result.leafId,
-					depth: totalDepth,
-					timestamp: result.timestamp
-				};
-			}
-		}
-
-		return longestPath;
-	}
-
-	// ======== NAVIGATION ========
-	async function navigateToLeaf(leafId) {
-		const conversationId = getConversationId();
-		const orgId = getOrgId();
-		const url = `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}/current_leaf_message_uuid`;
-
-		try {
-			await fetch(url, {
-				method: 'PUT',
-				credentials: 'include',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({ current_leaf_message_uuid: leafId })
-			});
-
-			// Reload the page to show the new position
-			window.location.reload();
-		} catch (error) {
-			console.error('Navigation failed:', error);
-			alert('Failed to navigate. Please try again.');
-		}
-	}
-
 	// ======== SEARCH FUNCTION ========
-	function searchMessages(query, conversationData) {
+	function searchMessages(query, conversation) {
 		if (!query || query.trim() === '') {
 			return [];
 		}
 
 		const lowerQuery = query.toLowerCase();
 		const results = [];
-		const messages = conversationData.chat_messages || [];
+		const messages = conversation.conversationData.chat_messages || [];
 
 		// Build message map for easy lookup
 		const messageMap = new Map();
@@ -150,7 +44,7 @@
 		// Search through messages
 		for (let index = 0; index < messages.length; index++) {
 			const message = messages[index];
-			const text = extractTextFromMessage(message);
+			const text = ClaudeConversation.extractMessageText(message);
 			const lowerText = text.toLowerCase();
 			const matchIndex = lowerText.indexOf(lowerQuery);
 
@@ -171,7 +65,7 @@
 				);
 
 				// Calculate position (messages ago from current leaf)
-				const currentLeafId = conversationData.current_leaf_message_uuid;
+				const currentLeafId = conversation.conversationData.current_leaf_message_uuid;
 				let position = 0;
 				let tempId = currentLeafId;
 				while (tempId && tempId !== message.uuid) {
@@ -183,9 +77,9 @@
 				results.push({
 					matched_text: matchedText,
 					full_message_text: text,
-					prev_message_text: prevMessage ? extractTextFromMessage(prevMessage) : null,
+					prev_message_text: prevMessage ? ClaudeConversation.extractMessageText(prevMessage) : null,
 					prev_message_role: prevMessage ? prevMessage.sender : null,
-					next_message_text: nextMessage ? extractTextFromMessage(nextMessage) : null,
+					next_message_text: nextMessage ? ClaudeConversation.extractMessageText(nextMessage) : null,
 					next_message_role: nextMessage ? nextMessage.sender : null,
 					matched_message_id: message.uuid,
 					role: message.sender,
@@ -199,8 +93,7 @@
 	}
 
 	// ======== CONTEXT MODAL ========
-	// ======== CONTEXT MODAL ========
-	function showContextModal(result, query, conversationData) {
+	function showContextModal(result, query, conversation) {
 		const contentDiv = document.createElement('div');
 
 		// Scrollable messages container
@@ -287,15 +180,10 @@
 			onCancel: () => {
 				// Just close
 			},
-			onConfirm: () => {
-				// Find longest leaf from this message
-				const messageMap = new Map();
-				for (const msg of conversationData.chat_messages) {
-					messageMap.set(msg.uuid, msg);
-				}
-
-				const longestLeaf = findLongestLeaf(result.matched_message_id, messageMap);
-				navigateToLeaf(longestLeaf.leafId);
+			onConfirm: async () => {
+				const longestLeaf = conversation.findLongestLeaf(result.matched_message_id);
+				await conversation.setCurrentLeaf(longestLeaf.leafId);
+				window.location.reload();
 			}
 		});
 
@@ -312,9 +200,16 @@
 	// ======== MAIN SEARCH MODAL ========
 	async function showSearchModal() {
 		// Fetch conversation data first
-		let conversationData;
+		let conversation;
 		try {
-			conversationData = await fetchConversationData();
+			const conversationId = getConversationId();
+			if (!conversationId) {
+				throw new Error('Not in a conversation');
+			}
+
+			const orgId = getOrgId();
+			conversation = new ClaudeConversation(orgId, conversationId);
+			await conversation.getData(true);
 		} catch (error) {
 			console.error('Failed to fetch conversation:', error);
 			return;
@@ -327,12 +222,11 @@
 		const topButtonsRow = document.createElement('div');
 		topButtonsRow.className = CLAUDE_CLASSES.FLEX_GAP_2 + ' mb-4';
 
-		const latestBtn = createClaudeButton('Go to Latest', 'secondary', () => {
-			// Find the message with the most recent created_at timestamp
+		const latestBtn = createClaudeButton('Go to Latest', 'secondary', async () => {
 			let latestMessage = null;
 			let latestTimestamp = 0;
 
-			for (const msg of conversationData.chat_messages) {
+			for (const msg of conversation.conversationData.chat_messages) {
 				const timestamp = new Date(msg.created_at).getTime();
 				if (timestamp > latestTimestamp) {
 					latestTimestamp = timestamp;
@@ -341,20 +235,19 @@
 			}
 
 			if (latestMessage) {
-				navigateToLeaf(latestMessage.uuid);
+				await conversation.setCurrentLeaf(latestMessage.uuid);
+				window.location.reload();
 			}
 		});
 
-		const longestBtn = createClaudeButton('Go to Longest', 'secondary', () => {
-			const messageMap = new Map();
-			for (const msg of conversationData.chat_messages) {
-				messageMap.set(msg.uuid, msg);
-			}
-
+		const longestBtn = createClaudeButton('Go to Longest', 'secondary', async () => {
 			const rootId = "00000000-0000-4000-8000-000000000000";
-			const longestLeaf = findLongestLeaf(rootId, messageMap);
-			navigateToLeaf(longestLeaf.leafId);
+			const longestLeaf = conversation.findLongestLeaf(rootId);
+			await conversation.setCurrentLeaf(longestLeaf.leafId);
+			window.location.reload();
 		});
+		longestBtn.classList.add('w-full');
+		latestBtn.classList.add('w-full');
 
 		topButtonsRow.appendChild(latestBtn);
 		topButtonsRow.appendChild(longestBtn);
@@ -378,7 +271,9 @@
 
 		// Results container
 		const resultsContainer = document.createElement('div');
-		resultsContainer.className = 'max-h-[32rem] overflow-y-auto space-y-2';
+		resultsContainer.className = CLAUDE_CLASSES.LIST_CONTAINER
+		resultsContainer.style.maxHeight = '32rem';
+
 		contentDiv.appendChild(resultsContainer);
 
 		// Search function
@@ -390,7 +285,7 @@
 				return;
 			}
 
-			const results = searchMessages(query, conversationData);
+			const results = searchMessages(query, conversation);
 
 			if (results.length === 0) {
 				const noResults = document.createElement('div');
@@ -406,7 +301,7 @@
 			// Display results
 			results.forEach(result => {
 				const resultItem = document.createElement('div');
-				resultItem.className = 'p-3 rounded bg-bg-200 border border-border-300 hover:bg-bg-300 cursor-pointer transition-colors';
+				resultItem.className = CLAUDE_CLASSES.LIST_ITEM;
 
 				const header = document.createElement('div');
 				header.className = 'text-sm text-text-200 mb-1';
@@ -437,7 +332,7 @@
 				resultItem.appendChild(matchText);
 
 				resultItem.onclick = () => {
-					showContextModal(result, query, conversationData);
+					showContextModal(result, query, conversation);
 				};
 
 				resultsContainer.appendChild(resultItem);

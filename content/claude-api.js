@@ -104,31 +104,80 @@ class ClaudeConversation {
 		throw new Error(`No assistant response after ${maxMinutes} minutes`);
 	}
 
-	// Get all messages
-	async getMessages() {
-		const response = await fetch(
-			`/api/organizations/${this.orgId}/chat_conversations/${this.conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`
-		);
-
-		if (!response.ok) {
-			throw new Error('Failed to get messages');
+	// Lazy load conversation data
+	async getData(tree = false, forceRefresh = false) {
+		if (!this.conversationData || forceRefresh || (tree && !this.conversationData.chat_messages)) {
+			const response = await fetch(
+				`/api/organizations/${this.orgId}/chat_conversations/${this.conversationId}?tree=${tree}&rendering_mode=messages&render_all_tools=true`
+			);
+			if (!response.ok) {
+				throw new Error('Failed to get conversation data');
+			}
+			this.conversationData = await response.json();
 		}
+		return this.conversationData;
+	}
 
-		const data = await response.json();
+	// Get messages (now uses getData)
+	async getMessages(tree = false) {
+		const data = await this.getData(tree);
 		return data.chat_messages || [];
 	}
 
-	// Get conversation details
-	async getDetails() {
-		const response = await fetch(
-			`/api/organizations/${this.orgId}/chat_conversations/${this.conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`
-		);
-
-		if (!response.ok) {
-			throw new Error('Failed to get conversation details');
+	// Find longest leaf from a message ID
+	findLongestLeaf(startMessageId) {
+		const messageMap = new Map();
+		for (const msg of this.conversationData.chat_messages) {
+			messageMap.set(msg.uuid, msg);
 		}
 
-		return await response.json();
+		// Get all children of the message we're starting from
+		const children = Array.from(messageMap.values()).filter(
+			msg => msg.parent_message_uuid === startMessageId
+		);
+		// No children -> it's a leaf, just return
+		if (children.length === 0) {
+			const message = messageMap.get(startMessageId);
+			return {
+				leafId: startMessageId,
+				depth: 0,
+				timestamp: new Date(message.created_at).getTime()
+			};
+		}
+
+		let longestPath = { leafId: null, depth: -1, timestamp: 0 };
+		// For each child, find its longest leaf (recursion)
+		for (const child of children) {
+			const result = this.findLongestLeaf(child.uuid);
+			const totalDepth = result.depth + 1;	//Account for the fact we're looking at the parent of this message
+			// If this path is longer than the previous longest, or same length but newer, update
+			if (totalDepth > longestPath.depth ||
+				(totalDepth === longestPath.depth && result.timestamp > longestPath.timestamp)) {
+				longestPath = {
+					leafId: result.leafId,
+					depth: totalDepth,
+					timestamp: result.timestamp
+				};
+			}
+		}
+
+		return longestPath;
+	}
+
+	// Navigate to a specific leaf
+	async setCurrentLeaf(leafId) {
+		const url = `/api/organizations/${this.orgId}/chat_conversations/${this.conversationId}/current_leaf_message_uuid`;
+
+		const response = await fetch(url, {
+			method: 'PUT',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ current_leaf_message_uuid: leafId })
+		});
+
+		if (!response.ok) {
+			throw new Error('Failed to set current leaf');
+		}
 	}
 
 	// Delete conversation
@@ -256,4 +305,20 @@ function generateUuid() {
 		const v = c === 'x' ? r : (r & 0x3 | 0x8);
 		return v.toString(16);
 	});
+}
+
+function getOrgId() {
+	const cookies = document.cookie.split(';');
+	for (const cookie of cookies) {
+		const [name, value] = cookie.trim().split('=');
+		if (name === 'lastActiveOrg') {
+			return value;
+		}
+	}
+	throw new Error('Could not find organization ID');
+}
+
+function getConversationId() {
+	const match = window.location.pathname.match(/\/chat\/([a-f0-9-]+)/);
+	return match ? match[1] : null;
 }

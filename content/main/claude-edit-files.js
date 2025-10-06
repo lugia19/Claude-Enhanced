@@ -233,9 +233,9 @@
 
 		// Files list container - now with scrolling
 		const filesList = document.createElement('div');
-		filesList.className = 'space-y-2 mb-3 overflow-y-auto';
+		filesList.className = CLAUDE_CLASSES.LIST_CONTAINER + ' mb-3';
+		filesList.style.maxHeight = '200px';
 		filesList.id = 'files-list';
-		filesList.style.maxHeight = "200px";
 
 		// Add real files from the request
 		if (data.filesMetadata && data.filesMetadata.length > 0) {
@@ -368,7 +368,7 @@
 
 	function buildUploadingFileItem(file) {
 		const item = document.createElement('div');
-		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded opacity-75';
+		item.className = CLAUDE_CLASSES.LIST_ITEM + " opacity-75" + ' flex items-center gap-2';
 		item.dataset.uploading = 'true';
 		item.dataset.fileType = 'files_v2';
 
@@ -402,7 +402,7 @@
 
 	function buildFileItem(file) {
 		const item = document.createElement('div');
-		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded';
+		item.className = CLAUDE_CLASSES.LIST_ITEM + ' flex items-center gap-2'
 		item.dataset.fileUuid = file.file_uuid;
 		item.dataset.fileType = 'files_v2';
 
@@ -437,7 +437,7 @@
 
 	function buildAttachmentItem(attachment) {
 		const item = document.createElement('div');
-		item.className = 'flex items-center gap-2 p-2 bg-bg-200 rounded';
+		item.className = CLAUDE_CLASSES.LIST_ITEM + ' flex items-center gap-2'
 		item.dataset.fileType = 'attachment';
 		item.dataset.fileName = attachment.file_name;
 		// Store the full attachment data for reconstruction

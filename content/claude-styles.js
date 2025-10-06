@@ -31,6 +31,10 @@ const CLAUDE_CLASSES = {
 	FLEX_CENTER: 'flex items-center justify-center',
 	FLEX_BETWEEN: 'flex items-center justify-between',
 	FLEX_GAP_2: 'flex items-center gap-2',
+
+	// List components
+	LIST_CONTAINER: 'space-y-2 overflow-y-auto',
+	LIST_ITEM: 'p-3 rounded bg-bg-200 border border-border-300 hover:bg-bg-300 cursor-pointer transition-colors',
 };
 
 // Component creators
@@ -374,11 +378,12 @@ function tryAddTopRightButton(buttonClass, createButtonFn) {
 	if (!window.location.href.includes("/chat/")) return;
 
 	const BUTTON_PRIORITY = [
-		'tts-settings-button',
 		'search-button',
+		'navigation-button',
 		'style-selector-button',
+		'export-button',
 		'stt-settings-button',
-		'export-button'
+		'tts-settings-button',
 	];
 
 	const container = document.querySelector('div.right-3:has(> div.flex > button)') || document.querySelector('div.right-3:has(> button)')
@@ -490,15 +495,4 @@ function addMessageButtonWithPriority(buttonGenerator, buttonClass) {
 			container.appendChild(button);
 		}
 	});
-}
-
-function getOrgId() {
-	const cookies = document.cookie.split(';');
-	for (const cookie of cookies) {
-		const [name, value] = cookie.trim().split('=');
-		if (name === 'lastActiveOrg') {
-			return value;
-		}
-	}
-	throw new Error('Could not find organization ID');
 }

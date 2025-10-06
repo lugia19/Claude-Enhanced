@@ -19,7 +19,9 @@
 			],
 			"js": [
 				"content/claude-styles.js",
+				"content/claude-api.js",
 				"content/isolated/claude-chat-search.js",
+				"content/isolated/claude-navigation.js",
 				"content/isolated/claude-pref-switcher.js",
 				"content/isolated/claude-stt.js",
 				"content/isolated/claude-perchat-styles.js",
@@ -33,8 +35,8 @@
 			],
 			"js": [
 				"content/claude-styles.js",
+				"content/claude-api.js",
 				"content/main/claude-phantom-messages.js",
-				"content/main/claude-api.js",
 				"content/main/claude-exporter.js",
 				"content/main/claude-forking.js",
 				"content/main/claude-edit-files.js",
