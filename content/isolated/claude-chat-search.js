@@ -25,6 +25,31 @@
 		return 'just now';
 	}
 
+	function simplifyText(text) {
+		return text
+			.toLowerCase()
+			.replace(/[*_`~\[\]()]/g, '')  // Remove markdown chars
+			.replace(/\s+/g, ' ')           // Normalize whitespace
+			.replace(/[""'']/g, '"')        // Normalize quotes
+			.trim();
+	}
+
+	function fuzzyMatch(searchText, targetText) {
+		// Get words from search text (ignore very short words)
+		const searchWords = searchText
+			.toLowerCase()
+			.split(/\s+/)
+			.filter(word => word.length > 2);
+
+		const targetLower = targetText.toLowerCase();
+
+		// Count how many search words appear in target
+		const matchedWords = searchWords.filter(word => targetLower.includes(word));
+
+		const matchRatio = matchedWords.length / searchWords.length;
+		return matchRatio >= 0.85;
+	}
+
 	// ======== SEARCH FUNCTION ========
 	function searchMessages(query, conversation) {
 		if (!query || query.trim() === '') {
@@ -181,6 +206,11 @@
 				// Just close
 			},
 			onConfirm: async () => {
+				// Remove the display ellipses before storing
+				const textToStore = result.matched_text.replace(/^\.\.\./, '').replace(/\.\.\.$/, '');
+				const searchSnippet = simplifyText(textToStore);
+				sessionStorage.setItem('text_to_find', searchSnippet);
+
 				const longestLeaf = conversation.findLongestLeaf(result.matched_message_id);
 				await conversation.setCurrentLeaf(longestLeaf.leafId);
 				window.location.reload();
@@ -381,22 +411,69 @@
 	}
 
 	// ======== INITIALIZATION ========
-	function initialize() {
-		// Add spinner CSS once
-		const style = document.createElement('style');
-		style.id = 'search-spinner-style';
-		style.textContent = `
-			@keyframes spin {
-				from { transform: rotate(0deg); }
-				to { transform: rotate(360deg); }
+	function scrollToStoredText() {
+		const textToFind = sessionStorage.getItem('text_to_find');
+		console.log('scrollToStoredText called, textToFind:', textToFind);
+		if (!textToFind) return;
+
+		const maxRetries = 10;
+		const retryDelay = 500;
+		let attempts = 0;
+
+		function attemptScroll() {
+			attempts++;
+			console.log(`Attempt ${attempts} to find text...`);
+			console.log('Looking for:', textToFind);
+
+			const messages = document.querySelectorAll('.font-claude-response, .font-user-message');
+			console.log('Found', messages.length, 'message elements');
+
+			for (const node of messages) {
+				// Get only the actual message content from p and pre tags
+				const contentElements = node.querySelectorAll('p, pre');
+				const nodeText = Array.from(contentElements)
+					.map(el => el.textContent)
+					.join(' ');
+				const simplifiedText = simplifyText(nodeText);
+
+				// Debug: log first match attempt
+				if (attempts === 1 && messages[0] === node) {
+					console.log('First message simplified:', simplifiedText.substring(0, 200));
+				}
+
+				if (simplifiedText.includes(textToFind) || fuzzyMatch(textToFind, simplifiedText)) {
+					console.log('FOUND IT!');
+					sessionStorage.removeItem('text_to_find');
+
+					node.scrollIntoView({
+						behavior: 'smooth',
+						block: 'center'
+					});
+
+					node.style.transition = 'background-color 0.3s';
+					node.style.backgroundColor = '#2c84db4d';
+					setTimeout(() => {
+						node.style.backgroundColor = '';
+					}, 4000);
+
+					return true;
+				}
 			}
-			.animate-spin {
-				animation: spin 1s linear infinite;
+
+			console.log('Not found in this attempt');
+			if (attempts < maxRetries) {
+				setTimeout(attemptScroll, retryDelay);
+			} else {
+				console.log('Giving up after', maxRetries, 'attempts');
+				sessionStorage.removeItem('text_to_find');
 			}
-		`;
-		if (!document.querySelector('#search-spinner-style')) {
-			document.head.appendChild(style);
 		}
+
+		setTimeout(attemptScroll, 1000);
+	}
+
+	function initialize() {
+		setTimeout(scrollToStoredText, 1000);
 
 		// Add search button to top right
 		setInterval(() => {
