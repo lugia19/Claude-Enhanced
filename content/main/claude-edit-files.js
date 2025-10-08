@@ -24,61 +24,63 @@
 			// Check if we already added our button
 			if (controlsContainer.querySelector('.advanced-edit-button')) return;
 
-			// Find the existing edit button to place ours next to it
-			const directButton = controlsContainer.querySelector(':scope > div > div > button[type="button"]');
-			if (!directButton) return;
+			// Find the edit button by its unique SVG path (pencil icon)
+			const allButtons = controlsContainer.querySelectorAll('button[type="button"]');
+			let editButton = null;
+			let editButtonWrapper = null;
 
-			// Create our advanced edit button using the Claude styles
+			for (const button of allButtons) {
+				const svgPath = button.querySelector('svg path');
+				if (svgPath && svgPath.getAttribute('d')?.startsWith('M9.72821 2.87934')) {
+					editButton = button;
+					editButtonWrapper = button.closest('div.w-fit');
+					break;
+				}
+			}
+
+			if (!editButton || !editButtonWrapper) return;
+
+			// Create our advanced edit button
 			const svgContent = `
-				<div class="flex items-center justify-center" style="width: 16px; height: 16px;">
-					<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" class="shrink-0" aria-hidden="true" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" style="color: currentColor;">
-						<!-- File/document -->
-						<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h9"/>
-						<polyline points="13 2 13 7 18 7"/>
-						<!-- Pencil overlapping -->
-						<path d="M18.5 8.5a1.5 1.5 0 0 0-2.12 0L10 14.88V18h3.12l6.38-6.38a1.5 1.5 0 0 0 0-2.12z"/>
-					</svg>
-				</div>
-			`;
+            <div class="flex items-center justify-center" style="width: 20px; height: 20px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" class="shrink-0" aria-hidden="true" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" style="color: currentColor;">
+                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h9"/>
+                    <polyline points="13 2 13 7 18 7"/>
+                    <path d="M18.5 8.5a1.5 1.5 0 0 0-2.12 0L10 14.88V18h3.12l6.38-6.38a1.5 1.5 0 0 0 0-2.12z"/>
+                </svg>
+            </div>
+        `;
 
 			const advancedEditBtn = createClaudeButton(svgContent, 'icon');
 			advancedEditBtn.type = 'button';
 			advancedEditBtn.setAttribute('data-state', 'closed');
 			advancedEditBtn.setAttribute('aria-label', 'Advanced Edit');
 			advancedEditBtn.classList.add('advanced-edit-button');
+			advancedEditBtn.classList.add('h-8', 'w-8');
 
-			// Adjust size to match other buttons
-			advancedEditBtn.classList.remove('h-9', 'w-9');
-			advancedEditBtn.classList.add('h-7', 'w-7');
-
-			// Add tooltip with explicit hide-on-click
 			createClaudeTooltip(advancedEditBtn, 'Advanced Edit', true);
 
-			// Add click handler
 			advancedEditBtn.onclick = async (e) => {
 				e.preventDefault();
 				e.stopPropagation();
 
 				console.log('Advanced edit button clicked');
-
-				// Click the original edit button to enter edit mode
-				directButton.click();
-
-				// Set our intercept flag
+				editButton.click();
 				pendingEditIntercept = true;
 
-				// Auto-submit after a short delay
-				setTimeout(() => {
+				setTimeout(async () => {
 					autoSubmitEdit();
 				}, 100);
 			};
 
-			// Insert button to the left of the existing edit button
-			const buttonParent = directButton.parentElement;
-			buttonParent.style.display = 'flex';
-			buttonParent.style.gap = '2px';
-			buttonParent.style.alignItems = 'center';
-			buttonParent.insertBefore(advancedEditBtn, directButton);
+			// Create wrapper div matching the structure
+			const advancedEditWrapper = document.createElement('div');
+			advancedEditWrapper.className = 'w-fit';
+			advancedEditWrapper.setAttribute('data-state', 'closed');
+			advancedEditWrapper.appendChild(advancedEditBtn);
+
+			// Insert before the edit button wrapper
+			editButtonWrapper.parentElement.insertBefore(advancedEditWrapper, editButtonWrapper);
 		});
 	}
 
@@ -129,8 +131,35 @@
 		const saveButton = document.querySelector('button[type="submit"].bg-text-000');
 
 		if (saveButton) {
-			console.log('Auto-clicking save button');
-			saveButton.click();
+			console.log('Auto-submitting edit');
+
+			// Find the form
+			const form = saveButton.closest('form');
+			if (!form) {
+				setTimeout(autoSubmitEdit, 50);
+				return;
+			}
+
+			// Find the textarea
+			const textarea = form.querySelector('textarea');
+			if (!textarea) {
+				setTimeout(autoSubmitEdit, 50);
+				return;
+			}
+
+			// Focus the textarea
+			textarea.focus();
+
+			// Move cursor to end
+			textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+
+			// Use execCommand to insert text (triggers all events naturally, enables submitting)
+			document.execCommand('insertText', false, ' ');
+
+			// Give it a moment to process, then click
+			setTimeout(() => {
+				saveButton.click();
+			}, 100);
 		} else {
 			// Retry if not found yet
 			setTimeout(autoSubmitEdit, 50);
