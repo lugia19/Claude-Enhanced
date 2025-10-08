@@ -92,7 +92,7 @@ class ClaudeConversation {
 
 			console.log(`Checking for assistant response in ${this.conversationId} (attempt ${attempt + 1}/${maxRetries})...`);
 
-			const messages = await this.getMessages();
+			const messages = await this.getMessages(false, true);
 			const assistantMessage = messages.find(msg => msg.sender === 'assistant');
 
 			if (assistantMessage) {
@@ -119,8 +119,8 @@ class ClaudeConversation {
 	}
 
 	// Get messages (now uses getData)
-	async getMessages(tree = false) {
-		const data = await this.getData(tree);
+	async getMessages(tree = false, forceRefresh = false) {
+		const data = await this.getData(tree, forceRefresh);
 		return data.chat_messages || [];
 	}
 
@@ -193,15 +193,37 @@ class ClaudeConversation {
 
 	// Extract text from message content
 	static extractMessageText(message) {
-		let text = '';
-		if (!message.content) return text;
+		if (!message.content) return '';
 
-		for (const content of message.content) {
-			if (content.text) text += content.text;
-			if (content.content?.text) text += content.content.text;
-			if (content.input?.code) text += content.input.code;
+		const textPieces = [];
+
+		function extractFromContent(content) {
+			if (content.text) {
+				textPieces.push(content.text);
+			}
+			if (content.input) {
+				textPieces.push(JSON.stringify(content.input));
+			}
+			if (content.content) {
+				// Handle nested content array
+				if (Array.isArray(content.content)) {
+					for (const nestedContent of content.content) {
+						extractFromContent(nestedContent);
+					}
+				}
+				// Handle single nested content object
+				else if (typeof content.content === 'object') {
+					extractFromContent(content.content);
+				}
+			}
 		}
-		return text;
+
+		// Process all content items in the message
+		for (const content of message.content) {
+			extractFromContent(content);
+		}
+
+		return textPieces.join('\n');
 	}
 
 	generateUuid() {

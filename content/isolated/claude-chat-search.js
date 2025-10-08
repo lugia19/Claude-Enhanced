@@ -133,7 +133,7 @@
 
 			const header = document.createElement('div');
 			header.className = 'text-sm text-text-200 mb-2';
-			const roleIcon = role === 'human' ? '📝' : '🤖';
+			const roleIcon = role === 'human' ? '👤' : '🤖';
 			const roleName = role === 'human' ? 'User' : 'Claude';
 			header.textContent = `${roleIcon} ${label}`;
 			block.appendChild(header);
@@ -197,39 +197,34 @@
 
 		contentDiv.appendChild(messagesContainer);
 
-		const modal = createClaudeModal({
-			title: 'Message Context',
-			content: contentDiv,
-			confirmText: 'Go to Message',
-			cancelText: 'Cancel',
-			onCancel: () => {
-				// Just close
-			},
-			onConfirm: async () => {
-				// Remove the display ellipses before storing
-				const textToStore = result.matched_text.replace(/^\.\.\./, '').replace(/\.\.\.$/, '');
-				const searchSnippet = simplifyText(textToStore);
-				sessionStorage.setItem('text_to_find', searchSnippet);
+		const modal = new ClaudeModal('Message Context', contentDiv);
 
-				const longestLeaf = conversation.findLongestLeaf(result.matched_message_id);
-				await conversation.setCurrentLeaf(longestLeaf.leafId);
-				window.location.reload();
-			}
+		modal.addCancel('Cancel');
+		modal.addConfirm('Go to Message', async () => {
+			// Remove the display ellipses before storing
+			const textToStore = result.matched_text.replace(/^\.\.\./, '').replace(/\.\.\.$/, '');
+			const searchSnippet = simplifyText(textToStore);
+			sessionStorage.setItem('text_to_find', searchSnippet);
+
+			const longestLeaf = conversation.findLongestLeaf(result.matched_message_id);
+			await conversation.setCurrentLeaf(longestLeaf.leafId);
+			window.location.reload();
 		});
 
 		// Make context modal larger
-		const modalContainer = modal.querySelector('.bg-bg-100');
-		if (modalContainer) {
-			modalContainer.classList.remove('max-w-md');
-			modalContainer.classList.add('max-w-2xl', 'w-[90vw]');
-		}
+		modal.modal.classList.remove('max-w-md');
+		modal.modal.classList.add('max-w-2xl', 'w-[90vw]');
 
-		document.body.appendChild(modal);
+		modal.show();
 	}
 
 	// ======== MAIN SEARCH MODAL ========
 	async function showSearchModal() {
-		// Fetch conversation data first
+		// Show loading modal
+		const loadingModal = createLoadingModal('Loading conversation...');
+		loadingModal.show();
+
+		// Fetch conversation data
 		let conversation;
 		try {
 			const conversationId = getConversationId();
@@ -242,10 +237,19 @@
 			await conversation.getData(true);
 		} catch (error) {
 			console.error('Failed to fetch conversation:', error);
+			loadingModal.destroy();
+
+			// Show error modal
+			const errorModal = new ClaudeModal('Error', 'Failed to load conversation data.');
+			errorModal.addConfirm('OK');
+			errorModal.show();
 			return;
 		}
 
-		// Build the UI
+		// Destroy loading modal
+		loadingModal.destroy();
+
+		// Build the search UI
 		const contentDiv = document.createElement('div');
 
 		// Go to Latest / Go to Longest buttons row
@@ -335,7 +339,7 @@
 
 				const header = document.createElement('div');
 				header.className = 'text-sm text-text-200 mb-1';
-				const roleIcon = result.role === 'human' ? '📝' : '🤖';
+				const roleIcon = result.role === 'human' ? '👤' : '🤖';
 				const roleName = result.role === 'human' ? 'User' : 'Claude';
 				const relativeTime = getRelativeTime(result.timestamp);
 				header.textContent = `${roleIcon} ${roleName} (${result.position} messages ago · ${relativeTime})`;
@@ -377,26 +381,19 @@
 			}
 		});
 
-		// Create and show modal
-		const modal = createClaudeModal({
-			title: 'Search Conversation',
-			content: contentDiv,
-			cancelText: 'Close',
-			onCancel: () => {
-				// Just close
-			}
-		});
+		// Create and show the search modal
+		const modal = new ClaudeModal('Search Conversation', contentDiv);
+		modal.addCancel('Close');
 
 		// Override the max-width
-		const modalContainer = modal.querySelector('.bg-bg-100');
-		if (modalContainer) {
-			modalContainer.classList.remove('max-w-md');
-			modalContainer.classList.add('max-w-xl');
-		}
+		modal.modal.classList.remove('max-w-md');
+		modal.modal.classList.add('max-w-xl');
 
-		document.body.appendChild(modal);
+		modal.show();
+
+		// Focus the search input
+		setTimeout(() => searchInput.focus(), 100);
 	}
-
 	// ======== BUTTON CREATION ========
 	function createSearchButton() {
 		const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

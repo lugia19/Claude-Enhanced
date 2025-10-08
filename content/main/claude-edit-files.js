@@ -200,53 +200,53 @@
 			const editorSection = buildEditorSection(enrichedData);
 			content.appendChild(editorSection);
 
-			const modal = createClaudeModal({
-				title: 'Edit Message',
-				content: content,
-				confirmText: 'Submit Edit',
-				cancelText: 'Cancel',
-				onConfirm: async () => {
-					modal.submitButton.disabled = true;
-					modal.submitButton.style.opacity = '0.5';
-					modal.submitButton.style.cursor = 'not-allowed';
-					const originalText = modal.submitButton.textContent;
-					modal.submitButton.textContent = 'Submitting...';
+			const modal = new ClaudeModal('Edit Message', content);
 
-					const modalData = collectModalData();
+			// Make modal wider
+			modal.modal.classList.remove('max-w-md');
+			modal.modal.classList.add('max-w-2xl');
 
-					try {
-						const modifiedRequest = await formatNewRequest(url, config, modalData);
-						console.log("Resolving request with modified data:", modifiedRequest);
-						resolve(modifiedRequest);
-					} catch (error) {
-						console.error('Error formatting new request:', error);
-						modal.submitButton.disabled = false;
-						modal.submitButton.style.opacity = '1';
-						modal.submitButton.style.cursor = 'pointer';
-						modal.submitButton.style.backgroundColor = '#dc2626';
-						modal.submitButton.textContent = 'Style Error: ' + error.message;
-						setTimeout(() => {
-							modal.submitButton.style.backgroundColor = '';
-							modal.submitButton.textContent = 'Submit Edit';
-						}, 3000);
-						return false; // Keep modal open
-					}
-				},
-				onCancel: () => {
-					reject(new Error('Edit cancelled by user'));
+			// Add cancel button
+			modal.addCancel('Cancel', () => {
+				reject(new Error('Edit cancelled by user'));
+			});
+
+			// Add confirm button with async handling
+			const submitBtn = modal.addConfirm('Submit Edit', async (btn) => {
+				btn.disabled = true;
+				btn.style.opacity = '0.5';
+				btn.style.cursor = 'not-allowed';
+				const originalText = btn.textContent;
+				btn.textContent = 'Submitting...';
+
+				const modalData = collectModalData();
+
+				try {
+					const modifiedRequest = await formatNewRequest(url, config, modalData);
+					console.log("Resolving request with modified data:", modifiedRequest);
+					resolve(modifiedRequest);
+					return true; // Close modal
+				} catch (error) {
+					console.error('Error formatting new request:', error);
+					btn.disabled = false;
+					btn.style.opacity = '1';
+					btn.style.cursor = 'pointer';
+					btn.style.backgroundColor = '#dc2626';
+					btn.textContent = 'Style Error: ' + error.message;
+					setTimeout(() => {
+						btn.style.backgroundColor = '';
+						btn.textContent = originalText;
+					}, 3000);
+					return false; // Keep modal open on error
 				}
 			});
 
-			modal.classList.add('claude-edit-modal');
-			modal.submitButton = Array.from(modal.querySelectorAll('button')).find(
-				btn => btn.textContent === 'Submit Edit'
-			);
+			// Store button reference for upload status updates
+			// Use backdrop since that's what updateSubmitButtonState queries for
+			modal.backdrop.classList.add('claude-edit-modal');
+			modal.backdrop.submitButton = submitBtn;
 
-			const modalContainer = modal.querySelector('.bg-bg-100');
-			modalContainer.classList.remove('max-w-md');
-			modalContainer.classList.add('max-w-2xl');
-
-			document.body.appendChild(modal);
+			modal.show();
 		});
 	}
 

@@ -55,111 +55,77 @@
 		}
 	}
 
-	function createPromptModal(title, placeholder = '') {
-		const input = createClaudeInput({
-			type: 'text',
-			placeholder: placeholder
-		});
-		input.classList.add('preset-name-input', 'mb-4');
-
-		const modal = createClaudeModal({
-			title: title,
-			content: input,
-			confirmText: 'OK',
-			cancelText: 'Cancel',
-			onConfirm: () => { },  // Pass dummy function instead of null
-			onCancel: () => { }    // Pass dummy function instead of null
-		});
-
-		// Store reference to input for easy access
-		modal.inputElement = input;
-
-		return modal;
-	}
-
-	function createConfirmModal(message) {
-		const messageEl = document.createElement('p');
-		messageEl.className = 'text-text-100';
-		messageEl.textContent = message;
-
-		const modal = createClaudeModal({
-			title: null,  // No title for confirm modals
-			content: messageEl,
-			confirmText: 'Confirm',
-			cancelText: 'Cancel',
-			onConfirm: () => { },  // Will be overridden in showConfirm
-			onCancel: () => { }    // Will be overridden in showConfirm
-		});
-
-		return modal;
-	}
-
 	function showPrompt(title, placeholder = '') {
 		return new Promise((resolve) => {
-			const modal = createPromptModal(title, placeholder);
-			document.body.appendChild(modal);
+			const input = createClaudeInput({
+				type: 'text',
+				placeholder: placeholder
+			});
 
-			const input = modal.inputElement;
-			const cancelBtn = modal.querySelector('button.cancel-btn, button:nth-of-type(1)');
-			const confirmBtn = modal.querySelector('button.confirm-btn, button:nth-of-type(2)');
+			const modal = new ClaudeModal(title, input);
 
-			input.focus();
+			modal.addCancel('Cancel', () => {
+				resolve(null);
+			});
 
-			const cleanup = (value) => {
-				modal.remove();
-				resolve(value);
+			modal.addConfirm('OK', () => {
+				resolve(input.value.trim() || null);
+			});
+
+			// Override backdrop click to resolve with null
+			modal.backdrop.onclick = (e) => {
+				if (e.target === modal.backdrop) {
+					modal.hide();
+					resolve(null);
+				}
 			};
 
-			// Override button handlers
-			cancelBtn.onclick = () => cleanup(null);
-			confirmBtn.onclick = () => cleanup(input.value.trim() || null);
+			modal.show();
+
+			// Focus input after modal is shown
+			setTimeout(() => input.focus(), 0);
 
 			// Add keyboard handlers
 			input.onkeydown = (e) => {
-				if (e.key === 'Enter') cleanup(input.value.trim() || null);
-				if (e.key === 'Escape') cleanup(null);
-			};
-
-			// Keep backdrop click to close
-			modal.onclick = (e) => {
-				if (e.target === modal) cleanup(null);
+				if (e.key === 'Enter') {
+					resolve(input.value.trim() || null);
+					modal.hide();
+				}
+				if (e.key === 'Escape') {
+					resolve(null);
+					modal.hide();
+				}
 			};
 		});
 	}
 
 	function showConfirm(message) {
 		return new Promise((resolve) => {
-			const modal = createConfirmModal(message);
-			document.body.appendChild(modal);
+			const messageEl = document.createElement('p');
+			messageEl.className = 'text-text-100';
+			messageEl.textContent = message;
 
-			const cancelBtn = modal.querySelector('button:first-of-type');
-			const confirmBtn = modal.querySelector('button:last-of-type');
+			const modal = new ClaudeModal('', messageEl);
 
-			const cleanup = (value) => {
-				modal.remove();
-				resolve(value);
-			};
+			modal.addCancel('Cancel', () => {
+				resolve(false);
+			});
 
-			// Override button handlers
-			cancelBtn.onclick = () => cleanup(false);
-			confirmBtn.onclick = () => cleanup(true);
+			modal.addConfirm('Confirm', () => {
+				resolve(true);
+			});
 
-			// Keep backdrop click to cancel
-			modal.onclick = (e) => {
-				if (e.target === modal) cleanup(false);
-			};
-
-			// Add keyboard handler for escape
-			const handleKeydown = (e) => {
-				if (e.key === 'Escape') {
-					cleanup(false);
-					document.removeEventListener('keydown', handleKeydown);
+			// Override backdrop click to resolve with false
+			modal.backdrop.onclick = (e) => {
+				if (e.target === modal.backdrop) {
+					modal.hide();
+					resolve(false);
 				}
 			};
-			document.addEventListener('keydown', handleKeydown);
+
+			modal.show();
 		});
 	}
-
 
 	// ======== PRESET MANAGEMENT ========
 	async function getStoredPresets() {

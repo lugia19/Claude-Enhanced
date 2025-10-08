@@ -26,7 +26,6 @@
 		button.setAttribute('data-state', 'closed');
 		button.setAttribute('aria-label', 'Fork from here');
 
-		// Override default size if needed
 		button.classList.remove('h-9', 'w-9');
 		button.classList.add('h-8', 'w-8');
 
@@ -36,15 +35,14 @@
 			e.preventDefault();
 			e.stopPropagation();
 
-			const modal = await createModal(button);
-			document.body.appendChild(modal);
+			const modal = await createConfigModal(button);
+			modal.show();
 		};
 
 		return button;
 	}
 
-	async function createModal(forkButton) {
-		// Create the content programmatically
+	async function createConfigModal(forkButton) {
 		const content = document.createElement('div');
 
 		// Model select
@@ -105,13 +103,12 @@
 		promptLabel.textContent = 'Summary Prompt:';
 		summaryPromptContainer.appendChild(promptLabel);
 
-
 		const promptInput = document.createElement('textarea');
 		promptInput.className = CLAUDE_CLASSES.INPUT;
 		promptInput.placeholder = 'Enter custom summary prompt...';
 		promptInput.value = defaultSummaryPrompt;
 		promptInput.rows = 10;
-		promptInput.style.resize = 'vertical'; // Allow vertical resizing
+		promptInput.style.resize = 'vertical';
 		promptInput.id = 'summaryPrompt';
 		summaryPromptContainer.appendChild(promptInput);
 
@@ -133,36 +130,27 @@
 		content.appendChild(includeFilesContainer);
 
 		// Create modal
-		const modal = createClaudeModal({
-			title: 'Choose Model for Fork',
-			content: content,
-			confirmText: 'Fork Chat',
-			cancelText: 'Cancel',
-			onConfirm: async (confirmBtn) => {
-				const model = modelSelect.value;
-				const useSummary = modal.querySelector('#summaryMode').checked;
-				const customPrompt = modal.querySelector('#summaryPrompt')?.value;
+		const modal = new ClaudeModal('Choose Model for Fork', content);
 
-				confirmBtn.disabled = true;
-				confirmBtn.textContent = 'Processing...';
+		// Wider modal
+		modal.modal.classList.remove('max-w-md');
+		modal.modal.classList.add('max-w-lg');
 
-				await forkConversationClicked(model, forkButton, modal, useSummary, customPrompt);
-				return false; // Prevent auto-close
-			},
-			onCancel: () => {
-				// Auto-closes, no need to do anything
-			}
+		modal.addCancel();
+		modal.addConfirm('Fork Chat', async () => {
+			const model = modelSelect.value;
+			const useSummary = summaryToggle.input.checked;
+			const customPrompt = promptInput.value;
+			const includeFiles = includeFilesToggle.input.checked;
+
+			// Destroy config modal and show loading modal
+			modal.destroy();
+			await forkConversationClicked(model, forkButton, useSummary, customPrompt, includeFiles);
+
+			return false; // Modal already destroyed
 		});
 
-		const modalContainer = modal.querySelector('.' + CLAUDE_CLASSES.MODAL_CONTAINER.split(' ')[0]);
-		if (modalContainer) {
-			modalContainer.classList.remove('max-w-md');
-			modalContainer.classList.add('max-w-lg');
-		}
-
-		// Store reference to select for easy access
-		modal.modelSelect = modelSelect;
-
+		// Fetch account settings
 		try {
 			const accountData = await getAccountSettings();
 			pendingFork.originalSettings = accountData.settings;
@@ -182,90 +170,96 @@
 	}
 	//#endregion
 
-	async function forkConversationClicked(model, forkButton, modal) {
-		// Get conversation ID from URL
-		const conversationId = window.location.pathname.split('/').pop();
-		console.log('Forking conversation', conversationId, 'with model', model);
+	async function forkConversationClicked(model, forkButton, useSummary, customPrompt, includeFiles) {
+		const loadingModal = createLoadingModal('Preparing to fork conversation...');
+		loadingModal.show();
 
-		if (pendingFork.originalSettings) {
-			const newSettings = { ...pendingFork.originalSettings };
-			newSettings.paprika_mode = null; // Ensure it's off when we create the conversation (will be overridden to on if needed)
-			console.log('Updating settings:', newSettings);
-			await updateAccountSettings(newSettings);
-		}
+		try {
+			const conversationId = getConversationId();
+			console.log('Forking conversation', conversationId, 'with model', model);
 
-		// Set up our global to catch the next retry request
-		pendingFork.model = model;
-		pendingFork.includeAttachments = modal.querySelector('#includeFiles')?.checked ?? true;
-		pendingFork.useSummary = modal.querySelector('#summaryMode').checked;
-		pendingFork.summaryPrompt = modal.querySelector('#summaryPrompt')?.value || defaultSummaryPrompt;
-
-		// Find and click the retry button in the same control group as our fork button
-		const buttonGroup = forkButton.closest('.justify-between');
-		const retryButton = Array.from(buttonGroup.querySelectorAll('button'))
-			.find(button => button.textContent.includes('Retry'));
-
-		if (retryButton) {
-			// Dispatch pointerdown event which Radix UI components use
-			retryButton.dispatchEvent(new PointerEvent('pointerdown', {
-				bubbles: true,
-				cancelable: true,
-				view: window,
-				pointerType: 'mouse'
-			}));
-
-			// Wait for the dropdown to appear
-			await new Promise(resolve => setTimeout(resolve, 300));
-
-			// Look for the dropdown menu with "With no changes" option
-			const withNoChangesOption = Array.from(document.querySelectorAll('[role="menuitem"]'))
-				.find(element => element.textContent.includes('With no changes'));
-
-			if (withNoChangesOption) {
-				console.log('Detected retry dropdown, clicking "With no changes"');
-				// For the menu item, a regular click should work
-				withNoChangesOption.click();
-			} else {
-				console.log('No dropdown detected, assuming direct retry');
-				retryButton.click();
-				// If no dropdown appeared, the retry might have been triggered directly
+			if (pendingFork.originalSettings) {
+				const newSettings = { ...pendingFork.originalSettings };
+				newSettings.paprika_mode = null;
+				console.log('Updating settings:', newSettings);
+				await updateAccountSettings(newSettings);
 			}
-		} else {
-			console.error('Could not find retry button');
+
+			// Set up our global to catch the next retry request
+			pendingFork.model = model;
+			pendingFork.includeAttachments = includeFiles;
+			pendingFork.useSummary = useSummary;
+			pendingFork.summaryPrompt = customPrompt || defaultSummaryPrompt;
+			pendingFork.loadingModal = loadingModal; // Store reference for updates
+
+			loadingModal.setContent(createLoadingContent('Triggering fork process...'));
+
+			// Find and click the retry button
+			const buttonGroup = forkButton.closest('.justify-between');
+			const retryButton = Array.from(buttonGroup.querySelectorAll('button'))
+				.find(button => button.textContent.includes('Retry'));
+
+			if (retryButton) {
+				retryButton.dispatchEvent(new PointerEvent('pointerdown', {
+					bubbles: true,
+					cancelable: true,
+					view: window,
+					pointerType: 'mouse'
+				}));
+
+				await new Promise(resolve => setTimeout(resolve, 300));
+
+				const withNoChangesOption = Array.from(document.querySelectorAll('[role="menuitem"]'))
+					.find(element => element.textContent.includes('With no changes'));
+
+				if (withNoChangesOption) {
+					console.log('Detected retry dropdown, clicking "With no changes"');
+					withNoChangesOption.click();
+				} else {
+					console.log('No dropdown detected, assuming direct retry');
+					retryButton.click();
+				}
+			} else {
+				throw new Error('Could not find retry button');
+			}
+		} catch (error) {
+			console.error('Failed to fork conversation:', error);
+			loadingModal.setTitle('Error');
+			loadingModal.setContent(`Failed to fork conversation: ${error.message}`);
+			loadingModal.clearButtons();
+			loadingModal.addConfirm('OK');
 		}
+	}
+
+	function createLoadingContent(text) {
+		const div = document.createElement('div');
+		div.className = 'flex items-center gap-3';
+		div.innerHTML = `
+			<div class="claude-modal-spinner rounded-full h-5 w-5 border-2 border-border-300" style="border-top-color: #2c84db"></div>
+			<span class="text-text-200">${text}</span>
+		`;
+		return div;
 	}
 
 	//#region Convo extraction & Other API
 
 	async function getConversationContext(orgId, conversationId, targetParentUuid) {
-		const response = await fetch(`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=False&rendering_mode=messages&render_all_tools=true`);
-		const conversationData = await response.json();
+		const conversation = new ClaudeConversation(orgId, conversationId);
+		const conversationData = await conversation.getData(false);
 
 		let messages = [];
-		let fullMessageObjects = []; // NEW: Store the complete message objects
+		let fullMessageObjects = [];
 		let projectUuid = conversationData?.project?.uuid || null;
 		const chatName = conversationData.name;
-		const files = []
-		const syncsources = []
-		const attachments = []
+		const files = [];
+		const syncsources = [];
+		const attachments = [];
 
 		for (const message of conversationData.chat_messages) {
-			let messageContent = [];
+			// Extract message text using the ClaudeConversation helper
+			const messageContent = ClaudeConversation.extractMessageText(message);
 
-			// Process content array
-			for (const content of message.content) {
-				if (content.text) {
-					messageContent.push(content.text);
-				}
-				if (content.input?.code) {
-					messageContent.push(content.input.code);
-				}
-				if (content.content?.text) {
-					messageContent.push(content.content.text);
-				}
-			}
-
-			// Process files with download URLs
+			// Collect files
 			if (message.files_v2) {
 				for (const file of message.files_v2) {
 					let fileUrl;
@@ -286,21 +280,20 @@
 				}
 			}
 
-			// Add attachment objects
+			// Collect attachments
 			if (message.attachments) {
 				for (const attachment of message.attachments) {
 					attachments.push(attachment);
 				}
 			}
 
-			// Process sync sources
+			// Collect sync sources
 			for (const sync of message.sync_sources) {
 				syncsources.push(sync);
 			}
 
-			messages.push(messageContent.join(' '));
+			messages.push(messageContent);
 
-			// NEW: Store the full message object (excluding some fields we don't need)
 			fullMessageObjects.push({
 				uuid: message.uuid,
 				parent_message_uuid: message.parent_message_uuid,
@@ -311,10 +304,8 @@
 				attachments: message.attachments,
 				sync_sources: message.sync_sources,
 				created_at: message.created_at,
-				// Add any other fields the UI needs for rendering
 			});
 
-			// Process until we find a message that has our target UUID as parent
 			if (message.parent_message_uuid === targetParentUuid) {
 				break;
 			}
@@ -324,7 +315,7 @@
 			return {
 				chatName,
 				messages,
-				fullMessageObjects, // NEW
+				fullMessageObjects,
 				syncsources: [],
 				attachments: [],
 				files: [],
@@ -335,7 +326,7 @@
 		return {
 			chatName,
 			messages,
-			fullMessageObjects, // NEW
+			fullMessageObjects,
 			syncsources,
 			attachments,
 			files,
@@ -367,21 +358,17 @@
 
 	//#region Convo forking
 
-
 	async function createForkedConversation(orgId, context, model, styleData) {
 		if (!context.chatName || context.chatName.trim() === '') context.chatName = "Untitled"
 		const newName = `Fork of ${context.chatName}`;
 
-		// Create a new chat conversation
 		const conversation = new ClaudeConversation(orgId);
 		const newUuid = await conversation.create(newName, model, context.projectUuid);
 
-		// Store the fork history BEFORE sending the initial message
 		if (context.fullMessageObjects && context.fullMessageObjects.length > 0) {
 			storePhantomMessages(newUuid, context.fullMessageObjects);
 		}
 
-		// Create the chatlog (existing code)
 		if (context.messages) {
 			const chatlog = context.messages.map((msg, index) => {
 				const role = index % 2 === 0 ? 'User' : 'Assistant';
@@ -400,7 +387,6 @@
 			? "This conversation is forked from the attached chatlog.txt\nYou are Assistant. Simply say 'Acknowledged' and wait for user input."
 			: "This conversation is forked based on the summary in conversation_summary.txt\nYou are Assistant. Simply say 'Acknowledged' and wait for user input.";
 
-		// Send initial message and wait for response
 		await conversation.sendMessageAndWaitForResponse(message, {
 			model: model,
 			attachments: context.attachments,
@@ -413,20 +399,16 @@
 		return newUuid;
 	}
 
-
 	async function generateSummary(orgId, context, summaryPrompt) {
-		// Create a temporary conversation for summarization
 		const summaryConvoName = `Temp_Summary_${Date.now()}`;
 		const conversation = new ClaudeConversation(orgId);
 
-		// Check if user is pro for paprika mode
 		const userType = await getUserType(orgId);
 		const paprikaMode = userType !== 'free';
 
 		const summaryConvoId = await conversation.create(summaryConvoName, null, context.projectUuid, paprikaMode);
 
 		try {
-			// Create the chatlog
 			const chatlog = context.messages.map((msg, index) => {
 				const role = index % 2 === 0 ? 'User' : 'Assistant';
 				return `${role}\n${msg}`;
@@ -439,7 +421,6 @@
 				"file_type": "text/plain"
 			}];
 
-			// Ask the model to create a summary
 			const assistantMessage = await conversation.sendMessageAndWaitForResponse(summaryPrompt, {
 				attachments: summaryAttachments,
 				files: [],
@@ -447,12 +428,10 @@
 				waitMinutes: 2
 			});
 
-			// Extract the text of the summary using the static helper
 			const summaryText = ClaudeConversation.extractMessageText(assistantMessage);
 
 			return summaryText;
 		} finally {
-			// Delete the temporary summarization conversation
 			await conversation.delete();
 		}
 	}
@@ -463,7 +442,6 @@
 	window.fetch = async (...args) => {
 		const [input, config] = args;
 
-		// Get the URL string whether it's a string or Request object
 		let url = undefined
 		if (input instanceof URL) {
 			url = input.href
@@ -473,7 +451,6 @@
 			url = input.url
 		}
 
-		// In the fetch patching section
 		if (url && url.includes('/retry_completion') && pendingFork.model) {
 			console.log('Intercepted retry request:', config?.body);
 			const bodyJSON = JSON.parse(config?.body);
@@ -483,17 +460,27 @@
 			const conversationId = urlParts[urlParts.indexOf('chat_conversations') + 1];
 
 			let styleData = bodyJSON?.personalized_styles;
+			const loadingModal = pendingFork.loadingModal;
 
 			try {
-				// Get conversation context
+				if (loadingModal) {
+					loadingModal.setContent(createLoadingContent('Getting conversation context...'));
+				}
+
 				console.log('Getting conversation context, pendingFork.includeAttachments:', pendingFork.includeAttachments);
 				const context = await getConversationContext(orgId, conversationId, messageID);
 
-				// Process files and sync sources if needed
 				if (pendingFork.includeAttachments) {
+					if (loadingModal) {
+						loadingModal.setContent(createLoadingContent('Downloading files...'));
+					}
+
 					const downloadedFiles = await downloadFiles(context.files);
 
-					// Parallel processing of files and syncs
+					if (loadingModal) {
+						loadingModal.setContent(createLoadingContent('Uploading files to new conversation...'));
+					}
+
 					[context.files, context.syncsources] = await Promise.all([
 						Promise.all(downloadedFiles.map(async file => {
 							const metadata = await uploadFile(orgId, file);
@@ -509,30 +496,43 @@
 				let newConversationId;
 
 				if (pendingFork.useSummary) {
-					// Generate summary
+					if (loadingModal) {
+						loadingModal.setContent(createLoadingContent('Generating conversation summary...'));
+					}
+
 					console.log("Generating summary for forking");
 					const summary = await generateSummary(orgId, context, pendingFork.summaryPrompt);
+
 					if (summary === null) {
 						throw new Error('Failed to generate summary. This may be due to service disruption or usage limits.');
-					} else {
-						// Prepare context for summary-based fork
-						const summaryContext = { ...context };
-						summaryContext.messages = null;  // Don't generate chatlog
-						summaryContext.attachments = [{
-							"extracted_content": summary,
-							"file_name": "conversation_summary.txt",
-							"file_size": 0,
-							"file_type": "text/plain"
-						}];
-						// Create forked conversation with summary
-						newConversationId = await createForkedConversation(orgId, summaryContext, pendingFork.model, styleData);
 					}
+
+					const summaryContext = { ...context };
+					summaryContext.messages = null;
+					summaryContext.attachments = [{
+						"extracted_content": summary,
+						"file_name": "conversation_summary.txt",
+						"file_size": 0,
+						"file_type": "text/plain"
+					}];
+
+					if (loadingModal) {
+						loadingModal.setContent(createLoadingContent('Creating forked conversation...'));
+					}
+
+					newConversationId = await createForkedConversation(orgId, summaryContext, pendingFork.model, styleData);
 				} else {
-					// Standard workflow with full chatlog
+					if (loadingModal) {
+						loadingModal.setContent(createLoadingContent('Creating forked conversation...'));
+					}
+
 					newConversationId = await createForkedConversation(orgId, context, pendingFork.model, styleData);
 				}
 
-				// Navigate to new conversation in 100ms
+				if (loadingModal) {
+					loadingModal.setContent(createLoadingContent('Fork complete! Redirecting...'));
+				}
+
 				console.log('Forked conversation created:', newConversationId);
 				setTimeout(() => {
 					window.location.href = `/chat/${newConversationId}`;
@@ -540,6 +540,13 @@
 
 			} catch (error) {
 				console.error('Failed to fork conversation:', error);
+
+				if (loadingModal) {
+					loadingModal.setTitle('Error');
+					loadingModal.setContent(`Failed to fork conversation: ${error.message}`);
+					loadingModal.clearButtons();
+					loadingModal.addConfirm('OK');
+				}
 			} finally {
 				if (pendingFork.originalSettings) {
 					await updateAccountSettings(pendingFork.originalSettings);
@@ -549,7 +556,8 @@
 					includeAttachments: true,
 					useSummary: false,
 					summaryPrompt: defaultSummaryPrompt,
-					originalSettings: null
+					originalSettings: null,
+					loadingModal: null
 				};
 			}
 
@@ -560,6 +568,5 @@
 	};
 	//#endregion
 
-	//Check for buttons every 3 seconds
 	setInterval(addBranchButtons, 3000);
 })();

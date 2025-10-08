@@ -96,11 +96,8 @@
 			'icon'
 		);
 
-		// Add custom classes for identification
 		button.classList.add('shrink-0', 'style-selector-button');
-
-		// Create tooltip and store reference for updates
-		createClaudeTooltip(button, 'Chat style: Use current');;
+		createClaudeTooltip(button, 'Chat style: Use current');
 
 		button.onclick = async () => {
 			await showStyleModal();
@@ -109,8 +106,6 @@
 		return button;
 	}
 
-
-
 	async function showStyleModal() {
 		const conversationId = getConversationId();
 		if (!conversationId) {
@@ -118,65 +113,70 @@
 			return;
 		}
 
-		// Fetch available styles
-		const styles = await fetchAvailableStyles();
+		// Show loading modal immediately
+		const loadingModal = createLoadingModal('Loading styles...');
+		loadingModal.show();
 
-		// Get current selection
-		const result = await chrome.storage.local.get(`style_${conversationId}`);
-		const currentStyle = result[`style_${conversationId}`] || null;
-		const currentStyleId = currentStyle ? currentStyle.key : 'none';
+		try {
+			// Fetch styles in background
+			const styles = await fetchAvailableStyles();
 
-		// Build custom content for the modal
-		const contentContainer = document.createElement('div');
+			// Get current selection
+			const result = await chrome.storage.local.get(`style_${conversationId}`);
+			const currentStyle = result[`style_${conversationId}`] || null;
+			const currentStyleId = currentStyle ? currentStyle.key : 'none';
 
-		// Create select with options
-		const selectOptions = styles.map(style => ({
-			value: style.key,
-			label: style.name
-		}));
+			// Destroy loading modal
+			loadingModal.destroy();
 
-		const select = createClaudeSelect(selectOptions, currentStyleId);
-		select.classList.add('mb-4');
+			// Build content for the modal
+			const contentContainer = document.createElement('div');
 
-		// Info text
-		const infoText = document.createElement('div');
-		infoText.className = CLAUDE_CLASSES.TEXT_MUTED + ' mb-4';
-		infoText.textContent = 'This style will override your default style for this chat only.';
+			// Create select with options
+			const selectOptions = styles.map(style => ({
+				value: style.key,
+				label: style.name
+			}));
 
-		contentContainer.appendChild(select);
-		contentContainer.appendChild(infoText);
+			const select = createClaudeSelect(selectOptions, currentStyleId);
+			select.classList.add('mb-4');
 
-		// Create modal and return promise
-		return new Promise((resolve) => {
-			const modal = createClaudeModal({
-				title: 'Select Chat Style',
-				content: contentContainer,
-				confirmText: 'Apply',
-				cancelText: 'Cancel',
-				onConfirm: async () => {
-					const selectedUuid = select.value;
-					if (selectedUuid === 'none') {
-						// Clear the style for this conversation
-						await chrome.storage.local.remove(`style_${conversationId}`);
-					} else {
-						// Find the full style object
-						const selectedStyle = styles.find(s => s.key === selectedUuid);
-						if (selectedStyle && selectedStyle.type !== 'none') {
-							await chrome.storage.local.set({ [`style_${conversationId}`]: selectedStyle });
-						}
+			// Info text
+			const infoText = document.createElement('div');
+			infoText.className = CLAUDE_CLASSES.TEXT_MUTED;
+			infoText.textContent = 'This style will override your default style for this chat only.';
+
+			contentContainer.appendChild(select);
+			contentContainer.appendChild(infoText);
+
+			// Create and show the style modal
+			const modal = new ClaudeModal('Select Chat Style', contentContainer);
+			modal.addCancel();
+			modal.addConfirm('Apply', async () => {
+				const selectedUuid = select.value;
+				if (selectedUuid === 'none') {
+					await chrome.storage.local.remove(`style_${conversationId}`);
+				} else {
+					const selectedStyle = styles.find(s => s.key === selectedUuid);
+					if (selectedStyle && selectedStyle.type !== 'none') {
+						await chrome.storage.local.set({ [`style_${conversationId}`]: selectedStyle });
 					}
-
-					// Update button appearance
-					await updateButtonAppearance();
-					resolve(selectedUuid);
-				},
-				onCancel: () => {
-					resolve(null);
 				}
+
+				await updateButtonAppearance();
 			});
 
-			document.body.appendChild(modal);
-		});
+			modal.show();
+
+		} catch (error) {
+			console.error('Error loading styles:', error);
+			loadingModal.destroy();
+
+			// Show error modal
+			const errorModal = new ClaudeModal('Error', 'Failed to load styles. Please try again.');
+			errorModal.addConfirm('OK');
+			errorModal.show();
+		}
 	}
 
 	async function updateButtonAppearance() {
@@ -197,7 +197,6 @@
 			if (!styleStillExists) {
 				console.log(`Style "${currentStyle.name}" no longer exists, clearing selection`);
 				await chrome.storage.local.remove(`style_${conversationId}`);
-				// Reset to show "Use current"
 				button.style.color = '';
 				button.tooltip?.updateText("Chat style: Use current");
 				return;
@@ -205,11 +204,9 @@
 		}
 
 		if (currentStyle) {
-			// Style is selected and valid - make button blue
 			button.style.color = '#0084ff';
 			button.tooltip?.updateText(`Chat style: ${currentStyle.name}`);
 		} else {
-			// No style selected - using global default
 			button.style.color = '';
 			button.tooltip?.updateText("Chat style: Use current");
 		}
@@ -217,19 +214,16 @@
 
 	// ======== INITIALIZATION ========
 	function initialize() {
-		// Try to add the button immediately
 		if (tryAddTopRightButton('style-selector-button', createStyleButton)) {
 			updateButtonAppearance();
 		}
 
-		// Check every second for SPA navigation
 		setInterval(async () => {
 			if (tryAddTopRightButton('style-selector-button', createStyleButton)) {
 				await updateButtonAppearance();
 			}
 		}, 1000);
 
-		// Also update button appearance when URL changes (conversation switch)
 		let lastUrl = window.location.href;
 		setInterval(async () => {
 			if (window.location.href !== lastUrl) {
@@ -242,7 +236,6 @@
 	if (document.readyState === 'loading') {
 		document.addEventListener('DOMContentLoaded', initialize);
 	} else {
-		// DOM is already ready
 		initialize();
 	}
 })();

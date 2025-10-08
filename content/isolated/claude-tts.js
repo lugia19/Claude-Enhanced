@@ -886,147 +886,169 @@
 	//#endregion
 
 	//#region Settings Modal
+	//#region Settings Modal
 	async function createSettingsModal() {
-		const settings = await loadSettings();
-		const conversationId = getConversationId();
+		// Show loading modal immediately
+		const loadingModal = createLoadingModal('Loading settings...');
+		loadingModal.show();
 
-		// Load per-chat settings
-		const quotesResult = await chrome.storage.local.get(`chatQuotesOnly_${conversationId}`);
-		const chatQuotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] === true;
+		try {
+			const settings = await loadSettings();
+			const conversationId = getConversationId();
 
-		const voiceResult = await chrome.storage.local.get(`chatVoice_${conversationId}`);
-		const chatVoiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
+			// Load per-chat settings
+			const [quotesResult, voiceResult, actorResult] = await Promise.all([
+				chrome.storage.local.get(`chatQuotesOnly_${conversationId}`),
+				chrome.storage.local.get(`chatVoice_${conversationId}`),
+				chrome.storage.local.get(`chatActorMode_${conversationId}`)
+			]);
 
-		const actorResult = await chrome.storage.local.get(`chatActorMode_${conversationId}`);
-		const actorModeEnabled = actorResult[`chatActorMode_${conversationId}`] === true;
+			const chatQuotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] === true;
+			const chatVoiceOverride = voiceResult[`chatVoice_${conversationId}`] || '';
+			const actorModeEnabled = actorResult[`chatActorMode_${conversationId}`] === true;
 
-		// Build content
-		const content = document.createElement('div');
+			// Load voices and models if API key exists
+			let voices = [];
+			let models = [];
+			if (settings.apiKey) {
+				[voices, models] = await Promise.all([
+					getVoices(settings.apiKey),
+					getModels(settings.apiKey)
+				]);
+			}
 
-		// Enable TTS toggle
-		const enableSection = document.createElement('div');
-		enableSection.className = 'mb-4';
-		const enabledToggle = createClaudeToggle('Enable TTS', settings.enabled, null);
-		enableSection.appendChild(enabledToggle.container);
-		content.appendChild(enableSection);
+			// Close loading modal and show the actual settings modal
+			loadingModal.destroy();
 
-		// API Key input
-		const apiKeySection = document.createElement('div');
-		apiKeySection.className = 'mb-4';
-		const apiKeyLabel = document.createElement('label');
-		apiKeyLabel.className = CLAUDE_CLASSES.LABEL;
-		apiKeyLabel.textContent = 'ElevenLabs API Key';
-		apiKeySection.appendChild(apiKeyLabel);
-		const apiKeyInput = createClaudeInput({
-			type: 'password',
-			value: settings.apiKey || '',
-			placeholder: 'Enter your API key'
-		});
-		apiKeyInput.id = 'apiKeyInput';
-		apiKeySection.appendChild(apiKeyInput);
-		content.appendChild(apiKeySection);
+			// Build content
+			const content = document.createElement('div');
 
-		// Voice select
-		const voiceSection = document.createElement('div');
-		voiceSection.className = 'mb-4';
-		const voiceLabel = document.createElement('label');
-		voiceLabel.className = CLAUDE_CLASSES.LABEL;
-		voiceLabel.textContent = 'Voice';
-		voiceSection.appendChild(voiceLabel);
-		const voiceSelect = createClaudeSelect(
-			[{ value: '', label: 'Set an API key...' }],
-			settings.voice || ''
-		);
-		voiceSelect.id = 'voiceSelect';
-		voiceSelect.disabled = !settings.apiKey;
-		voiceSection.appendChild(voiceSelect);
-		content.appendChild(voiceSection);
+			// Enable TTS toggle
+			const enableSection = document.createElement('div');
+			enableSection.className = 'mb-4';
+			const enabledToggle = createClaudeToggle('Enable TTS', settings.enabled, null);
+			enableSection.appendChild(enabledToggle.container);
+			content.appendChild(enableSection);
 
-		// Model select
-		const modelSection = document.createElement('div');
-		modelSection.className = 'mb-4';
-		const modelLabel = document.createElement('label');
-		modelLabel.className = CLAUDE_CLASSES.LABEL;
-		modelLabel.textContent = 'Model';
-		modelSection.appendChild(modelLabel);
-		const modelSelect = createClaudeSelect(
-			[{ value: '', label: 'Set an API key...' }],
-			settings.model || ''
-		);
-		modelSelect.id = 'modelSelect';
-		modelSelect.disabled = !settings.apiKey;
-		modelSection.appendChild(modelSelect);
-		content.appendChild(modelSection);
+			// API Key input
+			const apiKeySection = document.createElement('div');
+			apiKeySection.className = 'mb-4';
+			const apiKeyLabel = document.createElement('label');
+			apiKeyLabel.className = CLAUDE_CLASSES.LABEL;
+			apiKeyLabel.textContent = 'ElevenLabs API Key';
+			apiKeySection.appendChild(apiKeyLabel);
+			const apiKeyInput = createClaudeInput({
+				type: 'password',
+				value: settings.apiKey || '',
+				placeholder: 'Enter your API key'
+			});
+			apiKeyInput.id = 'apiKeyInput';
+			apiKeySection.appendChild(apiKeyInput);
+			content.appendChild(apiKeySection);
 
-		// Auto-speak toggle
-		const autoSpeakSection = document.createElement('div');
-		autoSpeakSection.className = 'mb-4';
-		const autoSpeakToggle = createClaudeToggle('Auto-speak new messages', settings.autoSpeak, null);
-		autoSpeakSection.appendChild(autoSpeakToggle.container);
-		content.appendChild(autoSpeakSection);
+			// Voice select
+			const voiceSection = document.createElement('div');
+			voiceSection.className = 'mb-4';
+			const voiceLabel = document.createElement('label');
+			voiceLabel.className = CLAUDE_CLASSES.LABEL;
+			voiceLabel.textContent = 'Voice';
+			voiceSection.appendChild(voiceLabel);
 
-		// Per-Chat Settings Section
-		const perChatSection = document.createElement('div');
-		perChatSection.className = 'border-t border-border-300 pt-4 mt-4';
+			const voiceOptions = voices.length > 0
+				? voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }))
+				: [{ value: '', label: 'Set an API key...' }];
+			const voiceSelect = createClaudeSelect(voiceOptions, settings.voice || '');
+			voiceSelect.id = 'voiceSelect';
+			voiceSelect.disabled = !settings.apiKey;
+			voiceSection.appendChild(voiceSelect);
+			content.appendChild(voiceSection);
 
-		const perChatHeading = document.createElement('h4');
-		perChatHeading.className = 'text-sm font-semibold text-text-200 mb-3';
-		perChatHeading.textContent = 'Per-Chat Settings';
-		perChatSection.appendChild(perChatHeading);
+			// Model select
+			const modelSection = document.createElement('div');
+			modelSection.className = 'mb-4';
+			const modelLabel = document.createElement('label');
+			modelLabel.className = CLAUDE_CLASSES.LABEL;
+			modelLabel.textContent = 'Model';
+			modelSection.appendChild(modelLabel);
 
-		// Quotes only toggle
-		const quotesSection = document.createElement('div');
-		quotesSection.className = 'mb-4';
-		const quotesOnlyToggle = createClaudeToggle('Only speak quoted text', chatQuotesOnly, null);
-		quotesSection.appendChild(quotesOnlyToggle.container);
-		perChatSection.appendChild(quotesSection);
+			const modelOptions = models.length > 0
+				? models.map(m => ({ value: m.model_id, label: m.name }))
+				: [{ value: '', label: 'Set an API key...' }];
+			const modelSelect = createClaudeSelect(modelOptions, settings.model || '');
+			modelSelect.id = 'modelSelect';
+			modelSelect.disabled = !settings.apiKey;
+			modelSection.appendChild(modelSelect);
+			content.appendChild(modelSection);
 
-		// Voice override select
-		const overrideSection = document.createElement('div');
-		overrideSection.className = 'mb-4';
-		const overrideLabel = document.createElement('label');
-		overrideLabel.className = CLAUDE_CLASSES.LABEL;
-		overrideLabel.textContent = 'Voice Override';
-		overrideSection.appendChild(overrideLabel);
-		const chatVoiceOverrideSelect = createClaudeSelect(
-			[{ value: '', label: 'Use default voice' }],
-			chatVoiceOverride
-		);
-		chatVoiceOverrideSelect.id = 'chatVoiceOverride';
-		chatVoiceOverrideSelect.disabled = !settings.apiKey;
-		overrideSection.appendChild(chatVoiceOverrideSelect);
-		perChatSection.appendChild(overrideSection);
+			// Auto-speak toggle
+			const autoSpeakSection = document.createElement('div');
+			autoSpeakSection.className = 'mb-4';
+			const autoSpeakToggle = createClaudeToggle('Auto-speak new messages', settings.autoSpeak, null);
+			autoSpeakSection.appendChild(autoSpeakToggle.container);
+			content.appendChild(autoSpeakSection);
 
-		// Actor mode section
-		const actorSection = document.createElement('div');
-		actorSection.className = 'mb-4';
-		const actorContainer = document.createElement('div');
-		actorContainer.className = 'flex items-center justify-between';
+			// Per-Chat Settings Section
+			const perChatSection = document.createElement('div');
+			perChatSection.className = 'border-t border-border-300 pt-4 mt-4';
 
-		const actorToggleContainer = document.createElement('div');
-		actorToggleContainer.className = 'flex-1';
-		const actorModeToggle = createClaudeToggle('Actor mode', actorModeEnabled, null);
-		actorToggleContainer.appendChild(actorModeToggle.container);
-		actorContainer.appendChild(actorToggleContainer);
+			const perChatHeading = document.createElement('h4');
+			perChatHeading.className = 'text-sm font-semibold text-text-200 mb-3';
+			perChatHeading.textContent = 'Per-Chat Settings';
+			perChatSection.appendChild(perChatHeading);
 
-		const configureActorsBtn = createClaudeButton('Configure Characters', 'secondary');
-		configureActorsBtn.id = 'configureActorsBtn';
-		configureActorsBtn.style.display = actorModeEnabled ? 'block' : 'none';
-		configureActorsBtn.classList.add('ml-2');
-		actorContainer.appendChild(configureActorsBtn);
+			// Quotes only toggle
+			const quotesSection = document.createElement('div');
+			quotesSection.className = 'mb-4';
+			const quotesOnlyToggle = createClaudeToggle('Only speak quoted text', chatQuotesOnly, null);
+			quotesSection.appendChild(quotesOnlyToggle.container);
+			perChatSection.appendChild(quotesSection);
 
-		actorSection.appendChild(actorContainer);
-		perChatSection.appendChild(actorSection);
+			// Voice override select
+			const overrideSection = document.createElement('div');
+			overrideSection.className = 'mb-4';
+			const overrideLabel = document.createElement('label');
+			overrideLabel.className = CLAUDE_CLASSES.LABEL;
+			overrideLabel.textContent = 'Voice Override';
+			overrideSection.appendChild(overrideLabel);
 
-		content.appendChild(perChatSection);
+			const overrideOptions = [
+				{ value: '', label: 'Use default voice' },
+				...voiceOptions.filter(opt => opt.value) // Exclude "Set an API key..." option
+			];
+			const chatVoiceOverrideSelect = createClaudeSelect(overrideOptions, chatVoiceOverride);
+			chatVoiceOverrideSelect.id = 'chatVoiceOverride';
+			chatVoiceOverrideSelect.disabled = !settings.apiKey;
+			overrideSection.appendChild(chatVoiceOverrideSelect);
+			perChatSection.appendChild(overrideSection);
 
-		// Create modal with buttons
-		const modal = createClaudeModal({
-			title: 'TTS Settings',
-			content: content,
-			confirmText: 'Save',
-			cancelText: 'Cancel',
-			onConfirm: async () => {
+			// Actor mode section
+			const actorSection = document.createElement('div');
+			actorSection.className = 'mb-4';
+			const actorContainer = document.createElement('div');
+			actorContainer.className = 'flex items-center justify-between';
+
+			const actorToggleContainer = document.createElement('div');
+			actorToggleContainer.className = 'flex-1';
+			const actorModeToggle = createClaudeToggle('Actor mode', actorModeEnabled, null);
+			actorToggleContainer.appendChild(actorModeToggle.container);
+			actorContainer.appendChild(actorToggleContainer);
+
+			const configureActorsBtn = createClaudeButton('Configure Characters', 'secondary');
+			configureActorsBtn.id = 'configureActorsBtn';
+			configureActorsBtn.style.display = actorModeEnabled ? 'block' : 'none';
+			configureActorsBtn.classList.add('ml-2');
+			actorContainer.appendChild(configureActorsBtn);
+
+			actorSection.appendChild(actorContainer);
+			perChatSection.appendChild(actorSection);
+
+			content.appendChild(perChatSection);
+
+			// Create modal with new class
+			const modal = new ClaudeModal('TTS Settings', content);
+
+			modal.addCancel('Cancel');
+			modal.addConfirm('Save', async () => {
 				const newSettings = {
 					enabled: enabledToggle.input.checked,
 					apiKey: apiKeyInput.value.trim(),
@@ -1035,7 +1057,7 @@
 					autoSpeak: autoSpeakToggle.input.checked
 				};
 
-				// Handle per-chat settings - always save the state, don't remove
+				// Handle per-chat settings
 				if (conversationId) {
 					await chrome.storage.local.set({
 						[`chatQuotesOnly_${conversationId}`]: quotesOnlyToggle.input.checked
@@ -1059,261 +1081,259 @@
 				if (!newSettings.enabled) {
 					removeAllSpeakButtons();
 				}
-			},
-			onCancel: () => {
-				// Just closes modal
-			}
-		});
-
-		// Handle actor mode toggle
-		actorModeToggle.input.addEventListener('change', (e) => {
-			configureActorsBtn.style.display = e.target.checked ? 'block' : 'none';
-		});
-
-		// Configure actors button
-		configureActorsBtn.onclick = async () => {
-			const currentApiKey = apiKeyInput.value.trim();
-			await createActorConfigModal(currentApiKey || settings.apiKey);
-		};
-
-		// Load and populate voices/models if API key exists
-		if (settings.apiKey) {
-			const [voices, models] = await Promise.all([
-				getVoices(settings.apiKey),
-				getModels(settings.apiKey)
-			]);
-
-			// Populate voice selects
-			const voiceOptions = voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }));
-			populateSelect(voiceSelect, voiceOptions, settings.voice);
-
-			// Populate chat override with "Use default" option
-			chatVoiceOverrideSelect.innerHTML = '<option value="">Use default voice</option>';
-			voiceOptions.forEach(opt => {
-				const option = document.createElement('option');
-				option.value = opt.value;
-				option.textContent = opt.label;
-				chatVoiceOverrideSelect.appendChild(option);
 			});
-			chatVoiceOverrideSelect.value = chatVoiceOverride;
-			chatVoiceOverrideSelect.disabled = false;
 
-			// Populate models
-			const modelOptions = models.map(m => ({ value: m.model_id, label: m.name }));
-			populateSelect(modelSelect, modelOptions, settings.model);
-		}
+			// Handle actor mode toggle
+			actorModeToggle.input.addEventListener('change', (e) => {
+				configureActorsBtn.style.display = e.target.checked ? 'block' : 'none';
+			});
 
-		// Handle API key changes
-		apiKeyInput.addEventListener('change', async (e) => {
-			const newKey = e.target.value.trim();
-			if (newKey) {
-				const isValid = await testApiKey(newKey);
-				if (isValid) {
-					const [voices, models] = await Promise.all([
-						getVoices(newKey),
-						getModels(newKey)
-					]);
+			// Configure actors button
+			configureActorsBtn.onclick = async () => {
+				const currentApiKey = apiKeyInput.value.trim();
+				await createActorConfigModal(currentApiKey || settings.apiKey);
+			};
 
-					const voiceOptions = voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }));
-					populateSelect(voiceSelect, voiceOptions);
+			// Handle API key changes
+			apiKeyInput.addEventListener('change', async (e) => {
+				const newKey = e.target.value.trim();
+				if (newKey) {
+					// Show inline loading state
+					voiceSelect.innerHTML = '<option value="">Loading...</option>';
+					voiceSelect.disabled = true;
+					modelSelect.innerHTML = '<option value="">Loading...</option>';
+					modelSelect.disabled = true;
+					chatVoiceOverrideSelect.innerHTML = '<option value="">Loading...</option>';
+					chatVoiceOverrideSelect.disabled = true;
 
-					chatVoiceOverrideSelect.innerHTML = '<option value="">Use default voice</option>';
-					voiceOptions.forEach(opt => {
-						const option = document.createElement('option');
-						option.value = opt.value;
-						option.textContent = opt.label;
-						chatVoiceOverrideSelect.appendChild(option);
-					});
-					chatVoiceOverrideSelect.disabled = voiceOptions.length === 0;
+					const isValid = await testApiKey(newKey);
+					if (isValid) {
+						const [newVoices, newModels] = await Promise.all([
+							getVoices(newKey),
+							getModels(newKey)
+						]);
 
-					const modelOptions = models.map(m => ({ value: m.model_id, label: m.name }));
-					populateSelect(modelSelect, modelOptions);
-				} else {
-					alert('Invalid ElevenLabs API key');
-					e.target.value = settings.apiKey || '';
+						const newVoiceOptions = newVoices.map(v => ({
+							value: v.voice_id,
+							label: `${v.name} (${v.voice_id})`
+						}));
+						populateSelect(voiceSelect, newVoiceOptions);
+
+						chatVoiceOverrideSelect.innerHTML = '<option value="">Use default voice</option>';
+						newVoiceOptions.forEach(opt => {
+							const option = document.createElement('option');
+							option.value = opt.value;
+							option.textContent = opt.label;
+							chatVoiceOverrideSelect.appendChild(option);
+						});
+						chatVoiceOverrideSelect.disabled = false;
+
+						const newModelOptions = newModels.map(m => ({ value: m.model_id, label: m.name }));
+						populateSelect(modelSelect, newModelOptions);
+					} else {
+						alert('Invalid ElevenLabs API key');
+						e.target.value = settings.apiKey || '';
+
+						// Restore original state
+						populateSelect(voiceSelect, voiceOptions, settings.voice);
+						populateSelect(modelSelect, modelOptions, settings.model);
+						chatVoiceOverrideSelect.innerHTML = '<option value="">Use default voice</option>';
+						voiceOptions.filter(opt => opt.value).forEach(opt => {
+							const option = document.createElement('option');
+							option.value = opt.value;
+							option.textContent = opt.label;
+							chatVoiceOverrideSelect.appendChild(option);
+						});
+						chatVoiceOverrideSelect.value = chatVoiceOverride;
+						chatVoiceOverrideSelect.disabled = !settings.apiKey;
+					}
 				}
-			}
-		});
+			});
 
-		document.body.appendChild(modal);
-		return modal;
+			modal.show();
+
+		} catch (error) {
+			loadingModal.destroy();
+			alert('Failed to load settings: ' + error.message);
+			console.error('Settings modal error:', error);
+		}
 	}
 
 	async function createActorConfigModal(apiKey) {
-		const conversationId = getConversationId();
-		const charactersResult = await chrome.storage.local.get(`chatCharacters_${conversationId}`);
-		let characters = charactersResult[`chatCharacters_${conversationId}`] || [];
+		// Show loading modal immediately
+		const loadingModal = createLoadingModal('Loading voices...');
+		loadingModal.show();
 
-		// Ensure narrator exists in the characters list
-		if (!characters.find(c => c.name.toLowerCase() === 'narrator')) {
-			characters = [{ name: 'Narrator', gender: 'other', voice: '' }, ...characters];
-		}
+		try {
+			const conversationId = getConversationId();
+			const charactersResult = await chrome.storage.local.get(`chatCharacters_${conversationId}`);
+			let characters = charactersResult[`chatCharacters_${conversationId}`] || [];
 
-		// Load available voices
-		const voices = await getVoices(apiKey);
-		const voiceOptions = [
-			{ value: '', label: 'None' },
-			...voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }))
-		];
-
-		// Create modal content
-		const contentContainer = document.createElement('div');
-
-		// Characters section
-		const charactersSection = document.createElement('div');
-		charactersSection.className = 'mb-4';
-
-		const headerDiv = document.createElement('div');
-		headerDiv.className = 'flex items-center justify-between mb-3';
-
-		const instructionText = document.createElement('p');
-		instructionText.className = 'text-sm text-text-300';
-		instructionText.textContent = 'Assign voices to character names. If a voice is "None", that character\'s dialog will not be spoken.';
-		headerDiv.appendChild(instructionText);
-
-		// Control buttons
-		const controlButtons = document.createElement('div');
-		controlButtons.className = 'flex justify-end gap-2 mb-3';
-
-		const addBtn = createClaudeButton(
-			'<span class="flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>Add Character</span>',
-			'secondary',
-			null,
-			true
-		);
-		addBtn.id = 'addCharacterBtn';
-
-		const removeBtn = createClaudeButton(
-			'<span class="flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16"><path d="M3 8h10" stroke-linecap="round"/></svg>Remove Last</span>',
-			'secondary',
-			null,
-			true
-		);
-		removeBtn.id = 'removeCharacterBtn';
-
-		controlButtons.appendChild(addBtn);
-		controlButtons.appendChild(removeBtn);
-
-		// Table container
-		const tableContainer = document.createElement('div');
-		tableContainer.className = 'border border-border-300 rounded-lg overflow-hidden';
-
-		// Table header
-		const tableHeader = document.createElement('div');
-		tableHeader.className = 'grid grid-cols-3 gap-4 p-3 bg-bg-100 border-b border-border-300 font-medium text-sm';
-		tableHeader.innerHTML = '<div>Character Name</div><div>Gender</div><div>Voice</div>';
-
-		// Characters list container
-		const charactersList = document.createElement('div');
-		charactersList.id = 'charactersList';
-		charactersList.className = 'max-h-96 overflow-y-auto';
-
-		tableContainer.appendChild(tableHeader);
-		tableContainer.appendChild(charactersList);
-
-		const tipText = document.createElement('div');
-		tipText.className = 'mt-3 text-xs text-text-400';
-		tipText.textContent = 'Tip: Set Narrator to "None" to only speak dialogue. Set it to a voice to include narration.';
-
-		charactersSection.appendChild(headerDiv);
-		charactersSection.appendChild(controlButtons);
-
-		// Add warning if voices couldn't load
-		if (voices.length === 0 && apiKey) {
-			const warningDiv = document.createElement('div');
-			warningDiv.className = 'mb-3 p-2 bg-accent-100 border border-accent-200 rounded text-sm text-accent-600';
-			warningDiv.textContent = 'Could not load voices. Please check your ElevenLabs API key.';
-			charactersSection.appendChild(warningDiv);
-		}
-
-		charactersSection.appendChild(tableContainer);
-		charactersSection.appendChild(tipText);
-
-		contentContainer.appendChild(charactersSection);
-
-		// Function to create a character row
-		function createCharacterRow(character = {}, isNarrator = false) {
-			const row = document.createElement('div');
-			row.className = 'grid grid-cols-3 gap-4 p-3 border-b border-border-200 character-row hover:bg-bg-50';
-			if (isNarrator) {
-				row.classList.add('narrator-row', 'bg-bg-50');
+			// Ensure narrator exists
+			if (!characters.find(c => c.name.toLowerCase() === 'narrator')) {
+				characters = [{ name: 'Narrator', gender: 'other', voice: '' }, ...characters];
 			}
 
-			const nameInput = createClaudeInput({
-				type: 'text',
-				placeholder: 'e.g., Alice',
-				value: character.name || ''
-			});
-			nameInput.classList.add('character-name');
-			if (isNarrator) {
-				nameInput.disabled = true;
-				nameInput.className += ' opacity-60';
-			}
+			// Load available voices
+			const voices = await getVoices(apiKey);
 
-			const genderOptions = [
-				{ value: 'male', label: 'Male' },
-				{ value: 'female', label: 'Female' },
-				{ value: 'other', label: 'Other' }
+			// Close loading modal
+			loadingModal.destroy();
+
+			const voiceOptions = [
+				{ value: '', label: 'None' },
+				...voices.map(v => ({ value: v.voice_id, label: `${v.name} (${v.voice_id})` }))
 			];
-			const genderSelect = createClaudeSelect(genderOptions, character.gender || 'male');
-			genderSelect.classList.add('character-gender');
-			if (isNarrator) {
-				genderSelect.disabled = true;
-				genderSelect.className += ' opacity-60';
+
+			// Create modal content
+			const contentContainer = document.createElement('div');
+
+			// Characters section
+			const charactersSection = document.createElement('div');
+			charactersSection.className = 'mb-4';
+
+			const headerDiv = document.createElement('div');
+			headerDiv.className = 'flex items-center justify-between mb-3';
+
+			const instructionText = document.createElement('p');
+			instructionText.className = 'text-sm text-text-300';
+			instructionText.textContent = 'Assign voices to character names. If a voice is "None", that character\'s dialog will not be spoken.';
+			headerDiv.appendChild(instructionText);
+
+			// Control buttons
+			const controlButtons = document.createElement('div');
+			controlButtons.className = 'flex justify-end gap-2 mb-3';
+
+			const addBtn = createClaudeButton(
+				'<span class="flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>Add Character</span>',
+				'secondary',
+				null,
+				true
+			);
+
+			const removeBtn = createClaudeButton(
+				'<span class="flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 16 16"><path d="M3 8h10" stroke-linecap="round"/></svg>Remove Last</span>',
+				'secondary',
+				null,
+				true
+			);
+
+			controlButtons.appendChild(addBtn);
+			controlButtons.appendChild(removeBtn);
+
+			// Table container
+			const tableContainer = document.createElement('div');
+			tableContainer.className = 'border border-border-300 rounded-lg overflow-hidden';
+
+			// Table header
+			const tableHeader = document.createElement('div');
+			tableHeader.className = 'grid grid-cols-3 gap-4 p-3 bg-bg-100 border-b border-border-300 font-medium text-sm';
+			tableHeader.innerHTML = '<div>Character Name</div><div>Gender</div><div>Voice</div>';
+
+			// Characters list container
+			const charactersList = document.createElement('div');
+			charactersList.id = 'charactersList';
+			charactersList.className = 'max-h-96 overflow-y-auto';
+
+			tableContainer.appendChild(tableHeader);
+			tableContainer.appendChild(charactersList);
+
+			const tipText = document.createElement('div');
+			tipText.className = 'mt-3 text-xs text-text-400';
+			tipText.textContent = 'Tip: Set Narrator to "None" to only speak dialogue. Set it to a voice to include narration.';
+
+			charactersSection.appendChild(headerDiv);
+			charactersSection.appendChild(controlButtons);
+
+			// Add warning if voices couldn't load
+			if (voices.length === 0 && apiKey) {
+				const warningDiv = document.createElement('div');
+				warningDiv.className = 'mb-3 p-2 bg-accent-100 border border-accent-200 rounded text-sm text-accent-600';
+				warningDiv.textContent = 'Could not load voices. Please check your ElevenLabs API key.';
+				charactersSection.appendChild(warningDiv);
 			}
 
-			const voiceSelect = createClaudeSelect(voiceOptions, character.voice || '');
-			voiceSelect.classList.add('character-voice');
+			charactersSection.appendChild(tableContainer);
+			charactersSection.appendChild(tipText);
 
-			row.appendChild(nameInput);
-			row.appendChild(genderSelect);
-			row.appendChild(voiceSelect);
+			contentContainer.appendChild(charactersSection);
 
-			return row;
-		}
+			// Function to create a character row
+			function createCharacterRow(character = {}, isNarrator = false) {
+				const row = document.createElement('div');
+				row.className = 'grid grid-cols-3 gap-4 p-3 border-b border-border-200 character-row hover:bg-bg-50';
+				if (isNarrator) {
+					row.classList.add('narrator-row', 'bg-bg-50');
+				}
 
-		// Populate existing characters
-		// Always add Narrator first
-		const narratorChar = characters.find(c => c.name.toLowerCase() === 'narrator') ||
-			{ name: 'Narrator', gender: 'other', voice: '' };
-		charactersList.appendChild(createCharacterRow(narratorChar, true));
+				const nameInput = createClaudeInput({
+					type: 'text',
+					placeholder: 'e.g., Alice',
+					value: character.name || ''
+				});
+				nameInput.classList.add('character-name');
+				if (isNarrator) {
+					nameInput.disabled = true;
+					nameInput.className += ' opacity-60';
+				}
 
-		// Add other characters
-		characters.filter(c => c.name.toLowerCase() !== 'narrator').forEach(character => {
-			charactersList.appendChild(createCharacterRow(character, false));
-		});
+				const genderOptions = [
+					{ value: 'male', label: 'Male' },
+					{ value: 'female', label: 'Female' },
+					{ value: 'other', label: 'Other' }
+				];
+				const genderSelect = createClaudeSelect(genderOptions, character.gender || 'male');
+				genderSelect.classList.add('character-gender');
+				if (isNarrator) {
+					genderSelect.disabled = true;
+					genderSelect.className += ' opacity-60';
+				}
 
-		// If no non-narrator characters, add one empty row
-		if (characters.filter(c => c.name.toLowerCase() !== 'narrator').length === 0) {
-			charactersList.appendChild(createCharacterRow());
-		}
+				const voiceSelect = createClaudeSelect(voiceOptions, character.voice || '');
+				voiceSelect.classList.add('character-voice');
 
-		// Add character button
-		addBtn.onclick = () => {
-			charactersList.appendChild(createCharacterRow());
-		};
+				row.appendChild(nameInput);
+				row.appendChild(genderSelect);
+				row.appendChild(voiceSelect);
 
-		// Remove character button - never remove narrator
-		removeBtn.onclick = () => {
-			const rows = charactersList.querySelectorAll('.character-row:not(.narrator-row)');
-			if (rows.length > 1) {
-				rows[rows.length - 1].remove();
-			} else if (rows.length === 1) {
-				// If only one non-narrator row, clear it instead of removing
-				rows[0].querySelector('.character-name').value = '';
-				rows[0].querySelector('.character-gender').value = 'male';
-				rows[0].querySelector('.character-voice').value = '';
+				return row;
 			}
-		};
 
-		// Create the modal with the custom content
-		const modal = createClaudeModal({
-			title: 'Character Voice Configuration',
-			content: contentContainer,
-			confirmText: 'Save',
-			cancelText: 'Cancel',
-			onConfirm: async () => {
-				// Collect character data - always include narrator
+			// Populate existing characters
+			const narratorChar = characters.find(c => c.name.toLowerCase() === 'narrator') ||
+				{ name: 'Narrator', gender: 'other', voice: '' };
+			charactersList.appendChild(createCharacterRow(narratorChar, true));
+
+			characters.filter(c => c.name.toLowerCase() !== 'narrator').forEach(character => {
+				charactersList.appendChild(createCharacterRow(character, false));
+			});
+
+			if (characters.filter(c => c.name.toLowerCase() !== 'narrator').length === 0) {
+				charactersList.appendChild(createCharacterRow());
+			}
+
+			// Add character button
+			addBtn.onclick = () => {
+				charactersList.appendChild(createCharacterRow());
+			};
+
+			// Remove character button
+			removeBtn.onclick = () => {
+				const rows = charactersList.querySelectorAll('.character-row:not(.narrator-row)');
+				if (rows.length > 1) {
+					rows[rows.length - 1].remove();
+				} else if (rows.length === 1) {
+					rows[0].querySelector('.character-name').value = '';
+					rows[0].querySelector('.character-gender').value = 'male';
+					rows[0].querySelector('.character-voice').value = '';
+				}
+			};
+
+			// Create the modal
+			const modal = new ClaudeModal('Character Voice Configuration', contentContainer);
+
+			modal.addCancel('Cancel');
+			modal.addConfirm('Save', async () => {
 				const characterRows = charactersList.querySelectorAll('.character-row');
 				const charactersData = Array.from(characterRows)
 					.map(row => ({
@@ -1326,21 +1346,19 @@
 				if (charactersData.length > 0) {
 					await chrome.storage.local.set({ [`chatCharacters_${conversationId}`]: charactersData });
 				}
-			},
-			onCancel: () => {
-				// Modal removes itself
-			}
-		});
+			});
 
-		// Adjust modal max width
-		const modalContent = modal.querySelector('.' + CLAUDE_CLASSES.MODAL_CONTAINER.split(' ').join('.'));
-		if (modalContent) {
-			modalContent.style.maxWidth = '700px';
-			modalContent.style.width = '90%';
+			// Adjust modal width
+			modal.modal.style.maxWidth = '700px';
+			modal.modal.style.width = '90%';
+
+			modal.show();
+
+		} catch (error) {
+			loadingModal.destroy();
+			alert('Failed to load character configuration: ' + error.message);
+			console.error('Actor config modal error:', error);
 		}
-
-		document.body.appendChild(modal);
-		return modal;
 	}
 
 	async function getVoices(apiKey) {

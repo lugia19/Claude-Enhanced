@@ -20,26 +20,19 @@
 		// Get available audio devices - request permission if needed
 		let audioDevices = [];
 		try {
-			// First, enumerate devices to check if we have labels
 			let devices = await navigator.mediaDevices.enumerateDevices();
 			const audioInputs = devices.filter(device => device.kind === 'audioinput');
 
-			// Check if we have permission by seeing if labels are present
 			const hasPermission = audioInputs.some(device => device.label && device.label.length > 0);
 
 			if (!hasPermission && audioInputs.length > 0) {
-				// We don't have permission yet - request it
 				try {
 					console.log('Requesting microphone permission for device list...');
 					const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-					// Immediately stop the stream - we just needed it for permission
 					stream.getTracks().forEach(track => track.stop());
-
-					// Now enumerate again with permission
 					devices = await navigator.mediaDevices.enumerateDevices();
 				} catch (permError) {
 					console.error('User denied microphone permission:', permError);
-					// Continue anyway - we'll just show "Use default"
 				}
 			}
 
@@ -51,7 +44,6 @@
 		// Build device options
 		const deviceOptions = [{ value: 'default', label: 'Use default' }];
 
-		// Only add devices that have labels (meaning we have permission)
 		audioDevices.forEach(device => {
 			if (device.deviceId && device.deviceId !== 'default' && device.label) {
 				deviceOptions.push({
@@ -61,125 +53,125 @@
 			}
 		});
 
-		// If we only have "Use default", add a helper message
 		const needsPermission = deviceOptions.length === 1;
 
-		return new Promise((resolve) => {
-			// Build modal content
-			const contentDiv = document.createElement('div');
+		// Build modal content
+		const contentDiv = document.createElement('div');
 
-			// STT Enabled toggle
-			const sttEnabledContainer = document.createElement('div');
-			sttEnabledContainer.className = 'mb-4';
-			const sttEnabledToggle = createClaudeToggle('Enable Speech-to-Text', sttEnabled);
-			sttEnabledContainer.appendChild(sttEnabledToggle.container);
-			contentDiv.appendChild(sttEnabledContainer);
+		// STT Enabled toggle
+		const sttEnabledContainer = document.createElement('div');
+		sttEnabledContainer.className = 'mb-4';
+		const sttEnabledToggle = createClaudeToggle('Enable Speech-to-Text', sttEnabled);
+		sttEnabledContainer.appendChild(sttEnabledToggle.container);
+		contentDiv.appendChild(sttEnabledContainer);
 
-			// API Key input
-			const apiKeyContainer = document.createElement('div');
-			apiKeyContainer.className = 'mb-4';
+		// API Key input
+		const apiKeyContainer = document.createElement('div');
+		apiKeyContainer.className = 'mb-4';
 
-			const apiKeyLabel = document.createElement('label');
-			apiKeyLabel.className = CLAUDE_CLASSES.LABEL;
-			apiKeyLabel.textContent = 'Groq API Key';
-			apiKeyContainer.appendChild(apiKeyLabel);
+		const apiKeyLabel = document.createElement('label');
+		apiKeyLabel.className = CLAUDE_CLASSES.LABEL;
+		apiKeyLabel.textContent = 'Groq API Key';
+		apiKeyContainer.appendChild(apiKeyLabel);
 
-			const apiKeyInput = createClaudeInput({
-				type: 'password',
-				placeholder: 'gsk_...',
-				value: apiKey
-			});
-			apiKeyInput.id = 'groqApiKey';
-			apiKeyContainer.appendChild(apiKeyInput);
-			contentDiv.appendChild(apiKeyContainer);
+		const apiKeyInput = createClaudeInput({
+			type: 'password',
+			placeholder: 'gsk_...',
+			value: apiKey
+		});
+		apiKeyInput.id = 'groqApiKey';
+		apiKeyContainer.appendChild(apiKeyInput);
+		contentDiv.appendChild(apiKeyContainer);
 
-			// Audio Device dropdown
-			const audioDeviceContainer = document.createElement('div');
-			audioDeviceContainer.className = 'mb-4';
+		// Audio Device dropdown
+		const audioDeviceContainer = document.createElement('div');
+		audioDeviceContainer.className = 'mb-4';
 
-			const audioDeviceLabel = document.createElement('label');
-			audioDeviceLabel.className = CLAUDE_CLASSES.LABEL;
-			audioDeviceLabel.textContent = 'Audio Input Device';
-			audioDeviceContainer.appendChild(audioDeviceLabel);
+		const audioDeviceLabel = document.createElement('label');
+		audioDeviceLabel.className = CLAUDE_CLASSES.LABEL;
+		audioDeviceLabel.textContent = 'Audio Input Device';
+		audioDeviceContainer.appendChild(audioDeviceLabel);
 
-			const audioDeviceSelect = createClaudeSelect(deviceOptions, savedAudioDevice);
-			audioDeviceContainer.appendChild(audioDeviceSelect);
+		const audioDeviceSelect = createClaudeSelect(deviceOptions, savedAudioDevice);
+		audioDeviceContainer.appendChild(audioDeviceSelect);
 
-			// Add permission message if needed
-			if (needsPermission) {
-				const permissionNote = document.createElement('div');
-				permissionNote.className = CLAUDE_CLASSES.TEXT_MUTED + ' mt-1';
-				permissionNote.textContent = 'Grant microphone permission to see available devices';
-				audioDeviceContainer.appendChild(permissionNote);
+		// Add permission message if needed
+		if (needsPermission) {
+			const permissionNote = document.createElement('div');
+			permissionNote.className = CLAUDE_CLASSES.TEXT_MUTED + ' mt-1';
+			permissionNote.textContent = 'Grant microphone permission to see available devices';
+			audioDeviceContainer.appendChild(permissionNote);
 
-				// Add a button to request permission using the proper helper
-				const requestPermButton = createClaudeButton(
-					'Request Microphone Access',
-					'secondary',
-					async () => {
-						try {
-							const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-							stream.getTracks().forEach(track => track.stop());
-							// Close and reopen the modal to refresh the device list
-							modal.remove();
-							await showSettingsModal();
-						} catch (err) {
-							alert('Microphone permission denied. Please allow microphone access in your browser settings.');
-						}
+			const requestPermButton = createClaudeButton(
+				'Request Microphone Access',
+				'secondary',
+				async () => {
+					try {
+						const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+						stream.getTracks().forEach(track => track.stop());
+						modal.destroy();
+						await showSettingsModal();
+					} catch (err) {
+						alert('Microphone permission denied. Please allow microphone access in your browser settings.');
 					}
-				);
-				requestPermButton.className += ' mt-2'; // Add top margin
-				audioDeviceContainer.appendChild(requestPermButton);
+				}
+			);
+			requestPermButton.className += ' mt-2';
+			audioDeviceContainer.appendChild(requestPermButton);
+		}
+
+		contentDiv.appendChild(audioDeviceContainer);
+
+		// Auto-send toggle
+		const autoSendContainer = document.createElement('div');
+		autoSendContainer.className = 'mb-4';
+		const autoSendToggle = createClaudeToggle('Auto-send after transcription', autoSend);
+		autoSendContainer.appendChild(autoSendToggle.container);
+		contentDiv.appendChild(autoSendContainer);
+
+		// Create modal
+		const modal = new ClaudeModal('STT Settings', contentDiv);
+		modal.addCancel('Cancel');
+		modal.addConfirm('Save', async (btn, modal) => {
+			const newKey = apiKeyInput.value.trim();
+			const newAutoSend = autoSendToggle.input.checked;
+			const newEnabled = sttEnabledToggle.input.checked;
+			const newAudioDevice = audioDeviceSelect.value;
+
+			if (newKey && newKey !== apiKey) {
+				// Show loading state
+				btn.disabled = true;
+				btn.textContent = 'Validating...';
+
+				const isValid = await validateApiKey(newKey);
+
+				if (!isValid) {
+					// Show error state
+					btn.style.backgroundColor = '#c51c1c';
+					btn.textContent = 'Invalid Key';
+
+					// Restore after 2 seconds
+					setTimeout(() => {
+						btn.style.backgroundColor = '';
+						btn.textContent = 'Save';
+						btn.disabled = false;
+					}, 2000);
+
+					return false; // Keep modal open
+				}
 			}
 
-			contentDiv.appendChild(audioDeviceContainer);
-
-			// Auto-send toggle
-			const autoSendContainer = document.createElement('div');
-			autoSendContainer.className = 'mb-4';
-			const autoSendToggle = createClaudeToggle('Auto-send after transcription', autoSend);
-			autoSendContainer.appendChild(autoSendToggle.container);
-			contentDiv.appendChild(autoSendContainer);
-
-			// Create modal with custom handling
-			const modal = createClaudeModal({
-				title: 'STT Settings',
-				content: contentDiv,
-				confirmText: 'Save',
-				cancelText: 'Cancel',
-				onCancel: () => {
-					resolve(false);
-				},
-				onConfirm: async () => {
-					const newKey = apiKeyInput.value.trim();
-					const newAutoSend = autoSendToggle.input.checked;
-					const newEnabled = sttEnabledToggle.input.checked;
-					const newAudioDevice = audioDeviceSelect.value;
-
-					if (newKey && newKey !== apiKey) {
-						// Validate the API key
-						const isValid = await validateApiKey(newKey);
-						if (!isValid) {
-							alert('Invalid API key. Please check and try again.');
-							// Don't close modal - re-add it since onConfirm removes it
-							document.body.appendChild(modal);
-							return;
-						}
-					}
-
-					await chrome.storage.local.set({
-						groq_api_key: newKey,
-						stt_auto_send: newAutoSend,
-						stt_enabled: newEnabled,
-						stt_audio_device: newAudioDevice
-					});
-
-					resolve(true);
-				}
+			await chrome.storage.local.set({
+				groq_api_key: newKey,
+				stt_auto_send: newAutoSend,
+				stt_enabled: newEnabled,
+				stt_audio_device: newAudioDevice
 			});
 
-			document.body.appendChild(modal);
+			return true; // Close modal
 		});
+
+		modal.show();
 	}
 
 	async function validateApiKey(apiKey) {
@@ -189,9 +181,8 @@
 				headers: {
 					'Authorization': `Bearer ${apiKey}`
 				},
-				body: new FormData() // Empty form data to trigger error
+				body: new FormData()
 			});
-			// If we get a 400 (missing file) that's actually good - auth worked
 			return response.status === 400 || response.status === 200;
 		} catch (error) {
 			return false;
@@ -201,11 +192,9 @@
 	// ======== RECORDING FUNCTIONS ========
 	async function startRecording() {
 		try {
-			// Get the saved audio device preference
 			const storage = await chrome.storage.local.get('stt_audio_device');
 			const audioDevice = storage.stt_audio_device || 'default';
 
-			// Build constraints based on selected device
 			const constraints = {
 				audio: audioDevice === 'default' ? true : { deviceId: { exact: audioDevice } }
 			};
@@ -227,7 +216,6 @@
 		} catch (error) {
 			console.error('Error starting recording:', error);
 
-			// If the exact device fails, try with default
 			if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
 				try {
 					console.log('Selected device not available, falling back to default');
@@ -246,7 +234,6 @@
 					currentState = 'recording';
 					updateMicButton();
 
-					// Clear the saved device preference since it's not available
 					await chrome.storage.local.set({ stt_audio_device: 'default' });
 				} catch (fallbackError) {
 					console.error('Error with fallback recording:', fallbackError);
@@ -275,11 +262,15 @@
 					currentState = 'idle';
 					updateMicButton();
 				} catch (error) {
-					alert('Transcription failed. Please try again.');
 					console.error(error);
 					audioChunks = [];
 					currentState = 'idle';
 					updateMicButton();
+
+					// Show error modal
+					const errorModal = new ClaudeModal('Transcription Failed', 'Please try again.');
+					errorModal.addConfirm('OK');
+					errorModal.show();
 				}
 			};
 
@@ -290,12 +281,15 @@
 		}
 	}
 
+
 	async function transcribeAudio() {
 		const storage = await chrome.storage.local.get('groq_api_key');
 		const apiKey = storage.groq_api_key;
 
 		if (!apiKey) {
-			alert('Please set your Groq API key in settings first.');
+			const noKeyModal = new ClaudeModal('API Key Required', 'Please set your Groq API key in settings first.');
+			noKeyModal.addConfirm('OK');
+			noKeyModal.show();
 			throw new Error('No API key');
 		}
 
@@ -324,14 +318,12 @@
 
 	// ======== TEXT INSERTION ========
 	function insertTextAndSend(text, autoSend) {
-		// Check if we're using the simple textarea (from typing lag fix)
 		const simpleTextarea = document.querySelector('.claude-simple-input');
 		if (simpleTextarea) {
 			simpleTextarea.value = text;
 			simpleTextarea.dispatchEvent(new Event('input', { bubbles: true }));
 
 			if (autoSend) {
-				// Find and click the custom or original submit button
 				const submitButton = document.querySelector('.claude-custom-submit') ||
 					document.querySelector('button[aria-label="Send message"]');
 				if (submitButton && !submitButton.disabled) {
@@ -339,7 +331,6 @@
 				}
 			}
 		} else {
-			// Original ProseMirror approach
 			const proseMirrorDiv = document.querySelector('.ProseMirror');
 			if (proseMirrorDiv) {
 				proseMirrorDiv.innerHTML = '';
@@ -381,10 +372,9 @@
 	}
 
 	function createMicButton() {
-		// Create container that will hold either one button or two
 		const container = document.createElement('div');
 		container.className = 'stt-mic-container inline-flex gap-1 mr-2';
-		container.style.display = 'inline-flex'; // Ensure inline to stay on same line
+		container.style.display = 'inline-flex';
 
 		updateMicButton(container);
 		return container;
@@ -396,10 +386,8 @@
 			if (!container) return;
 		}
 
-		// Clear container
 		container.innerHTML = '';
 
-		// Create the button element
 		const button = document.createElement('button');
 		button.className = `inline-flex items-center justify-center relative shrink-0 
             disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none 
@@ -442,21 +430,17 @@
 
 	// ======== BUTTON INSERTION ========
 	async function tryAddMicButton() {
-		// Check if STT is enabled
 		const storage = await chrome.storage.local.get('stt_enabled');
 		const enabled = storage.stt_enabled || false;
 
 		if (!enabled) {
-			// Remove button if it exists
 			const existing = document.querySelector('.stt-mic-container');
 			if (existing) existing.remove();
 			return;
 		}
 
-		// Check if button already exists
 		if (document.querySelector('.stt-mic-container')) return;
 
-		// Find the send button
 		const sendButton = document.querySelector('button[aria-label="Send message"]');
 		if (!sendButton) return;
 
@@ -465,17 +449,14 @@
 
 		const micContainer = createMicButton();
 
-		// Make sure parent is flex to keep buttons on same line
 		container.style.display = 'flex';
 		container.style.alignItems = 'center';
 
-		// Insert before send button to put it on the left
 		container.insertBefore(micContainer, sendButton);
 	}
 
 	// ======== INITIALIZATION ========
 	function initialize() {
-		// Add spinner CSS once
 		const style = document.createElement('style');
 		style.id = 'stt-spinner-style';
 		style.textContent = `
@@ -491,18 +472,15 @@
 			document.head.appendChild(style);
 		}
 
-		// Check every second for both buttons
 		setInterval(async () => {
 			tryAddTopRightButton("stt-settings-button", createSettingsButton);
 			await tryAddMicButton();
 		}, 1000);
 	}
 
-	// Wait for DOM to be ready before initializing
 	if (document.readyState === 'loading') {
 		document.addEventListener('DOMContentLoaded', initialize);
 	} else {
-		// DOM is already ready
 		initialize();
 	}
 })();

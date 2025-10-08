@@ -37,7 +37,186 @@ const CLAUDE_CLASSES = {
 	LIST_ITEM: 'p-3 rounded bg-bg-200 border border-border-300 hover:bg-bg-300 cursor-pointer transition-colors',
 };
 
+const spinnerStyles = document.createElement('style');
+spinnerStyles.textContent = `
+	@keyframes claude-modal-spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
+	}
+	.claude-modal-spinner {
+		animation: claude-modal-spin 1s linear infinite;
+	}
+`;
+document.head.appendChild(spinnerStyles);
+
 // Component creators
+class ClaudeModal {
+	constructor(title = '', content = '', dismissible = true) {
+		this.config = { title, content, dismissible };
+		this.isVisible = false;
+		this.buttons = [];
+
+		this._buildModal();
+		this._attachEventListeners();
+	}
+
+	_buildModal() {
+		this.backdrop = document.createElement('div');
+		this.backdrop.className = CLAUDE_CLASSES.MODAL_BACKDROP;
+		this.backdrop.style.display = 'none';
+
+		this.modal = document.createElement('div');
+		this.modal.className = CLAUDE_CLASSES.MODAL_CONTAINER;
+		this.modal.setAttribute('role', 'dialog');
+		this.modal.setAttribute('aria-modal', 'true');
+
+		this.titleElement = document.createElement('h2');
+		this.titleElement.id = 'modal-title';
+		this.titleElement.className = CLAUDE_CLASSES.MODAL_HEADING;
+		this.modal.setAttribute('aria-labelledby', 'modal-title');
+		this.modal.appendChild(this.titleElement);
+		this._updateTitle(this.config.title);
+
+		this.contentDiv = document.createElement('div');
+		this.contentDiv.className = 'mb-4';
+		this._setContent(this.config.content);
+		this.modal.appendChild(this.contentDiv);
+
+		this.buttonContainer = document.createElement('div');
+		this.buttonContainer.className = 'flex justify-end gap-2';
+		this.modal.appendChild(this.buttonContainer);
+
+		this.backdrop.appendChild(this.modal);
+	}
+
+	_setContent(content) {
+		this.contentDiv.innerHTML = '';
+		if (!content) return;
+
+		if (typeof content === 'string') {
+			this.contentDiv.innerHTML = content;
+		} else if (content instanceof HTMLElement) {
+			this.contentDiv.appendChild(content);
+		}
+	}
+
+	_updateTitle(title) {
+		if (title) {
+			this.titleElement.textContent = title;
+			this.titleElement.style.display = '';
+		} else {
+			this.titleElement.style.display = 'none';
+		}
+	}
+
+	_attachEventListeners() {
+		this._handleEscape = (e) => {
+			if (e.key === 'Escape' && this.isVisible && this.config.dismissible) {
+				this.hide();
+			}
+		};
+
+		this.backdrop.onclick = (e) => {
+			if (e.target === this.backdrop && this.config.dismissible) {
+				this.hide();
+			}
+		};
+	}
+
+	addButton(text, variant = 'primary', onClick = null, closeOnClick = true) {
+		const button = createClaudeButton(text, variant);
+
+		button.onclick = async () => {
+			try {
+				let shouldClose = closeOnClick;
+
+				if (onClick) {
+					let result = onClick(button, this);
+					if (result instanceof Promise) {
+						result = await result;
+					}
+					if (result === false) {
+						shouldClose = false;
+					}
+				}
+
+				if (shouldClose) {
+					this.destroy();
+				}
+			} catch (error) {
+				console.error('Modal button handler error:', error);
+			}
+		};
+
+		this.buttonContainer.appendChild(button);
+		this.buttons.push(button);
+
+		return button;
+	}
+
+	addCancel(text = 'Cancel', onClick = null) {
+		return this.addButton(text, 'secondary', onClick, true);
+	}
+
+	addConfirm(text = 'Confirm', onClick = null, closeOnClick = true) {
+		return this.addButton(text, 'primary', onClick, closeOnClick);
+	}
+
+	clearButtons() {
+		this.buttons.forEach(btn => btn.remove());
+		this.buttons = [];
+		return this;
+	}
+
+	show() {
+		if (this.isVisible) return this;
+
+		this.backdrop.style.display = 'flex';
+		document.body.appendChild(this.backdrop);
+		document.addEventListener('keydown', this._handleEscape);
+		this.isVisible = true;
+
+		return this;
+	}
+
+	hide() {
+		if (!this.isVisible) return this;
+
+		this.backdrop.style.display = 'none';
+		document.removeEventListener('keydown', this._handleEscape);
+		this.isVisible = false;
+
+		return this;
+	}
+
+	destroy() {
+		this.hide();
+		this.backdrop.remove();
+	}
+
+	setContent(content) {
+		this._setContent(content);
+		return this;
+	}
+
+	setTitle(title) {
+		this.config.title = title;
+		this._updateTitle(title);
+		return this;
+	}
+}
+
+function createLoadingModal(text = 'Loading...') {
+	const spinner = document.createElement('div');
+	spinner.className = 'flex items-center gap-3';
+	spinner.innerHTML = `
+		<div class="claude-modal-spinner rounded-full h-5 w-5 border-2 border-border-300" style="border-top-color: #2c84db"></div>
+		<span class="text-text-200">${text}</span>
+	`;
+
+	return new ClaudeModal('', spinner, false);
+}
+
 function createClaudeButton(content, variant = 'primary', onClick = null, contentIsHTML = false) {
 	const button = document.createElement('button');
 
@@ -66,104 +245,6 @@ function createClaudeButton(content, variant = 'primary', onClick = null, conten
 	return button;
 }
 
-function createClaudeModal({ title, content, onConfirm, onCancel, confirmText = 'Confirm', cancelText = 'Cancel' }) {
-	const backdrop = document.createElement('div');
-	backdrop.className = CLAUDE_CLASSES.MODAL_BACKDROP;
-
-	const modal = document.createElement('div');
-	modal.className = CLAUDE_CLASSES.MODAL_CONTAINER;
-
-	modal.setAttribute('role', 'dialog');
-	modal.setAttribute('aria-modal', 'true');
-	if (title) {
-		modal.setAttribute('aria-labelledby', 'modal-title');
-	}
-
-	if (title) {
-		const heading = document.createElement('h2');
-		heading.id = 'modal-title'; // Link to aria-labelledby
-		heading.className = CLAUDE_CLASSES.MODAL_HEADING;
-		heading.textContent = title;
-		modal.appendChild(heading);
-	}
-
-	// Content area
-	const contentDiv = document.createElement('div');
-	contentDiv.className = 'mb-4';
-	if (typeof content === 'string') {
-		contentDiv.innerHTML = content;
-	} else {
-		contentDiv.appendChild(content);
-	}
-	modal.appendChild(contentDiv);
-
-	// Buttons
-	const buttonContainer = document.createElement('div');
-	buttonContainer.className = 'flex justify-end gap-2';
-
-	let cancelBtn = null;
-	if (onCancel) {
-		cancelBtn = createClaudeButton(cancelText, 'secondary');
-		cancelBtn.onclick = async () => {
-			try {
-				let result = onCancel(cancelBtn);
-				if (result instanceof Promise) {
-					result = await result;
-				}
-				if (result !== false) {
-					backdrop.remove();
-				}
-			} catch (error) {
-				console.error('Modal cancel handler error:', error);
-			}
-		};
-		buttonContainer.appendChild(cancelBtn);
-	}
-
-	let confirmBtn = null;
-	if (onConfirm) {
-		confirmBtn = createClaudeButton(confirmText, 'primary');
-		confirmBtn.onclick = async () => {
-			try {
-				let result = onConfirm(confirmBtn);
-				if (result instanceof Promise) {
-					result = await result;
-				}
-				if (result !== false) {
-					backdrop.remove();
-				}
-			} catch (error) {
-				// Error thrown, don't close modal
-				console.error('Modal confirm handler error:', error);
-			}
-		};
-		buttonContainer.appendChild(confirmBtn);
-	}
-
-	modal.appendChild(buttonContainer);
-	backdrop.appendChild(modal);
-
-	// Escape key
-	const handleEscape = (e) => {
-		if (e.key === 'Escape') {
-			backdrop.remove();
-			if (onCancel) onCancel(cancelBtn);
-			document.removeEventListener('keydown', handleEscape);
-		}
-	};
-	document.addEventListener('keydown', handleEscape);
-
-	// Exit on click
-	backdrop.onclick = (e) => {
-		if (e.target === backdrop) {
-			backdrop.remove();
-			if (onCancel) onCancel(cancelBtn);
-			document.removeEventListener('keydown', handleEscape);
-		}
-	};
-
-	return backdrop;
-}
 
 function createClaudeInput({ type = 'text', placeholder = '', value = '', onChange = null } = {}) {
 	const input = document.createElement('input');

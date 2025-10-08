@@ -19,8 +19,9 @@ function migrateOldPhantomStorage(conversationId) {
 	// Check for old format and migrate
 	const oldData = localStorage.getItem(oldKey);
 	if (oldData) {
-		console.log(`Migrating old fork history for ${conversationId}`);
 		localStorage.setItem(newKey, oldData);
+		localStorage.removeItem(oldKey);
+		console.log(`Migrated old phantom messages for ${conversationId} to new format`);
 	}
 }
 
@@ -134,7 +135,7 @@ function injectPhantomMessages(data, phantomMessages) {
 		}));
 
 
- 
+
 		return completeMsg;
 	});
 
@@ -181,6 +182,4 @@ function injectPhantomMessages(data, phantomMessages) {
 
 	// Prepend phantom messages to the conversation
 	data.chat_messages = [...phantomMessages, ...data.chat_messages];
-	console.log(`Prepended ${phantomMessages.length} phantom messages to conversation data`);
-	console.log(data.chat_messages);
 }

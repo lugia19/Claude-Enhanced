@@ -53,37 +53,34 @@
 				type: 'text',
 				placeholder: 'Enter bookmark name...',
 			});
-			input.id = 'bookmark-name-input';
 			contentDiv.appendChild(input);
 
-			const modal = createClaudeModal({
-				title: 'Add Bookmark',
-				content: contentDiv,
-				confirmText: 'Save',
-				cancelText: 'Cancel',
-				onCancel: () => {
-					reject(new Error('Cancelled'));
-				},
-				onConfirm: () => {
-					const name = input.value.trim();
-					if (!name) {
-						alert('Please enter a bookmark name');
-						return false; // Keep modal open
-					}
-
-					// Check for duplicate names
-					const bookmarks = getBookmarks(conversationId);
-					if (bookmarks[name]) {
-						alert('A bookmark with this name already exists');
-						return false; // Keep modal open
-					}
-
-					addBookmark(conversationId, name, currentLeafId);
-					resolve(name);
+			const modal = new ClaudeModal('Add Bookmark', contentDiv);
+			
+			modal.addCancel('Cancel', () => {
+				reject(new Error('Cancelled'));
+			});
+			
+			modal.addConfirm('Save', (btn, modal) => {
+				const name = input.value.trim();
+				if (!name) {
+					alert('Please enter a bookmark name');
+					return false; // Keep modal open
 				}
+
+				// Check for duplicate names
+				const bookmarks = getBookmarks(conversationId);
+				if (bookmarks[name]) {
+					alert('A bookmark with this name already exists');
+					return false; // Keep modal open
+				}
+
+				addBookmark(conversationId, name, currentLeafId);
+				resolve(name);
+				return true; // Close modal
 			});
 
-			document.body.appendChild(modal);
+			modal.show();
 
 			// Focus the input
 			setTimeout(() => input.focus(), 100);
@@ -91,7 +88,8 @@
 			// Allow Enter key to submit
 			input.addEventListener('keypress', (e) => {
 				if (e.key === 'Enter') {
-					const confirmBtn = modal.querySelector('button:last-child');
+					// Click the confirm button (last button added)
+					const confirmBtn = modal.buttons[modal.buttons.length - 1];
 					if (confirmBtn) confirmBtn.click();
 				}
 			});
@@ -132,11 +130,15 @@
 		deleteBtn.classList.add('h-7', 'w-7', 'text-lg');
 		deleteBtn.onclick = (e) => {
 			e.stopPropagation(); // Prevent triggering navigation
-			if (confirm(`Delete bookmark "${name}"?`)) {
+			
+			const confirmModal = new ClaudeModal('Delete Bookmark', `Delete bookmark "${name}"?`);
+			confirmModal.addCancel('Cancel');
+			confirmModal.addConfirm('Delete', () => {
 				deleteBookmark(conversationId, name);
 				item.remove();
 				onUpdate();
-			}
+			});
+			confirmModal.show();
 		};
 		item.appendChild(deleteBtn);
 
@@ -145,6 +147,9 @@
 
 	// ======== MAIN NAVIGATION MODAL ========
 	async function showNavigationModal() {
+		const loading = createLoadingModal('Loading conversation data...');
+		loading.show();
+
 		let conversation;
 		let conversationData;
 		try {
@@ -152,8 +157,14 @@
 			conversationData = await conversation.getData(true);
 		} catch (error) {
 			console.error('Failed to fetch conversation:', error);
+			loading.setTitle('Error');
+			loading.setContent('Failed to load conversation data. Please try again.');
+			loading.addConfirm('OK');
 			return;
 		}
+
+		// Close loading modal
+		loading.destroy();
 
 		const conversationId = getConversationId();
 		const contentDiv = document.createElement('div');
@@ -197,7 +208,6 @@
 		const bookmarksList = document.createElement('div');
 		bookmarksList.className = CLAUDE_CLASSES.LIST_CONTAINER;
 		bookmarksList.style.maxHeight = '20rem';
-		bookmarksList.id = 'bookmarks-list';
 
 		// Function to update the list
 		const updateBookmarksList = () => {
@@ -235,16 +245,9 @@
 		contentDiv.appendChild(addBtn);
 
 		// Create and show modal
-		const modal = createClaudeModal({
-			title: 'Navigation',
-			content: contentDiv,
-			cancelText: 'Close',
-			onCancel: () => {
-				// Just close
-			}
-		});
-
-		document.body.appendChild(modal);
+		const modal = new ClaudeModal('Navigation', contentDiv);
+		modal.addCancel('Close');
+		modal.show();
 	}
 
 	// ======== BUTTON CREATION ========

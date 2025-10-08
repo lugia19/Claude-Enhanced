@@ -5,12 +5,6 @@
 (function () {
 	'use strict';
 
-	// Helper functions
-	function getConversationId() {
-		const match = window.location.pathname.match(/\/chat\/([^/?]+)/);
-		return match ? match[1] : null;
-	}
-
 	async function getMessages(fullTree = false) {
 		const conversationId = getConversationId();
 		if (!conversationId) {
@@ -18,22 +12,16 @@
 		}
 
 		const orgId = getOrgId();
-
-		const response = await fetch(`/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=${fullTree}&rendering_mode=messages&render_all_tools=true`);
-		const conversationData = await response.json();
+		const conversation = new ClaudeConversation(orgId, conversationId);
+		const conversationData = await conversation.getData(fullTree);
 
 		const messages = [];
 
 		for (const message of conversationData.chat_messages) {
-			let messageContent = [];
-
-			for (const content of message.content) {
-				messageContent = messageContent.concat(await getTextFromContent(content));
-			}
-
+			const messageContent = ClaudeConversation.extractMessageText(message);
 			messages.push({
 				role: message.sender === 'human' ? 'user' : 'assistant',
-				content: messageContent.join('\n')
+				content: messageContent
 			});
 		}
 
@@ -43,30 +31,6 @@
 			messages: messages,
 			raw: conversationData
 		};
-	}
-
-	async function getTextFromContent(content) {
-		let textPieces = [];
-
-		if (content.text) {
-			textPieces.push(content.text);
-		}
-		if (content.input) {
-			textPieces.push(JSON.stringify(content.input));
-		}
-		if (content.content) {
-			// Handle nested content array
-			if (Array.isArray(content.content)) {
-				for (const nestedContent of content.content) {
-					textPieces = textPieces.concat(await getTextFromContent(nestedContent));
-				}
-			}
-			// Handle single nested content object
-			else if (typeof content.content === 'object') {
-				textPieces = textPieces.concat(await getTextFromContent(content.content));
-			}
-		}
-		return textPieces;
 	}
 
 	async function formatExport(conversationData, format, conversationId) {
@@ -84,26 +48,23 @@
 				return messages.map(JSON.stringify).join('\n');
 
 			case 'librechat':
-				// First, process all messages' content
-				const processedMessages = await Promise.all(conversationData.raw.chat_messages.map(async (msg) => {
-					const contentText = [];
-					for (const content of msg.content) {
-						contentText.push(...await getTextFromContent(content));
-					}
+				// Process all messages' content
+				const processedMessages = conversationData.raw.chat_messages.map((msg) => {
+					const contentText = ClaudeConversation.extractMessageText(msg);
 
 					return {
 						messageId: msg.uuid,
 						parentMessageId: msg.parent_message_uuid === "00000000-0000-4000-8000-000000000000"
 							? null
 							: msg.parent_message_uuid,
-						text: contentText.join('\n'),
+						text: contentText,
 						sender: msg.sender === "assistant" ? "Claude" : "User",
 						isCreatedByUser: msg.sender === "human",
 						createdAt: msg.created_at
 					};
-				}));
+				});
 
-				// Then create and return the final object
+				// Create and return the final object
 				return JSON.stringify({
 					title: conversationData.raw.name,
 					endpoint: "anthropic",
@@ -268,8 +229,6 @@
 	}
 
 	function showWarningsModal(warnings) {
-		const content = document.createElement('div');
-
 		const warningList = document.createElement('ul');
 		warningList.className = 'list-disc pl-5 space-y-1';
 		warnings.forEach(warning => {
@@ -277,19 +236,12 @@
 			li.textContent = warning;
 			warningList.appendChild(li);
 		});
-		content.appendChild(warningList);
 
 		return new Promise((resolve) => {
-			const modal = createClaudeModal({
-				title: 'Import Warnings',
-				content: content,
-				confirmText: 'Import Anyway',
-				cancelText: 'Cancel',
-				onConfirm: () => resolve(true),
-				onCancel: () => resolve(false)
-			});
-
-			document.body.appendChild(modal);
+			const modal = new ClaudeModal('Import Warnings', warningList);
+			modal.addCancel('Cancel', () => resolve(false));
+			modal.addConfirm('Import Anyway', () => resolve(true));
+			modal.show();
 		});
 	}
 
@@ -549,17 +501,10 @@
 		content.appendChild(warningNote);
 
 		// Create modal
-		const modal = createClaudeModal({
-			title: 'Export & Import',
-			content: content,
-			showButtons: false
-		});
+		const modal = new ClaudeModal('Export & Import', content);
 
 		// Override max width
-		const modalContainer = modal.querySelector('.' + CLAUDE_CLASSES.MODAL_CONTAINER.split(' ')[0]);
-		if (modalContainer) {
-			modalContainer.style.maxWidth = '28rem';
-		}
+		modal.modal.style.maxWidth = '28rem';
 
 		// Add event listeners
 		exportButton.onclick = async () => {
@@ -581,7 +526,7 @@
 				const content = await formatExport(conversationData, format, conversationId);
 				downloadFile(filename, content);
 
-				modal.remove();
+				modal.hide();
 			} catch (error) {
 				console.error('Export failed:', error);
 				exportButton.textContent = 'Export failed';
@@ -594,14 +539,7 @@
 
 		importButton.onclick = () => handleImport(modelSelect, importButton);
 
-		// Close on background click
-		modal.onclick = (e) => {
-			if (e.target === modal) {
-				modal.remove();
-			}
-		};
-
-		document.body.appendChild(modal);
+		modal.show();
 	}
 
 	function createExportButton() {
