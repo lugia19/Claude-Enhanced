@@ -3,8 +3,8 @@
 This extension adds a bunch of QOL/Utility features to claude.ai, like TTS, STT, forking, exporting, etc.
 
 Available on:
-- [Firefox]() - TBD
-- [Chrome]() - TBD
+- [Firefox](https://addons.mozilla.org/en-US/firefox/addon/claude-toolbox/)
+- [Chrome](https://chromewebstore.google.com/detail/claude-toolbox/dkdnancajokhfclpjpplkhlkbhaeejob)
 - The desktop client - Via [Claude-WebExtension-Launcher](https://github.com/lugia19/Claude-WebExtension-Launcher)
 
 # Features
