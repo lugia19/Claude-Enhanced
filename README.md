@@ -1,6 +1,6 @@
 # Claude Toolbox Extension
 
-This extension adds a bunch of QOL/Utility features to claude.ai, like TTS, STT, forking, exporting, etc.
+This extension adds a bunch of QOL/Utility features to claude.ai, like Search, Navigation, TTS, STT, forking, exporting, etc.
 
 Available on:
 - [Firefox (Desktop+Mobile)](https://addons.mozilla.org/en-US/firefox/addon/claude-toolbox/)
