@@ -366,7 +366,6 @@
     </svg>`;
 
 		const button = createClaudeButton(svgContent, 'icon', showSettingsModal);
-		createClaudeTooltip(button, 'STT Settings');
 
 		return button;
 	}
@@ -473,7 +472,7 @@
 		}
 
 		setInterval(async () => {
-			tryAddTopRightButton("stt-settings-button", createSettingsButton);
+			tryAddTopRightButton("stt-settings-button", createSettingsButton, 'STT Settings');
 			await tryAddMicButton();
 		}, 1000);
 	}

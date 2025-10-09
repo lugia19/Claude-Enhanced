@@ -257,7 +257,7 @@
 
 	// ======== SIDEBAR INJECTION ========
 	async function findSidebarContainers() {
-		const sidebarNav = document.querySelector('nav.h-screen.flex');
+		const sidebarNav = document.querySelector('nav.flex');
 		if (!sidebarNav) {
 			return null;
 		}

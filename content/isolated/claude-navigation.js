@@ -257,7 +257,6 @@
 		</svg>`;
 
 		const button = createClaudeButton(svgContent, 'icon', showNavigationModal);
-		createClaudeTooltip(button, 'Navigation');
 
 		return button;
 	}
@@ -266,7 +265,7 @@
 	function initialize() {
 		// Add navigation button to top right
 		setInterval(() => {
-			tryAddTopRightButton("navigation-button", createNavigationButton);
+			tryAddTopRightButton("navigation-button", createNavigationButton, 'Navigation');
 		}, 1000);
 	}
 

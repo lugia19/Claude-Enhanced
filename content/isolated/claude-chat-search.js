@@ -402,8 +402,6 @@
 		</svg>`;
 
 		const button = createClaudeButton(svgContent, 'icon', showSearchModal);
-		createClaudeTooltip(button, 'Search Conversation');
-
 		return button;
 	}
 
@@ -413,7 +411,7 @@
 		console.log('scrollToStoredText called, textToFind:', textToFind);
 		if (!textToFind) return;
 
-		const maxRetries = 10;
+		const maxRetries = 20;
 		const retryDelay = 500;
 		let attempts = 0;
 
@@ -474,7 +472,7 @@
 
 		// Add search button to top right
 		setInterval(() => {
-			tryAddTopRightButton("search-button", createSearchButton);
+			tryAddTopRightButton("search-button", createSearchButton, 'Search Conversation');
 		}, 1000);
 	}
 

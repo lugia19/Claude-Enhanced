@@ -97,8 +97,6 @@
 		);
 
 		button.classList.add('shrink-0', 'style-selector-button');
-		createClaudeTooltip(button, 'Chat style: Use current');
-
 		button.onclick = async () => {
 			await showStyleModal();
 		};
@@ -214,12 +212,12 @@
 
 	// ======== INITIALIZATION ========
 	function initialize() {
-		if (tryAddTopRightButton('style-selector-button', createStyleButton)) {
+		if (tryAddTopRightButton('style-selector-button', createStyleButton, "Chat style: Use current", true)) {
 			updateButtonAppearance();
 		}
 
 		setInterval(async () => {
-			if (tryAddTopRightButton('style-selector-button', createStyleButton)) {
+			if (tryAddTopRightButton('style-selector-button', createStyleButton, "Chat style: Use current", true)) {
 				await updateButtonAppearance();
 			}
 		}, 1000);

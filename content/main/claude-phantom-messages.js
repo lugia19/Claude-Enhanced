@@ -183,3 +183,13 @@ function injectPhantomMessages(data, phantomMessages) {
 	// Prepend phantom messages to the conversation
 	data.chat_messages = [...phantomMessages, ...data.chat_messages];
 }
+
+// Listen for messages from ISOLATED world
+window.addEventListener('message', (event) => {
+	if (event.source !== window) return; // Only accept messages from same window
+
+	if (event.data.type === 'STORE_PHANTOM_MESSAGES') {
+		const { conversationId, phantomMessages } = event.data;
+		storePhantomMessages(conversationId, phantomMessages);
+	}
+});

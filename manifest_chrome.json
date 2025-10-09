@@ -25,7 +25,8 @@
 				"content/isolated/claude-pref-switcher.js",
 				"content/isolated/claude-stt.js",
 				"content/isolated/claude-perchat-styles.js",
-				"content/isolated/claude-tts.js"
+				"content/isolated/claude-tts.js",
+				"content/isolated/claude-exporter.js"
 			],
 			"run_at": "document_idle"
 		},
@@ -37,7 +38,6 @@
 				"content/claude-styles.js",
 				"content/claude-api.js",
 				"content/main/claude-phantom-messages.js",
-				"content/main/claude-exporter.js",
 				"content/main/claude-forking.js",
 				"content/main/claude-edit-files.js",
 				"content/main/pref-switcher-fetch-watcher.js",

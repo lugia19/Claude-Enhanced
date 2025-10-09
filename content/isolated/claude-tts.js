@@ -1519,9 +1519,6 @@
 		});
 
 		button.classList.add('tts-settings-button'); // Keep for identification/priority
-
-		const tooltip = createClaudeTooltip(button, 'TTS Settings');
-
 		return button;
 	}
 	//#endregion
@@ -1564,8 +1561,8 @@
 	function initialize() {
 		addTTSStyles();
 		// Try to add the settings button immediately
-		tryAddTopRightButton("tts-settings-button", createSettingsButton);
-		setInterval(() => tryAddTopRightButton('tts-settings-button', createSettingsButton), 1000);
+		tryAddTopRightButton("tts-settings-button", createSettingsButton, "TTS Settings", true);
+		setInterval(() => tryAddTopRightButton('tts-settings-button', createSettingsButton, "TTS Settings", true), 1000);
 		setInterval(addSpeakButtons, 1000);
 	}
 

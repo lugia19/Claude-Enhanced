@@ -222,10 +222,14 @@
 		console.log("Imported messages:", messages);
 		const phantomMessages = convertToPhantomMessages(messages);
 		console.log("Converted to phantom messages:", phantomMessages);
-		storePhantomMessages(newConvoId, phantomMessages);
+		window.postMessage({
+			type: 'STORE_PHANTOM_MESSAGES',
+			conversationId: newConvoId,
+			phantomMessages: phantomMessages
+		}, '*');
 
 		// Navigate to new conversation
-		//window.location.href = `/chat/${newConvoId}`;
+		window.location.href = `/chat/${newConvoId}`;
 	}
 
 	function showWarningsModal(warnings) {
@@ -358,7 +362,11 @@
 		try {
 			// Convert and store phantom messages
 			const phantomMessages = convertToPhantomMessages(messages);
-			storePhantomMessages(conversationId, phantomMessages);
+			window.postMessage({
+				type: 'STORE_PHANTOM_MESSAGES',
+				conversationId: conversationId,
+				phantomMessages: phantomMessages
+			}, '*');
 
 			// Reload to show changes
 			window.location.reload();
@@ -550,17 +558,14 @@
 
 		const button = createClaudeButton(svgContent, 'icon');
 
-		// Add tooltip
-		createClaudeTooltip(button, 'Export/Import chat');
-
 		button.onclick = showExportImportModal;
 
 		return button;
 	}
 
 	function initialize() {
-		tryAddTopRightButton("export-button", createExportButton);
-		setInterval(() => tryAddTopRightButton('export-button', createExportButton), 1000);
+		tryAddTopRightButton("export-button", createExportButton, "Export/Import chat");
+		setInterval(() => tryAddTopRightButton('export-button', createExportButton, "Export/Import chat"), 1000);
 	}
 
 	// Wait for dependencies to be available

@@ -37,6 +37,7 @@ const CLAUDE_CLASSES = {
 	LIST_ITEM: 'p-3 rounded bg-bg-200 border border-border-300 hover:bg-bg-300 cursor-pointer transition-colors',
 };
 
+const mobileModalButtons = [];
 const spinnerStyles = document.createElement('style');
 spinnerStyles.textContent = `
 	@keyframes claude-modal-spin {
@@ -47,7 +48,7 @@ spinnerStyles.textContent = `
 		animation: claude-modal-spin 1s linear infinite;
 	}
 `;
-document.head.appendChild(spinnerStyles);
+if (document.head) document.head.appendChild(spinnerStyles);
 
 // Component creators
 class ClaudeModal {
@@ -219,6 +220,7 @@ function createLoadingModal(text = 'Loading...') {
 
 function createClaudeButton(content, variant = 'primary', onClick = null, contentIsHTML = false) {
 	const button = document.createElement('button');
+	button.setAttribute('data-toolbox-button', 'true');
 
 	switch (variant) {
 		case 'primary':
@@ -372,7 +374,6 @@ function createClaudeToggle(labelText = '', checked = false, onChange = null) {
 	return { container, input, toggle: toggleContainer };
 }
 
-// In claude-styles.js, update the createClaudeTooltip function:
 
 function createClaudeTooltip(element, tooltipText, deleteOnClick) {
 	const tooltipId = `tooltip-${Math.random().toString(36).substring(2, 11)}`;
@@ -455,8 +456,9 @@ function createClaudeTooltip(element, tooltipText, deleteOnClick) {
 }
 
 
-function tryAddTopRightButton(buttonClass, createButtonFn) {
-	if (!window.location.href.includes("/chat/")) return;
+// All top right buttons must be in ISOLATED only!
+function tryAddTopRightButton(buttonClass, createButtonFn, tooltipText = '', forceDisplay = false) {
+	if (!window.location.href.includes("/chat/")) return false;
 
 	const BUTTON_PRIORITY = [
 		'search-button',
@@ -467,57 +469,156 @@ function tryAddTopRightButton(buttonClass, createButtonFn) {
 		'tts-settings-button',
 	];
 
-	const container = document.querySelector('div.right-3:has(> div.flex > button)') || document.querySelector('div.right-3:has(> button)')
+	const container = document.querySelector('div.right-3:has(> div.flex > button)') ||
+		document.querySelector('div.right-3:has(> button)');
 	if (!container || container.querySelectorAll("button").length == 0) {
 		return false;
 	}
 
+	const isMobile = window.innerHeight > window.innerWidth;
 	let madeChanges = false;
 
-	// Add button if it doesn't exist
-	if (!container.querySelector('.' + buttonClass)) {
-		const button = createButtonFn();
-		button.classList.add(buttonClass);
+	// On desktop OR if forceDisplay is true, add button normally
+	if (!isMobile || forceDisplay) {
+		// Add button if it doesn't exist
+		if (!container.querySelector('.' + buttonClass)) {
+			const button = createButtonFn();
+			button.classList.add(buttonClass);
 
-		// Add negative margin if mobile (portrait mode)
-		if (window.innerHeight > window.innerWidth) {
-			button.classList.add('-mx-1.5'); // or '-mx-1.5' for tighter spacing
-		}
+			// Add negative margin if mobile (portrait mode)
+			if (isMobile) {
+				button.classList.add('-mx-1.5');
+			}
 
-		container.appendChild(button);
-		madeChanges = true;
-	}
+			// Add tooltip
+			if (tooltipText) {
+				createClaudeTooltip(button, tooltipText);
+			}
 
-	// Check if reordering is needed
-	const currentButtons = Array.from(container.querySelectorAll('button'));
-
-	// Build desired order
-	const priorityButtons = [];
-	for (const className of BUTTON_PRIORITY) {
-		const button = container.querySelector('.' + className);
-		if (button) {
-			priorityButtons.push(button);
-		}
-	}
-
-	const nonPriorityButtons = currentButtons.filter(btn =>
-		!BUTTON_PRIORITY.some(className => btn.classList.contains(className))
-	);
-
-	const desiredOrder = [...priorityButtons, ...nonPriorityButtons];
-
-	// Only reorder if the current order doesn't match desired order
-	const needsReordering = currentButtons.length !== desiredOrder.length ||
-		!currentButtons.every((btn, index) => btn === desiredOrder[index]);
-
-	if (needsReordering) {
-		desiredOrder.forEach(button => {
 			container.appendChild(button);
+			madeChanges = true;
+		}
+
+		// Check if reordering is needed
+		const currentButtons = Array.from(container.querySelectorAll('button'));
+
+		// Separate custom and native buttons
+		const customButtons = currentButtons.filter(btn => btn.hasAttribute('data-toolbox-button'));
+		const nativeButtons = currentButtons.filter(btn => !btn.hasAttribute('data-toolbox-button'));
+
+		// Build custom button order: priority → non-priority → "More"
+		const priorityButtons = [];
+		for (const className of BUTTON_PRIORITY) {
+			const button = customButtons.find(btn => btn.classList.contains(className));
+			if (button) {
+				priorityButtons.push(button);
+			}
+		}
+
+		const nonPriorityButtons = customButtons.filter(btn =>
+			!BUTTON_PRIORITY.some(className => btn.classList.contains(className)) &&
+			!btn.classList.contains('more-actions-button')
+		);
+
+		const moreButton = customButtons.find(btn => btn.classList.contains('more-actions-button'));
+
+		// Desired order: priority → non-priority → "More" → native
+		const desiredOrder = [...priorityButtons, ...nonPriorityButtons];
+		if (moreButton) {
+			desiredOrder.push(moreButton);
+		}
+		desiredOrder.push(...nativeButtons);
+
+		// Only reorder if the current order doesn't match desired order
+		const needsReordering = currentButtons.length !== desiredOrder.length ||
+			!currentButtons.every((btn, index) => btn === desiredOrder[index]);
+
+		if (needsReordering) {
+			desiredOrder.forEach(button => {
+				container.appendChild(button);
+			});
+			madeChanges = true;
+		}
+
+		return madeChanges;
+	}
+
+	// On mobile AND forceDisplay is false: add to modal instead
+	const existingButton = mobileModalButtons.find(b => b.class === buttonClass);
+	if (!existingButton) {
+		mobileModalButtons.push({
+			class: buttonClass,
+			createFn: createButtonFn,
+			tooltip: tooltipText
 		});
 		madeChanges = true;
 	}
 
+	// Make sure the "More" button exists
+	if (!container.querySelector('.more-actions-button')) {
+		const moreButton = createClaudeButton(`
+			<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+				<circle cx="8" cy="2" r="1.5"/>
+				<circle cx="8" cy="8" r="1.5"/>
+				<circle cx="8" cy="14" r="1.5"/>
+			</svg>
+		`, 'icon');
+
+		moreButton.classList.add('more-actions-button', '-mx-1.5');
+
+		moreButton.onclick = () => {
+			showMoreActionsModal();
+		};
+
+		createClaudeTooltip(moreButton, 'More actions');
+		container.appendChild(moreButton);
+		madeChanges = true;
+	}
+
 	return madeChanges;
+}
+
+function showMoreActionsModal() {
+	const modal = new ClaudeModal('More Actions', '', true);
+
+	const list = document.createElement('div');
+	list.className = 'space-y-2';
+
+	// Add each stored button to the modal
+	mobileModalButtons.forEach(btnInfo => {
+		const button = btnInfo.createFn();
+		console.log('Adding button to modal:', btnInfo.class);
+		// Create a list item wrapper
+		const item = document.createElement('div');
+		item.className = 'p-3 rounded bg-bg-200 border border-border-300 hover:bg-bg-300 cursor-pointer transition-colors flex items-center gap-3';
+
+		// Add the button content (icon)
+		const iconWrapper = document.createElement('div');
+		iconWrapper.className = 'flex-shrink-0';
+		iconWrapper.innerHTML = button.innerHTML;
+		item.appendChild(iconWrapper);
+
+		// Add the label text from tooltip
+		if (btnInfo.tooltip) {
+			const label = document.createElement('span');
+			label.className = 'text-text-100 flex-1';
+			label.textContent = btnInfo.tooltip;
+			item.appendChild(label);
+		}
+
+		// When clicked, trigger the button's onclick and close modal
+		item.onclick = () => {
+			if (button.onclick) {
+				button.onclick();
+			}
+			modal.destroy();
+		};
+
+		list.appendChild(item);
+	});
+
+	modal.setContent(list);
+	modal.show();
 }
 
 function findMessageControls(messageElement) {
