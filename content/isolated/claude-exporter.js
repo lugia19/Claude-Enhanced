@@ -391,7 +391,7 @@
 		// Format label (no "Export" header)
 		const formatLabel = document.createElement('label');
 		formatLabel.className = CLAUDE_CLASSES.LABEL;
-		formatLabel.textContent = 'Format';
+		formatLabel.textContent = 'Export Format';
 		content.appendChild(formatLabel);
 
 		const exportContainer = document.createElement('div');

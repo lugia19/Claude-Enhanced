@@ -204,6 +204,7 @@
 			// Remove the display ellipses before storing
 			const textToStore = result.matched_text.replace(/^\.\.\./, '').replace(/\.\.\.$/, '');
 			const searchSnippet = simplifyText(textToStore);
+			console.log('Storing text to find:', searchSnippet);
 			sessionStorage.setItem('text_to_find', searchSnippet);
 
 			const longestLeaf = conversation.findLongestLeaf(result.matched_message_id);
@@ -420,7 +421,7 @@
 			console.log(`Attempt ${attempts} to find text...`);
 			console.log('Looking for:', textToFind);
 
-			const messages = document.querySelectorAll('.font-claude-response, .font-user-message');
+			const messages = document.querySelectorAll('.font-claude-response, .\\!font-claude-response, .font-user-message, .\\!font-user-message');
 			console.log('Found', messages.length, 'message elements');
 
 			for (const node of messages) {
@@ -430,11 +431,7 @@
 					.map(el => el.textContent)
 					.join(' ');
 				const simplifiedText = simplifyText(nodeText);
-
-				// Debug: log first match attempt
-				if (attempts === 1 && messages[0] === node) {
-					console.log('First message simplified:', simplifiedText.substring(0, 200));
-				}
+				if (simplifiedText.includes("complexity")) console.log(simplifiedText)
 
 				if (simplifiedText.includes(textToFind) || fuzzyMatch(textToFind, simplifiedText)) {
 					console.log('FOUND IT!');
