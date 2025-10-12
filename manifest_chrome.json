@@ -10,7 +10,7 @@
 		"https://claude.ai/*",
 		"https://api.groq.com/*",
 		"https://api.elevenlabs.io/*",
-		"https://api.anthropic.com/*"
+		"https://storage.googleapis.com/*"
 	],
 	"content_scripts": [
 		{
@@ -20,7 +20,7 @@
 			"js": [
 				"content/claude-styles.js",
 				"content/claude-api.js",
-				"content/isolated/lz-string.min.js",
+				"lib/lz-string.min.js",
 				"content/isolated/claude-chat-search.js",
 				"content/isolated/claude-navigation.js",
 				"content/isolated/claude-pref-switcher.js",

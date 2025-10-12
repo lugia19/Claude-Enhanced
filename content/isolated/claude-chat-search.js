@@ -62,18 +62,38 @@
 		}
 
 		async init() {
-			return new Promise((resolve, reject) => {
+			console.log('[IndexedDB] Starting init...');
+
+			if (this.initPromise) {
+				console.log('[IndexedDB] Already initializing, waiting...');
+				return this.initPromise;
+			}
+
+			if (this.db) {
+				console.log('[IndexedDB] Already initialized');
+				return;
+			}
+
+			this.initPromise = new Promise((resolve, reject) => {
+				console.log('[IndexedDB] Opening database...');
 				const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-				request.onerror = () => reject(request.error);
+				request.onerror = () => {
+					console.error('[IndexedDB] Error:', request.error);
+					this.initPromise = null;
+					reject(request.error);
+				};
+
 				request.onsuccess = () => {
+					console.log('[IndexedDB] Success!');
 					this.db = request.result;
+					this.initPromise = null;
 					resolve();
 				};
 
 				request.onupgradeneeded = (event) => {
+					console.log('[IndexedDB] Upgrade needed');
 					const db = event.target.result;
-
 					// Metadata store: uuid -> full conversation object from API
 					if (!db.objectStoreNames.contains(METADATA_STORE)) {
 						db.createObjectStore(METADATA_STORE, { keyPath: 'uuid' });
@@ -84,10 +104,17 @@
 						db.createObjectStore(MESSAGES_STORE, { keyPath: 'uuid' });
 					}
 				};
+
+				request.onblocked = () => {
+					console.warn('[IndexedDB] BLOCKED - close other tabs!');
+				};
 			});
+
+			return this.initPromise;
 		}
 
 		async getMetadata(conversationId) {
+			if (!this.db) await this.init();
 			return new Promise((resolve, reject) => {
 				const transaction = this.db.transaction([METADATA_STORE], 'readonly');
 				const store = transaction.objectStore(METADATA_STORE);
@@ -99,6 +126,7 @@
 		}
 
 		async getAllMetadata() {
+			if (!this.db) await this.init();
 			return new Promise((resolve, reject) => {
 				const transaction = this.db.transaction([METADATA_STORE], 'readonly');
 				const store = transaction.objectStore(METADATA_STORE);
@@ -110,6 +138,7 @@
 		}
 
 		async setMetadata(conversationObj) {
+			if (!this.db) await this.init();
 			return new Promise((resolve, reject) => {
 				const transaction = this.db.transaction([METADATA_STORE], 'readwrite');
 				const store = transaction.objectStore(METADATA_STORE);
@@ -121,6 +150,7 @@
 		}
 
 		async getMessages(conversationId) {
+			if (!this.db) await this.init();
 			return new Promise((resolve, reject) => {
 				const transaction = this.db.transaction([MESSAGES_STORE], 'readonly');
 				const store = transaction.objectStore(MESSAGES_STORE);
@@ -142,6 +172,7 @@
 		}
 
 		async setMessages(conversationId, messages) {
+			if (!this.db) await this.init();
 			return new Promise((resolve, reject) => {
 				// Compress
 				const json = JSON.stringify(messages);
@@ -160,6 +191,7 @@
 		}
 
 		async deleteConversation(conversationId) {
+			if (!this.db) await this.init();
 			return new Promise((resolve, reject) => {
 				const transaction = this.db.transaction([METADATA_STORE, MESSAGES_STORE], 'readwrite');
 
@@ -177,13 +209,10 @@
 
 	// Global database instance
 	const searchDB = new SearchDatabase();
-
 	// ======== SYNC LOGIC ========
-	async function syncConversations(progressCallback, isInit) {
+	async function getConversationsToUpdate() {
 		const orgId = getOrgId();
 
-		// Fetch all conversations from API
-		progressCallback('Fetching conversation list...');
 		const response = await fetch(`/api/organizations/${orgId}/chat_conversations`);
 		if (!response.ok) {
 			throw new Error('Failed to fetch conversations');
@@ -192,11 +221,9 @@
 		const allConversations = await response.json();
 		console.log(`Found ${allConversations.length} total conversations`);
 
-		// Get all stored metadata
 		const storedMetadata = await searchDB.getAllMetadata();
 		const storedMap = new Map(storedMetadata.map(m => [m.uuid, m]));
 
-		// Find conversations that need updating
 		const toUpdate = [];
 		for (const conv of allConversations) {
 			const stored = storedMap.get(conv.uuid);
@@ -209,6 +236,11 @@
 		}
 
 		console.log(`Need to update ${toUpdate.length} conversations`);
+		return toUpdate;
+	}
+
+	async function syncConversationsIndividually(progressCallback, toUpdate) {
+		const orgId = getOrgId();
 
 		if (toUpdate.length === 0) {
 			progressCallback('All conversations up to date!');
@@ -237,7 +269,7 @@
 					await searchDB.setMessages(conv.uuid, messages);
 
 					completed++;
-					progressCallback(`Updating ${completed} of ${toUpdate.length} conversations...${isInit ? '\nInitializing, this may take a long time...' : ''}`);
+					progressCallback(`Updating ${completed} of ${toUpdate.length} conversations...`);
 
 					console.log(`Updated conversation: ${conv.name} (${messages.length} messages)`);
 				} catch (error) {
@@ -261,32 +293,246 @@
 	}
 
 	async function triggerSync() {
-		// Show loading modal
-		const loadingModal = createLoadingModal('Syncing conversations...');
-		loadingModal.show();
+		const toUpdate = await getConversationsToUpdate();
+		const loadingModal = createLoadingModal('Initializing sync...');
+		if (toUpdate.length >= 0) {
+			loadingModal.show();	// Don't show for small updates. They just happen silently.
+		}
 
 		try {
-			// Initialize database if needed
-			let isInit = false;
-			if (!searchDB.db) {
-				isInit = true;
-				await searchDB.init();
+			// Check conversation count
+			loadingModal.setContent(createLoadingContent('Checking what needs syncing...'));
+
+			if (toUpdate.length >= 300) {
+				// Use GDPR export for efficiency
+				loadingModal.setContent(createLoadingContent(`Preparing to sync ${toUpdate.length} conversations...`));
+				await new Promise(resolve => setTimeout(resolve, 2000)); // Let them read it
+
+				try {
+					await syncConversationsViaExport(loadingModal);
+				} catch (error) {
+					console.error('GDPR export failed:', error);
+					loadingModal.destroy();
+
+					// Ask user if they want to fallback
+					const fallbackModal = new ClaudeModal(
+						'Export Failed',
+						`The data export failed: ${error.message}\n\nWould you like to fall back to standard sync? This will take longer but should work reliably.`
+					);
+
+					let shouldFallback = false;
+
+					fallbackModal.addCancel('Cancel');
+					fallbackModal.addConfirm('Use Standard Sync', () => {
+						shouldFallback = true;
+					});
+
+					fallbackModal.show();
+
+					// Wait for modal to be dismissed
+					await new Promise(resolve => {
+						const checkClosed = setInterval(() => {
+							if (!fallbackModal.isVisible) {
+								clearInterval(checkClosed);
+								resolve();
+							}
+						}, 100);
+					});
+
+					if (shouldFallback) {
+						const newLoadingModal = createLoadingModal('Starting standard sync...');
+						newLoadingModal.show();
+
+						await syncConversationsIndividually((status) => {
+							newLoadingModal.setContent(createLoadingContent(status));
+						}, toUpdate);
+
+						newLoadingModal.destroy();
+					} else {
+						// User cancelled
+						return;
+					}
+				}
+			} else {
+				// Use incremental sync for small amounts of conversations
+				await syncConversationsIndividually((status) => {
+					loadingModal.setContent(createLoadingContent(status));
+				}, toUpdate);
+
+
 			}
 
-			// Run sync with progress updates
-			await syncConversations((status) => {
-				loadingModal.setContent(createLoadingContent(status));
-			}, isInit);
-
-			loadingModal.destroy();
 		} catch (error) {
 			console.error('Sync failed:', error);
-			loadingModal.destroy();
 
 			const errorModal = new ClaudeModal('Sync Failed', `Failed to sync conversations: ${error.message}`);
 			errorModal.addConfirm('OK');
 			errorModal.show();
+			throw error;
+		} finally {
+			loadingModal.destroy();
 		}
+	}
+
+	// ======== GDPR EXPORT ========
+	let gdprLoadingModal = null;
+	let gdprTotalConversations = 0;
+	let gdprProcessedConversations = 0;
+
+	chrome.runtime.onMessage.addListener(async (message) => {
+		if (message.type === 'GDPR_BATCH') {
+			gdprTotalConversations = message.total;
+
+			for (const conv of message.batch) {
+				try {
+					const metadata = transformGDPRToMetadata(conv);
+					await searchDB.setMetadata(metadata);
+					await searchDB.setMessages(conv.uuid, conv.chat_messages);
+
+					gdprProcessedConversations++;
+				} catch (error) {
+					console.error(`[GDPR Export] Failed to load conversation ${conv.uuid}:`, error);
+					gdprProcessedConversations++; // Count it anyway
+				}
+			}
+			console.log(`[GDPR Export] Processed batch of ${message.batch.length}, total processed: ${gdprProcessedConversations}/${gdprTotalConversations}`);
+			// Update progress
+			if (gdprLoadingModal) {
+				gdprLoadingModal.setContent(createLoadingContent(
+					`Loading ${gdprProcessedConversations} of ${gdprTotalConversations} conversations...`
+				));
+			}
+
+			// Check if we're done (processed everything)
+			if (gdprProcessedConversations >= gdprTotalConversations) {
+				console.log('[GDPR Export] All conversations processed');
+				if (gdprLoadingModal) {
+					gdprLoadingModal.destroy();
+					gdprLoadingModal = null;
+				}
+				gdprProcessedConversations = 0;
+				gdprTotalConversations = 0;
+			}
+		}
+	});
+
+	async function syncConversationsViaExport(loadingModal) {
+		const orgId = getOrgId();
+
+		console.log('[GDPR Export] Starting export sync for conversations');
+
+		// Phase 1: Request export
+		loadingModal.setContent(createLoadingContent(
+			'Requesting data export...'
+		));
+
+		console.log('[GDPR Export] Requesting export from API...');
+		const exportResponse = await fetch(`/api/organizations/${orgId}/export_data`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' }
+		});
+
+		if (!exportResponse.ok) {
+			const errorText = await exportResponse.text();
+			console.error('[GDPR Export] Export request failed:', exportResponse.status, errorText);
+			throw new Error(`Export request failed: ${exportResponse.status}`);
+		}
+
+		const exportData = await exportResponse.json();
+		const nonce = exportData.nonce;
+		console.log('[GDPR Export] Export requested, nonce:', nonce);
+
+		// Phase 2: Poll for completion
+		const MAX_POLL_ATTEMPTS = 12; // 6 minutes at 30s intervals
+		const POLL_INTERVAL_MS = 30000; // 30 seconds
+
+		let storageUrl = null;
+
+		for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
+			loadingModal.setContent(createLoadingContent(
+				`Waiting for export to complete...\n(Attempt ${attempt}/${MAX_POLL_ATTEMPTS})`
+			));
+
+			console.log(`[GDPR Export] Polling attempt ${attempt}/${MAX_POLL_ATTEMPTS}...`);
+
+			const downloadPageUrl = `https://claude.ai/export/${orgId}/download/${nonce}`;
+			console.log('[GDPR Export] Checking:', downloadPageUrl);
+
+			try {
+				const pollResponse = await fetch(downloadPageUrl);
+				console.log('[GDPR Export] Poll response status:', pollResponse.status);
+
+				if (pollResponse.status === 200) {
+					const html = await pollResponse.text();
+					console.log('[GDPR Export] Got HTML response, length:', html.length);
+
+					// Extract storage URL from the HTML
+					const urlMatch = html.match(/https:\/\/storage\.googleapis\.com\/user-data-export-production\/[^"]+/);
+
+					if (urlMatch) {
+						storageUrl = urlMatch[0].replace(/\\u0026/g, '&');
+						console.log('[GDPR Export] Found storage URL:', storageUrl.substring(0, 100) + '...');
+						break;
+					} else {
+						console.log('[GDPR Export] Storage URL not in page yet, export still processing...');
+					}
+				} else {
+					console.warn('[GDPR Export] Unexpected response status:', pollResponse.status);
+				}
+			} catch (error) {
+				console.warn(`[GDPR Export] Poll attempt ${attempt} failed:`, error.message);
+				// Continue to next attempt
+			}
+
+			// Wait before next attempt (except on last attempt)
+			if (attempt < MAX_POLL_ATTEMPTS) {
+				await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+			}
+		}
+
+		if (!storageUrl) {
+			console.error('[GDPR Export] Export did not complete within timeout');
+			throw new Error('Export timed out after 6 minutes');
+		}
+
+		// Phase 3: Request download from background
+		console.log('[GDPR Export] Requesting download from background script...');
+		loadingModal.setContent(createLoadingContent('Downloading and processing export...'));
+
+		gdprLoadingModal = createLoadingModal('Importing...');;
+		const downloadResult = await new Promise((resolve) => {
+			chrome.runtime.sendMessage({
+				type: 'DOWNLOAD_GDPR_EXPORT',
+				url: storageUrl
+			}, resolve);
+		});
+
+		if (!downloadResult.success) {
+			gdprLoadingModal = null;
+			gdprLoadingModal.destroy();
+			throw new Error(`Download failed: ${downloadResult.error}`);
+		}
+
+		console.log('[GDPR Export] Processing', downloadResult.totalCount, 'conversations...');
+		gdprLoadingModal.show();
+	}
+
+	function transformGDPRToMetadata(gdprConv) {
+		return {
+			uuid: gdprConv.uuid,
+			name: gdprConv.name,
+			created_at: gdprConv.created_at,
+			updated_at: gdprConv.updated_at,
+			summary: gdprConv.summary || "",
+			model: null,
+			settings: {},
+			is_starred: false,
+			is_temporary: false,
+			project_uuid: null,
+			current_leaf_message_uuid: null,
+			user_uuid: null,
+			project: null
+		};
 	}
 
 	// ======== SEARCH INTERCEPT HANDLER ========
@@ -311,11 +557,6 @@
 		}
 
 		try {
-			// Initialize DB if needed
-			if (!searchDB.db) {
-				await searchDB.init();
-			}
-
 			// Search all conversations
 			const results = await searchAllConversations(query);
 
@@ -931,6 +1172,10 @@
 		const isTextSearch = sessionStorage.getItem('text_search_enabled') === 'true';
 		const toggle = createClaudeToggle('', isTextSearch);
 
+		if (isTextSearch) {
+			triggerSync();
+		}
+
 		// Update state on change
 		toggle.input.addEventListener('change', (e) => {
 			const mode = e.target.checked ? 'text' : 'title';
@@ -938,14 +1183,10 @@
 
 			if (mode === 'text') {
 				sessionStorage.setItem('text_search_enabled', 'true');
-				// Trigger sync, then reload
-				triggerSync().then(() => {
-					window.location.reload();
-				});
 			} else {
 				sessionStorage.removeItem('text_search_enabled');
-				window.location.reload();
 			}
+			window.location.reload();
 		});
 
 		// Assemble
