@@ -20,6 +20,7 @@
 			"js": [
 				"content/claude-styles.js",
 				"content/claude-api.js",
+				"content/isolated/lz-string.min.js",
 				"content/isolated/claude-chat-search.js",
 				"content/isolated/claude-navigation.js",
 				"content/isolated/claude-pref-switcher.js",
@@ -38,6 +39,7 @@
 				"content/claude-styles.js",
 				"content/main/claude-phantom-messages.js",
 				"content/claude-api.js",
+				"content/main/claude-search-interceptor.js",
 				"content/main/claude-forking.js",
 				"content/main/claude-edit-files.js",
 				"content/main/pref-switcher-fetch-watcher.js",

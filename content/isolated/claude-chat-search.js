@@ -50,6 +50,322 @@
 		return matchRatio >= 0.85;
 	}
 
+	// ======== INDEXEDDB MANAGEMENT ========
+	const DB_NAME = 'claudeSearchIndex';
+	const DB_VERSION = 1;
+	const METADATA_STORE = 'metadata';
+	const MESSAGES_STORE = 'messages';
+
+	class SearchDatabase {
+		constructor() {
+			this.db = null;
+		}
+
+		async init() {
+			return new Promise((resolve, reject) => {
+				const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+				request.onerror = () => reject(request.error);
+				request.onsuccess = () => {
+					this.db = request.result;
+					resolve();
+				};
+
+				request.onupgradeneeded = (event) => {
+					const db = event.target.result;
+
+					// Metadata store: uuid -> full conversation object from API
+					if (!db.objectStoreNames.contains(METADATA_STORE)) {
+						db.createObjectStore(METADATA_STORE, { keyPath: 'uuid' });
+					}
+
+					// Messages store: uuid -> compressed messages
+					if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
+						db.createObjectStore(MESSAGES_STORE, { keyPath: 'uuid' });
+					}
+				};
+			});
+		}
+
+		async getMetadata(conversationId) {
+			return new Promise((resolve, reject) => {
+				const transaction = this.db.transaction([METADATA_STORE], 'readonly');
+				const store = transaction.objectStore(METADATA_STORE);
+				const request = store.get(conversationId);
+
+				request.onsuccess = () => resolve(request.result);
+				request.onerror = () => reject(request.error);
+			});
+		}
+
+		async getAllMetadata() {
+			return new Promise((resolve, reject) => {
+				const transaction = this.db.transaction([METADATA_STORE], 'readonly');
+				const store = transaction.objectStore(METADATA_STORE);
+				const request = store.getAll();
+
+				request.onsuccess = () => resolve(request.result);
+				request.onerror = () => reject(request.error);
+			});
+		}
+
+		async setMetadata(conversationObj) {
+			return new Promise((resolve, reject) => {
+				const transaction = this.db.transaction([METADATA_STORE], 'readwrite');
+				const store = transaction.objectStore(METADATA_STORE);
+				const request = store.put(conversationObj);
+
+				request.onsuccess = () => resolve();
+				request.onerror = () => reject(request.error);
+			});
+		}
+
+		async getMessages(conversationId) {
+			return new Promise((resolve, reject) => {
+				const transaction = this.db.transaction([MESSAGES_STORE], 'readonly');
+				const store = transaction.objectStore(MESSAGES_STORE);
+				const request = store.get(conversationId);
+
+				request.onsuccess = () => {
+					const result = request.result;
+					if (!result) {
+						resolve(null);
+						return;
+					}
+
+					// Decompress
+					const decompressed = LZString.decompressFromUTF16(result.compressedData);
+					resolve(JSON.parse(decompressed));
+				};
+				request.onerror = () => reject(request.error);
+			});
+		}
+
+		async setMessages(conversationId, messages) {
+			return new Promise((resolve, reject) => {
+				// Compress
+				const json = JSON.stringify(messages);
+				const compressed = LZString.compressToUTF16(json);
+
+				const transaction = this.db.transaction([MESSAGES_STORE], 'readwrite');
+				const store = transaction.objectStore(MESSAGES_STORE);
+				const request = store.put({
+					uuid: conversationId,
+					compressedData: compressed
+				});
+
+				request.onsuccess = () => resolve();
+				request.onerror = () => reject(request.error);
+			});
+		}
+
+		async deleteConversation(conversationId) {
+			return new Promise((resolve, reject) => {
+				const transaction = this.db.transaction([METADATA_STORE, MESSAGES_STORE], 'readwrite');
+
+				const metadataStore = transaction.objectStore(METADATA_STORE);
+				const messagesStore = transaction.objectStore(MESSAGES_STORE);
+
+				metadataStore.delete(conversationId);
+				messagesStore.delete(conversationId);
+
+				transaction.oncomplete = () => resolve();
+				transaction.onerror = () => reject(transaction.error);
+			});
+		}
+	}
+
+	// Global database instance
+	const searchDB = new SearchDatabase();
+
+	// ======== SYNC LOGIC ========
+	async function syncConversations(progressCallback, isInit) {
+		const orgId = getOrgId();
+
+		// Fetch all conversations from API
+		progressCallback('Fetching conversation list...');
+		const response = await fetch(`/api/organizations/${orgId}/chat_conversations`);
+		if (!response.ok) {
+			throw new Error('Failed to fetch conversations');
+		}
+
+		const allConversations = await response.json();
+		console.log(`Found ${allConversations.length} total conversations`);
+
+		// Get all stored metadata
+		const storedMetadata = await searchDB.getAllMetadata();
+		const storedMap = new Map(storedMetadata.map(m => [m.uuid, m]));
+
+		// Find conversations that need updating
+		const toUpdate = [];
+		for (const conv of allConversations) {
+			const stored = storedMap.get(conv.uuid);
+
+			if (!stored) {
+				toUpdate.push(conv);
+			} else if (new Date(conv.updated_at) > new Date(stored.updated_at)) {
+				toUpdate.push(conv);
+			}
+		}
+
+		console.log(`Need to update ${toUpdate.length} conversations`);
+
+		if (toUpdate.length === 0) {
+			progressCallback('All conversations up to date!');
+			return;
+		}
+
+		// Split into 2 chunks for parallel processing
+		const chunk1 = toUpdate.filter((_, i) => i % 2 === 0);
+		const chunk2 = toUpdate.filter((_, i) => i % 2 === 1);
+
+		let completed = 0;
+		const delayMs = Math.min(1000, 100 + toUpdate.length); // Dynamic delay based on count
+		console.log(`Using ${delayMs}ms delay for ${toUpdate.length} conversations`);
+
+		async function processChunk(chunk) {
+			for (let i = 0; i < chunk.length; i++) {
+				const conv = chunk[i];
+
+				try {
+					const conversation = new ClaudeConversation(orgId, conv.uuid);
+					await conversation.getData(true);
+
+					const messages = conversation.conversationData.chat_messages || [];
+
+					await searchDB.setMetadata(conv);
+					await searchDB.setMessages(conv.uuid, messages);
+
+					completed++;
+					progressCallback(`Updating ${completed} of ${toUpdate.length} conversations...${isInit ? '\nInitializing, this may take a long time...' : ''}`);
+
+					console.log(`Updated conversation: ${conv.name} (${messages.length} messages)`);
+				} catch (error) {
+					console.error(`Failed to update conversation ${conv.uuid}:`, error);
+					completed++;
+				}
+
+				// Rate limit between requests
+				if (i < chunk.length - 1) {
+					await new Promise(resolve => setTimeout(resolve, delayMs));
+				}
+			}
+		}
+
+		await Promise.all([
+			processChunk(chunk1),
+			processChunk(chunk2)
+		]);
+
+		progressCallback('Sync complete!');
+	}
+
+	async function triggerSync() {
+		// Show loading modal
+		const loadingModal = createLoadingModal('Syncing conversations...');
+		loadingModal.show();
+
+		try {
+			// Initialize database if needed
+			let isInit = false;
+			if (!searchDB.db) {
+				isInit = true;
+				await searchDB.init();
+			}
+
+			// Run sync with progress updates
+			await syncConversations((status) => {
+				loadingModal.setContent(createLoadingContent(status));
+			}, isInit);
+
+			loadingModal.destroy();
+		} catch (error) {
+			console.error('Sync failed:', error);
+			loadingModal.destroy();
+
+			const errorModal = new ClaudeModal('Sync Failed', `Failed to sync conversations: ${error.message}`);
+			errorModal.addConfirm('OK');
+			errorModal.show();
+		}
+	}
+
+	// ======== SEARCH INTERCEPT HANDLER ========
+	let isTextSearchEnabled = sessionStorage.getItem('text_search_enabled') === 'true';
+
+	window.addEventListener('message', async (event) => {
+		if (event.source !== window) return;
+		if (event.data.type !== 'SEARCH_INTERCEPT') return;
+
+		const { messageId, query, url } = event.data;
+		console.log('[Search Handler] Received intercept request:', query);
+
+		// If text search is not enabled, don't intercept
+		if (!isTextSearchEnabled) {
+			console.log('[Search Handler] Text search disabled, not intercepting');
+			window.postMessage({
+				type: 'SEARCH_RESPONSE',
+				messageId,
+				intercept: false
+			}, '*');
+			return;
+		}
+
+		try {
+			// Initialize DB if needed
+			if (!searchDB.db) {
+				await searchDB.init();
+			}
+
+			// Search all conversations
+			const results = await searchAllConversations(query);
+
+			console.log('[Search Handler] Found', results.length, 'matching conversations');
+
+			window.postMessage({
+				type: 'SEARCH_RESPONSE',
+				messageId,
+				intercept: true,
+				results: results
+			}, '*');
+
+		} catch (error) {
+			console.error('[Search Handler] Search failed:', error);
+			window.postMessage({
+				type: 'SEARCH_RESPONSE',
+				messageId,
+				intercept: false
+			}, '*');
+		}
+	});
+
+	function createLoadingContent(text) {
+		const div = document.createElement('div');
+		div.className = 'flex items-start gap-3'; // Changed from items-center to items-start
+
+		// Split on newlines and create proper line breaks
+		const lines = text.split('\n');
+		const textContent = document.createElement('div');
+		textContent.className = 'text-text-200';
+
+		lines.forEach((line, index) => {
+			const span = document.createElement('span');
+			span.textContent = line;
+			textContent.appendChild(span);
+			if (index < lines.length - 1) {
+				textContent.appendChild(document.createElement('br'));
+			}
+		});
+
+		div.innerHTML = `
+		<div class="claude-modal-spinner rounded-full h-5 w-5 border-2 border-border-300 flex-shrink-0" style="border-top-color: #2c84db"></div>
+	`;
+		div.appendChild(textContent);
+
+		return div;
+	}
+
+
+
 	// ======== SEARCH FUNCTION ========
 	function searchMessages(query, conversation) {
 		if (!query || query.trim() === '') {
@@ -115,6 +431,49 @@
 		}
 
 		return results;
+	}
+
+	async function searchAllConversations(query) {
+		if (!query || query.trim() === '') {
+			return [];
+		}
+
+		const matchedConversations = [];
+		const allMetadata = await searchDB.getAllMetadata();
+
+		for (const metadata of allMetadata) {
+			try {
+				const messages = await searchDB.getMessages(metadata.uuid);
+				if (!messages) continue;
+
+				// Create a minimal conversation object for searchMessages
+				const fakeConversation = {
+					conversationData: {
+						chat_messages: messages,
+						current_leaf_message_uuid: messages[messages.length - 1]?.uuid || '00000000-0000-4000-8000-000000000000'
+					}
+				};
+
+				// Reuse existing search logic
+				const results = searchMessages(query, fakeConversation);
+
+				if (results.length > 0) {
+					const result = { ...metadata };
+					result.name = `${metadata.name} (${results.length} match${results.length > 1 ? 'es' : ''})`;
+					matchedConversations.push(result);
+				}
+
+			} catch (error) {
+				console.error(`Failed to search conversation ${metadata.uuid}:`, error);
+			}
+		}
+
+		// Sort by updated_at (most recent first)
+		matchedConversations.sort((a, b) =>
+			new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+		);
+
+		return matchedConversations;
 	}
 
 	// ======== CONTEXT MODAL ========
@@ -219,8 +578,63 @@
 		modal.show();
 	}
 
+	// ======== AUTO-OPEN SEARCH ========
+	// At the top level
+	let isNewConversation = true;
+
+	function checkForAutoOpenSearch() {
+		const conversationId = getConversationId();
+
+		if (!conversationId) {
+			// Not in a chat, reset flag
+			isNewConversation = true;
+			return;
+		}
+
+		// In a chat - only auto-open if we just navigated here
+		if (!isNewConversation) {
+			return;
+		}
+
+		console.log('[Auto-open] Current conversation ID:', conversationId);
+
+		const queriesJson = localStorage.getItem('global_search_queries');
+		console.log('[Auto-open] Queries from storage:', queriesJson);
+
+		const queries = JSON.parse(queriesJson || '{}');
+		const query = queries[conversationId];
+
+		console.log('[Auto-open] Query for this conversation:', query);
+
+		if (!query) {
+			// No query for this conversation, mark as processed
+			isNewConversation = false;
+			return;
+		}
+
+		console.log('Auto-open search detected for query:', query);
+
+		const searchButton = document.querySelector('.search-button');
+		console.log('[Auto-open] Search button found:', !!searchButton);
+
+		if (searchButton) {
+			console.log('Search button found, opening modal directly');
+
+			// Remove just this conversation's entry
+			delete queries[conversationId];
+			localStorage.setItem('global_search_queries', JSON.stringify(queries));
+
+			showSearchModal(query);
+
+			// NOW mark as not new, after successful open
+			isNewConversation = false;
+		}
+
+		// If button not found yet, keep isNewConversation=true so we keep checking
+	}
+
 	// ======== MAIN SEARCH MODAL ========
-	async function showSearchModal() {
+	async function showSearchModal(autoQuery = null) {
 		// Show loading modal
 		const loadingModal = createLoadingModal('Loading conversation...');
 		loadingModal.show();
@@ -394,6 +808,12 @@
 
 		// Focus the search input
 		setTimeout(() => searchInput.focus(), 100);
+
+		// If auto-open, pre-populate and run search
+		if (autoQuery) {
+			searchInput.value = autoQuery;
+			performSearch();
+		}
 	}
 	// ======== BUTTON CREATION ========
 	function createSearchButton() {
@@ -402,7 +822,7 @@
 			<path d="m21 21-4.35-4.35"></path>
 		</svg>`;
 
-		const button = createClaudeButton(svgContent, 'icon', showSearchModal);
+		const button = createClaudeButton(svgContent, 'icon', () => showSearchModal());
 		return button;
 	}
 
@@ -464,13 +884,102 @@
 		setTimeout(attemptScroll, 1000);
 	}
 
+	//#region Global Search Toggle
+	function addGlobalSearchToggle() {
+		// Only on recents page
+		if (!window.location.pathname.includes('/recents')) {
+			return;
+		}
+
+		// Find the container with "X chats with Claude"
+		const containers = document.querySelectorAll('.flex.items-center.z-header.h-12');
+		let targetContainer = null;
+
+		for (const container of containers) {
+			if (container.textContent.includes('chats with Claude')) {
+				targetContainer = container;
+				break;
+			}
+		}
+
+		if (!targetContainer) return;
+
+		// Check if toggle already exists
+		if (targetContainer.querySelector('.global-search-toggle')) {
+			return;
+		}
+
+		// Add justify-between if not present
+		if (!targetContainer.classList.contains('justify-between')) {
+			targetContainer.classList.add('justify-between');
+		}
+
+		// Create toggle container
+		const toggleContainer = document.createElement('div');
+		toggleContainer.className = 'flex items-center gap-2 global-search-toggle';
+
+		// Labels
+		const titleLabel = document.createElement('span');
+		titleLabel.className = 'text-text-500 text-sm select-none';
+		titleLabel.textContent = 'Title Search';
+
+		const textLabel = document.createElement('span');
+		textLabel.className = 'text-text-500 text-sm select-none';
+		textLabel.textContent = 'Text Search';
+
+		// Create toggle (always defaults to false = title search)
+		const isTextSearch = sessionStorage.getItem('text_search_enabled') === 'true';
+		const toggle = createClaudeToggle('', isTextSearch);
+
+		// Update state on change
+		toggle.input.addEventListener('change', (e) => {
+			const mode = e.target.checked ? 'text' : 'title';
+			console.log('Search mode changed to:', mode);
+
+			if (mode === 'text') {
+				sessionStorage.setItem('text_search_enabled', 'true');
+				// Trigger sync, then reload
+				triggerSync().then(() => {
+					window.location.reload();
+				});
+			} else {
+				sessionStorage.removeItem('text_search_enabled');
+				window.location.reload();
+			}
+		});
+
+		// Assemble
+		toggleContainer.appendChild(titleLabel);
+		toggleContainer.appendChild(toggle.container);
+		toggleContainer.appendChild(textLabel);
+
+		// Add to page
+		targetContainer.appendChild(toggleContainer);
+	}
+	//#endregion
+
 	function initialize() {
+		// Existing scroll check
 		setTimeout(scrollToStoredText, 1000);
 
 		// Add search button to top right
 		setInterval(() => {
 			tryAddTopRightButton("search-button", createSearchButton, 'Search Conversation');
 		}, 1000);
+
+		// Add global search toggle on recents page
+		setInterval(() => {
+			addGlobalSearchToggle();
+		}, 1000);
+
+		// Check for auto-open search on chat pages (delayed start)
+		setTimeout(() => {
+			setInterval(() => {
+				if (window.location.pathname.includes('/chat/')) {
+					checkForAutoOpenSearch();
+				}
+			}, 1000);
+		}, 5000);
 	}
 
 	// Wait for DOM to be ready
