@@ -1,4 +1,4 @@
-# Claude QoL Extension
+# Claude Enhanced
 
 This extension adds a bunch of QOL/Utility features to claude.ai, like Search, Navigation, TTS, STT, forking, exporting, etc.
 
