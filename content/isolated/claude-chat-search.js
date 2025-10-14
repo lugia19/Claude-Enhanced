@@ -229,9 +229,19 @@
 			const stored = storedMap.get(conv.uuid);
 
 			if (!stored) {
+				// No metadata - needs update
 				toUpdate.push(conv);
-			} else if (new Date(conv.updated_at) > new Date(stored.updated_at)) {
-				toUpdate.push(conv);
+			} else {
+				// Check if messages exist
+				const messages = await searchDB.getMessages(conv.uuid);
+
+				if (!messages || messages.length === 0) {
+					// Metadata exists but no messages - needs update
+					toUpdate.push(conv);
+				} else if (new Date(conv.updated_at) > new Date(stored.updated_at)) {
+					// Timestamp changed - needs update
+					toUpdate.push(conv);
+				}
 			}
 		}
 
@@ -264,8 +274,6 @@
 					await conversation.getData(true);
 
 					const messages = conversation.conversationData.chat_messages || [];
-
-					await searchDB.setMetadata(conv);
 					await searchDB.setMessages(conv.uuid, messages);
 
 					completed++;
@@ -294,8 +302,12 @@
 
 	async function triggerSync() {
 		const toUpdate = await getConversationsToUpdate();
+		for (const conv of toUpdate) {
+			await searchDB.setMetadata(conv);
+		}
+
 		const loadingModal = createLoadingModal('Initializing sync...');
-		if (toUpdate.length >= 0) {
+		if (toUpdate.length >= 5) {
 			loadingModal.show();	// Don't show for small updates. They just happen silently.
 		}
 
@@ -378,32 +390,50 @@
 	let gdprLoadingModal = null;
 	let gdprTotalConversations = 0;
 	let gdprProcessedConversations = 0;
+	let gdprBatchQueue = [];
+	let gdprProcessing = false;
 
 	chrome.runtime.onMessage.addListener(async (message) => {
 		if (message.type === 'GDPR_BATCH') {
+			// Add to queue
+			gdprBatchQueue.push(message);
 			gdprTotalConversations = message.total;
+
+			// Start processing if not already
+			if (!gdprProcessing) {
+				processBatchQueue();
+			}
+		}
+	});
+
+	async function processBatchQueue() {
+		gdprProcessing = true;
+
+		while (gdprBatchQueue.length > 0) {
+			const message = gdprBatchQueue.shift();
 
 			for (const conv of message.batch) {
 				try {
-					const metadata = transformGDPRToMetadata(conv);
-					await searchDB.setMetadata(metadata);
-					await searchDB.setMessages(conv.uuid, conv.chat_messages);
+					const metadata = await searchDB.getMetadata(conv.uuid);
+					if (metadata) {
+						await searchDB.setMessages(conv.uuid, conv.chat_messages);
+					}
 
 					gdprProcessedConversations++;
 				} catch (error) {
 					console.error(`[GDPR Export] Failed to load conversation ${conv.uuid}:`, error);
-					gdprProcessedConversations++; // Count it anyway
+					gdprProcessedConversations++;
 				}
 			}
+
 			console.log(`[GDPR Export] Processed batch of ${message.batch.length}, total processed: ${gdprProcessedConversations}/${gdprTotalConversations}`);
-			// Update progress
+
 			if (gdprLoadingModal) {
 				gdprLoadingModal.setContent(createLoadingContent(
 					`Loading ${gdprProcessedConversations} of ${gdprTotalConversations} conversations...`
 				));
 			}
 
-			// Check if we're done (processed everything)
 			if (gdprProcessedConversations >= gdprTotalConversations) {
 				console.log('[GDPR Export] All conversations processed');
 				if (gdprLoadingModal) {
@@ -414,7 +444,10 @@
 				gdprTotalConversations = 0;
 			}
 		}
-	});
+
+		gdprProcessing = false;
+	}
+
 
 	async function syncConversationsViaExport(loadingModal) {
 		const orgId = getOrgId();
