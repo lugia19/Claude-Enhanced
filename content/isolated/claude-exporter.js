@@ -191,7 +191,7 @@
 		return phantomMessages;
 	}
 
-	async function performImport(fileContent, title, messages, model) {
+	async function performImport(title, messages, model) {
 		const orgId = getOrgId();
 
 		// Create new conversation with parsed title
@@ -199,10 +199,11 @@
 		const newConvoId = await conversation.create(title, model);
 
 		// Build chatlog attachment
+		const cleanedContent = messages.map(msg => msg.text).join('\n\n');
 		const chatlogAttachment = {
-			extracted_content: fileContent,
+			extracted_content: cleanedContent,
 			file_name: "chatlog.txt",
-			file_size: fileContent.length,
+			file_size: cleanedContent.length,
 			file_type: "text/plain"
 		};
 
@@ -294,7 +295,7 @@
 
 		try {
 			// Create conversation and import with parsed title
-			await performImport(fileContent, title, messages, modelSelect.value);
+			await performImport(title, messages, modelSelect.value);
 			// Navigation happens in performImport, button state doesn't matter
 		} catch (error) {
 			console.error('Import failed:', error);

@@ -370,22 +370,19 @@
 		}
 
 		if (context.messages) {
-			const chatlog = context.messages.map((msg, index) => {
-				const role = index % 2 === 0 ? 'User' : 'Assistant';
-				return `${role}\n${msg}`;
-			}).join('\n\n');
+			const chatlog = context.messages.join('\n\n');
 
 			context.attachments.push({
 				"extracted_content": chatlog,
 				"file_name": "chatlog.txt",
-				"file_size": 0,
+				"file_size": chatlog.length,
 				"file_type": "text/plain"
 			});
 		}
 
 		const message = context.messages
-			? "This conversation is forked from the attached chatlog.txt\nYou are Assistant. Simply say 'Acknowledged' and wait for user input."
-			: "This conversation is forked based on the summary in conversation_summary.txt\nYou are Assistant. Simply say 'Acknowledged' and wait for user input.";
+			? "This conversation is forked from the attached chatlog.txt\n Simply say 'Acknowledged' and wait for user input."
+			: "This conversation is forked based on the summary in conversation_summary.txt\nSimply say 'Acknowledged' and wait for user input.";
 
 		await conversation.sendMessageAndWaitForResponse(message, {
 			model: model,
@@ -410,7 +407,7 @@
 
 		try {
 			const chatlog = context.messages.map((msg, index) => {
-				const role = index % 2 === 0 ? 'User' : 'Assistant';
+				const role = index % 2 === 0 ? '[User]' : '[Assistant]';
 				return `${role}\n${msg}`;
 			}).join('\n\n');
 
