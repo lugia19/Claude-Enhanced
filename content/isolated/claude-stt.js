@@ -2,17 +2,41 @@
 (function () {
 	'use strict';
 
+	// ======== STT PROVIDERS CONFIGURATION ========
+	const STT_PROVIDERS = {
+		browser: {
+			name: 'Browser (Free)',
+			requiresApiKey: false,
+			class: BrowserSTTProvider
+		},
+		groq: {
+			name: 'Groq (Fast & Cheap)',
+			requiresApiKey: true,
+			class: GroqSTTProvider
+		},
+		openai: {
+			name: 'OpenAI (Expensive)',
+			requiresApiKey: true,
+			class: OpenAISTTProvider
+		}
+	};
+
 	// ======== STATE AND SETTINGS ========
-	let mediaRecorder = null;
-	let audioChunks = [];
-	let audioStream = null;
+	let sttProvider = null;
 	let micButton = null;
 	let currentState = 'idle'; // idle, recording, loading
 
 	// ======== SETTINGS MANAGEMENT ========
 	async function showSettingsModal() {
-		const storage = await chrome.storage.local.get(['groq_api_key', 'stt_auto_send', 'stt_enabled', 'stt_audio_device']);
-		const apiKey = storage.groq_api_key || '';
+		const storage = await chrome.storage.local.get([
+			'stt_provider',
+			'stt_api_key',
+			'stt_auto_send',
+			'stt_enabled',
+			'stt_audio_device'
+		]);
+		const selectedProvider = storage.stt_provider || (BrowserSTTProvider.isAvailable() ? 'browser' : 'groq');
+		const apiKey = storage.stt_api_key || '';
 		const autoSend = storage.stt_auto_send || false;
 		const sttEnabled = storage.stt_enabled || false;
 		const savedAudioDevice = storage.stt_audio_device || 'default';
@@ -65,23 +89,58 @@
 		sttEnabledContainer.appendChild(sttEnabledToggle.container);
 		contentDiv.appendChild(sttEnabledContainer);
 
+		// Provider dropdown
+		const providerContainer = document.createElement('div');
+		providerContainer.className = 'mb-4';
+
+		const providerLabel = document.createElement('label');
+		providerLabel.className = CLAUDE_CLASSES.LABEL;
+		providerLabel.textContent = 'STT Provider';
+		providerContainer.appendChild(providerLabel);
+
+		const providerOptions = Object.entries(STT_PROVIDERS)
+			.filter(([key, config]) => {
+				return config.class.isAvailable();
+			})
+			.map(([key, config]) => ({
+				value: key,
+				label: config.name
+			}));
+
+		const providerSelect = createClaudeSelect(providerOptions, selectedProvider);
+		providerContainer.appendChild(providerSelect);
+		contentDiv.appendChild(providerContainer);
+
 		// API Key input
 		const apiKeyContainer = document.createElement('div');
 		apiKeyContainer.className = 'mb-4';
 
 		const apiKeyLabel = document.createElement('label');
 		apiKeyLabel.className = CLAUDE_CLASSES.LABEL;
-		apiKeyLabel.textContent = 'Groq API Key';
+		apiKeyLabel.textContent = 'API Key';
 		apiKeyContainer.appendChild(apiKeyLabel);
 
 		const apiKeyInput = createClaudeInput({
 			type: 'password',
-			placeholder: 'gsk_...',
+			placeholder: 'Enter API key...',
 			value: apiKey
 		});
-		apiKeyInput.id = 'groqApiKey';
+		apiKeyInput.id = 'sttApiKey';
 		apiKeyContainer.appendChild(apiKeyInput);
 		contentDiv.appendChild(apiKeyContainer);
+
+		// Update API key field visibility based on provider
+		function updateApiKeyVisibility() {
+			const provider = STT_PROVIDERS[providerSelect.value];
+			if (provider.requiresApiKey) {
+				apiKeyContainer.style.display = 'block';
+			} else {
+				apiKeyContainer.style.display = 'none';
+			}
+		}
+		updateApiKeyVisibility();
+
+		providerSelect.addEventListener('change', updateApiKeyVisibility);
 
 		// Audio Device dropdown
 		const audioDeviceContainer = document.createElement('div');
@@ -133,17 +192,21 @@
 		const modal = new ClaudeModal('STT Settings', contentDiv);
 		modal.addCancel('Cancel');
 		modal.addConfirm('Save', async (btn, modal) => {
+			const newProvider = providerSelect.value;
 			const newKey = apiKeyInput.value.trim();
 			const newAutoSend = autoSendToggle.input.checked;
 			const newEnabled = sttEnabledToggle.input.checked;
 			const newAudioDevice = audioDeviceSelect.value;
 
-			if (newKey && newKey !== apiKey) {
+			const provider = STT_PROVIDERS[newProvider];
+
+			// Validate API key if provider requires it
+			if (provider.requiresApiKey && newKey) {
 				// Show loading state
 				btn.disabled = true;
 				btn.textContent = 'Validating...';
 
-				const isValid = await validateApiKey(newKey);
+				const isValid = await provider.class.validateApiKey(newKey);
 
 				if (!isValid) {
 					// Show error state
@@ -162,7 +225,8 @@
 			}
 
 			await chrome.storage.local.set({
-				groq_api_key: newKey,
+				stt_provider: newProvider,
+				stt_api_key: newKey,
 				stt_auto_send: newAutoSend,
 				stt_enabled: newEnabled,
 				stt_audio_device: newAudioDevice
@@ -174,145 +238,71 @@
 		modal.show();
 	}
 
-	async function validateApiKey(apiKey) {
-		try {
-			const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${apiKey}`
-				},
-				body: new FormData()
-			});
-			return response.status === 400 || response.status === 200;
-		} catch (error) {
-			return false;
-		}
-	}
-
 	// ======== RECORDING FUNCTIONS ========
 	async function startRecording() {
 		try {
-			const storage = await chrome.storage.local.get('stt_audio_device');
+			const storage = await chrome.storage.local.get(['stt_provider', 'stt_api_key', 'stt_audio_device']);
+			const providerKey = storage.stt_provider || (BrowserSTTProvider.isAvailable() ? 'browser' : 'groq');
+			const apiKey = storage.stt_api_key || '';
 			const audioDevice = storage.stt_audio_device || 'default';
 
-			const constraints = {
-				audio: audioDevice === 'default' ? true : { deviceId: { exact: audioDevice } }
-			};
+			const providerConfig = STT_PROVIDERS[providerKey];
 
-			audioStream = await navigator.mediaDevices.getUserMedia(constraints);
-			mediaRecorder = new MediaRecorder(audioStream, {
-				mimeType: 'audio/webm'
-			});
+			if (!providerConfig) {
+				throw new Error('Invalid provider');
+			}
 
-			audioChunks = [];
+			// Check if API key is required but missing
+			if (providerConfig.requiresApiKey && !apiKey) {
+				const noKeyModal = new ClaudeModal('API Key Required', 'Please set your API key in settings first.');
+				noKeyModal.addConfirm('OK');
+				noKeyModal.show();
+				return;
+			}
 
-			mediaRecorder.ondataavailable = (event) => {
-				audioChunks.push(event.data);
-			};
+			// Instantiate the provider
+			sttProvider = new providerConfig.class(apiKey);
 
-			mediaRecorder.start();
+			// Start recording
+			await sttProvider.startRecording(audioDevice);
 			currentState = 'recording';
 			updateMicButton();
+
 		} catch (error) {
 			console.error('Error starting recording:', error);
-
-			if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
-				try {
-					console.log('Selected device not available, falling back to default');
-					audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-					mediaRecorder = new MediaRecorder(audioStream, {
-						mimeType: 'audio/webm'
-					});
-
-					audioChunks = [];
-
-					mediaRecorder.ondataavailable = (event) => {
-						audioChunks.push(event.data);
-					};
-
-					mediaRecorder.start();
-					currentState = 'recording';
-					updateMicButton();
-
-					await chrome.storage.local.set({ stt_audio_device: 'default' });
-				} catch (fallbackError) {
-					console.error('Error with fallback recording:', fallbackError);
-					alert('Failed to access microphone. Please check permissions.');
-				}
-			} else {
-				alert('Failed to access microphone. Please check permissions.');
-			}
+			alert('Failed to access microphone. Please check permissions.');
 		}
 	}
 
-	function stopRecording() {
-		if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-			mediaRecorder.stop();
-			mediaRecorder.onstop = async () => {
-				currentState = 'loading';
-				updateMicButton();
-
-				try {
-					const transcription = await transcribeAudio();
-					const storage = await chrome.storage.local.get('stt_auto_send');
-					const autoSend = storage.stt_auto_send || false;
-					insertTextAndSend(transcription, autoSend);
-
-					audioChunks = [];
-					currentState = 'idle';
-					updateMicButton();
-				} catch (error) {
-					console.error(error);
-					audioChunks = [];
-					currentState = 'idle';
-					updateMicButton();
-
-					// Show error modal
-					const errorModal = new ClaudeModal('Transcription Failed', 'Please try again.');
-					errorModal.addConfirm('OK');
-					errorModal.show();
-				}
-			};
-
-			if (audioStream) {
-				audioStream.getTracks().forEach(track => track.stop());
-				audioStream = null;
-			}
-		}
-	}
-
-
-	async function transcribeAudio() {
-		const storage = await chrome.storage.local.get('groq_api_key');
-		const apiKey = storage.groq_api_key;
-
-		if (!apiKey) {
-			const noKeyModal = new ClaudeModal('API Key Required', 'Please set your Groq API key in settings first.');
-			noKeyModal.addConfirm('OK');
-			noKeyModal.show();
-			throw new Error('No API key');
+	async function stopRecording() {
+		if (!sttProvider) {
+			return;
 		}
 
-		const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-		const formData = new FormData();
-		formData.append('file', audioBlob, 'recording.webm');
-		formData.append('model', 'whisper-large-v3-turbo');
-		formData.append('temperature', '0');
-		formData.append('response_format', 'text');
+		try {
+			currentState = 'loading';
+			updateMicButton();
 
-		const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-			method: 'POST',
-			headers: {
-				'Authorization': `Bearer ${apiKey}`
-			},
-			body: formData
-		});
+			const transcription = await sttProvider.stopRecording();
 
-		if (response.ok) {
-			return await response.text();
-		} else {
-			console.error('Transcription failed:', response);
-			throw new Error('Transcription failed');
+			const storage = await chrome.storage.local.get('stt_auto_send');
+			const autoSend = storage.stt_auto_send || false;
+			insertTextAndSend(transcription, autoSend);
+
+			sttProvider = null;
+			currentState = 'idle';
+			updateMicButton();
+
+		} catch (error) {
+			console.error('Transcription error:', error);
+			sttProvider = null;
+			currentState = 'idle';
+			updateMicButton();
+
+			// Show error modal
+			const errorModal = new ClaudeModal('Transcription Failed', 'Please try again.');
+			errorModal.addConfirm('OK');
+			errorModal.show();
 		}
 	}
 
