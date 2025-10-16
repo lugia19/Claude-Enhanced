@@ -127,67 +127,28 @@
 	// Handle dialogue analysis requests from ISOLATED world
 	window.addEventListener('message', async (event) => {
 		if (event.data.type === 'tts-analyze-dialogue-request') {
-			const { text, characters, requestId } = event.data;
+			const { prompt, requestId } = event.data;
 
 			try {
-				// Get orgId from cookie
 				const orgId = getOrgId();
 				const conversation = new ClaudeConversation(orgId);
 
-				// Create temp conversation
 				await conversation.create('TTS Actor Analysis', null, null, false);
 
-				// Build character list
-				const narratorChar = characters.find(c => c.name.toLowerCase() === 'narrator');
-				const includeNarration = narratorChar && narratorChar.voice;
-				const availableCharacters = includeNarration
-					? characters.map(c => c.name)
-					: characters.filter(c => c.name.toLowerCase() !== 'narrator').map(c => c.name);
-
-				// Simple prompt that asks for JSON only
-				const prompt = `Output ONLY a JSON array where each element has "character" and "text" fields.
-Available characters: ${availableCharacters.join(', ')}
-
-${includeNarration ? 'Include narration as "narrator".' : 'Only include quoted dialogue, skip narration.'}
-
-Analyze this text and output ONLY the JSON array:
-${text}
-
-JSON array:`;
-
-				// Send and wait for response
 				const response = await conversation.sendMessageAndWaitForResponse(prompt);
 
-				// Extract text from Claude's response
 				let responseText = ClaudeConversation.extractMessageText(response);
 
-				// Try to extract JSON array from response
-				let segments = [];
-				try {
-					// Find JSON array in response
-					const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-					if (jsonMatch) {
-						segments = JSON.parse(jsonMatch[0]);
-						// Normalize character names to lowercase
-						segments = segments.map(s => ({
-							character: s.character.toLowerCase(),
-							text: s.text
-						}));
-					}
-				} catch (parseError) {
-					console.error('Failed to parse JSON:', parseError);
-					throw new Error('Failed to parse dialogue segments');
-				}
+				// Strip markdown code blocks if present
+				responseText = responseText.replace(/```(?:json)?\s*/g, '').replace(/```\s*$/g, '').trim();
 
-				// Clean up - delete the conversation
 				await conversation.delete();
 
-				// Send success response
 				window.postMessage({
 					type: 'tts-analyze-dialogue-response',
 					requestId: requestId,
 					success: true,
-					data: segments
+					data: responseText
 				}, '*');
 
 			} catch (error) {
