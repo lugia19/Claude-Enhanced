@@ -21,6 +21,8 @@
 				"content/claude-styles.js",
 				"content/claude-api.js",
 				"lib/lz-string.min.js",
+				"content/helpers/search-utils.js",
+				"content/isolated/claude-global-search.js",
 				"content/isolated/claude-chat-search.js",
 				"content/isolated/claude-navigation.js",
 				"content/isolated/claude-pref-switcher.js",

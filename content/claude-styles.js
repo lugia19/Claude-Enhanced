@@ -207,15 +207,34 @@ class ClaudeModal {
 	}
 }
 
-function createLoadingModal(text = 'Loading...') {
-	const spinner = document.createElement('div');
-	spinner.className = 'flex items-center gap-3';
-	spinner.innerHTML = `
-		<div class="claude-modal-spinner rounded-full h-5 w-5 border-2 border-border-300" style="border-top-color: #2c84db"></div>
-		<span class="text-text-200">${text}</span>
-	`;
+function createLoadingContent(text) {
+	const div = document.createElement('div');
+	div.className = 'flex items-start gap-3'; // Changed from items-center to items-start
 
-	return new ClaudeModal('', spinner, false);
+	// Split on newlines and create proper line breaks
+	const lines = text.split('\n');
+	const textContent = document.createElement('div');
+	textContent.className = 'text-text-200';
+
+	lines.forEach((line, index) => {
+		const span = document.createElement('span');
+		span.textContent = line;
+		textContent.appendChild(span);
+		if (index < lines.length - 1) {
+			textContent.appendChild(document.createElement('br'));
+		}
+	});
+
+	div.innerHTML = `
+		<div class="claude-modal-spinner rounded-full h-5 w-5 border-2 border-border-300 flex-shrink-0" style="border-top-color: #2c84db"></div>
+	`;
+	div.appendChild(textContent);
+
+	return div;
+}
+
+function createLoadingModal(text = 'Loading...') {
+	return new ClaudeModal('', createLoadingContent(text), false);
 }
 
 function createClaudeButton(content, variant = 'primary', onClick = null, contentIsHTML = false) {

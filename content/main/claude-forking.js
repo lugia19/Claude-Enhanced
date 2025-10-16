@@ -231,18 +231,7 @@
 		}
 	}
 
-	function createLoadingContent(text) {
-		const div = document.createElement('div');
-		div.className = 'flex items-center gap-3';
-		div.innerHTML = `
-			<div class="claude-modal-spinner rounded-full h-5 w-5 border-2 border-border-300" style="border-top-color: #2c84db"></div>
-			<span class="text-text-200">${text}</span>
-		`;
-		return div;
-	}
-
 	//#region Convo extraction & Other API
-
 	async function getConversationContext(orgId, conversationId, targetParentUuid) {
 		const conversation = new ClaudeConversation(orgId, conversationId);
 		const conversationData = await conversation.getData(false);
