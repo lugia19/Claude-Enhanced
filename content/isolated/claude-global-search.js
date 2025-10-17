@@ -6,6 +6,14 @@
 
 	// ======== STATE ========
 	let isTextSearchEnabled = sessionStorage.getItem('text_search_enabled') === 'true';
+	let isFirstSyncOnRecents = true;
+	// Poll for navigation away from /recents
+	setInterval(() => {
+		if (!window.location.pathname.includes('/recents')) {
+			isFirstSyncOnRecents = true; // Reset when not on /recents
+			sessionStorage.setItem('text_search_enabled', 'false'); // Disable text search when leaving
+		}
+	}, 500);
 
 	// ======== SYNC LOGIC ========
 	async function getConversationsToUpdate() {
@@ -27,13 +35,12 @@
 			const stored = storedMap.get(conv.uuid);
 
 			if (!stored) {
-				// No metadata - needs update
 				toUpdate.push(conv);
 			} else {
 				// Check if messages exist
 				const messages = await searchDB.getMessages(conv.uuid);
 
-				if (!messages || messages.length === 0) {
+				if (!messages) {
 					// Metadata exists but no messages - needs update
 					toUpdate.push(conv);
 				} else if (new Date(conv.updated_at) > new Date(stored.updated_at)) {
@@ -99,14 +106,15 @@
 	}
 
 	async function triggerSync() {
+		const loadingModal = createLoadingModal('Initializing sync...');
+		if (isFirstSyncOnRecents) {
+			loadingModal.show(); // Show only on first sync when on /recents
+			isFirstSyncOnRecents = false;
+		}
 		const toUpdate = await getConversationsToUpdate();
+
 		for (const conv of toUpdate) {
 			await searchDB.setMetadata(conv);
-		}
-
-		const loadingModal = createLoadingModal('Initializing sync...');
-		if (toUpdate.length >= 5) {
-			loadingModal.show();	// Don't show for small updates. They just happen silently.
 		}
 
 		try {

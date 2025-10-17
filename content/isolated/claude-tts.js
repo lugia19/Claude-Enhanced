@@ -677,11 +677,11 @@
 
 					if (!isValid) {
 						showClaudeAlert('API Key Error', `Invalid ${providerInfo.name} API key. Please check your key and try again.`);
-						return; // Don't save, keep modal open
+						return false; // Don't save, keep modal open
 					}
 				} else if (providerInfo.requiresApiKey && !newSettings.apiKey) {
 					showClaudeAlert('API Key Required', `${providerInfo.name} requires an API key. Please enter one.`);
-					return; // Don't save, keep modal open
+					return false; // Don't save, keep modal open
 				}
 
 				// Handle per-chat settings
@@ -732,6 +732,7 @@
 				if (e.target.checked) {
 					// Turn off actor mode when quotes-only is enabled
 					actorModeToggle.input.checked = false;
+					actorModeToggle.input.dispatchEvent(new Event('change'));
 					configureActorsBtn.style.display = 'none';
 				}
 			});
@@ -740,6 +741,7 @@
 				if (e.target.checked) {
 					// Turn off quotes-only when actor mode is enabled
 					quotesOnlyToggle.input.checked = false;
+					quotesOnlyToggle.input.dispatchEvent(new Event('change'));
 				}
 				// Also update configure button visibility
 				configureActorsBtn.style.display = e.target.checked ? 'block' : 'none';
