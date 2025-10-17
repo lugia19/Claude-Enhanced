@@ -125,29 +125,10 @@
 					loadingModal.destroy();
 
 					// Ask user if they want to fallback
-					const fallbackModal = new ClaudeModal(
+					const shouldFallback = await showClaudeConfirm(
 						'Export Failed',
 						`The data export failed: ${error.message}\n\nWould you like to fall back to standard sync? This will take longer but should work reliably.`
 					);
-
-					let shouldFallback = false;
-
-					fallbackModal.addCancel('Cancel');
-					fallbackModal.addConfirm('Use Standard Sync', () => {
-						shouldFallback = true;
-					});
-
-					fallbackModal.show();
-
-					// Wait for modal to be dismissed
-					await new Promise(resolve => {
-						const checkClosed = setInterval(() => {
-							if (!fallbackModal.isVisible) {
-								clearInterval(checkClosed);
-								resolve();
-							}
-						}, 100);
-					});
 
 					if (shouldFallback) {
 						const newLoadingModal = createLoadingModal('Starting standard sync...');
@@ -172,10 +153,7 @@
 
 		} catch (error) {
 			console.error('Sync failed:', error);
-
-			const errorModal = new ClaudeModal('Sync Failed', `Failed to sync conversations: ${error.message}`);
-			errorModal.addConfirm('OK');
-			errorModal.show();
+			showClaudeAlert('Sync Failed', `An error occurred during sync: ${error.message}`);
 			throw error;
 		} finally {
 			loadingModal.destroy();

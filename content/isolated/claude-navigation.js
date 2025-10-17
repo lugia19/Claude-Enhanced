@@ -40,60 +40,29 @@
 	}
 
 	// ======== NAME INPUT MODAL ========
-	function showNameInputModal(conversationId, currentLeafId) {
-		return new Promise((resolve, reject) => {
-			const contentDiv = document.createElement('div');
-
-			const label = document.createElement('label');
-			label.className = CLAUDE_CLASSES.LABEL;
-			label.textContent = 'Bookmark Name:';
-			contentDiv.appendChild(label);
-
-			const input = createClaudeInput({
-				type: 'text',
-				placeholder: 'Enter bookmark name...',
-			});
-			contentDiv.appendChild(input);
-
-			const modal = new ClaudeModal('Add Bookmark', contentDiv);
-			
-			modal.addCancel('Cancel', () => {
-				reject(new Error('Cancelled'));
-			});
-			
-			modal.addConfirm('Save', (btn, modal) => {
-				const name = input.value.trim();
-				if (!name) {
-					alert('Please enter a bookmark name');
-					return false; // Keep modal open
+	async function showNameInputModal(conversationId, currentLeafId) {
+		const name = await showClaudePrompt(
+			'Dimark',
+			'Bookmark Name:',
+			'Enter bookmark name...',
+			'',
+			(value) => {
+				if (!value) {
+					return 'Please enter a bookmark name';
 				}
 
 				// Check for duplicate names
 				const bookmarks = getBookmarks(conversationId);
-				if (bookmarks[name]) {
-					alert('A bookmark with this name already exists');
-					return false; // Keep modal open
+				if (bookmarks[value]) {
+					return 'A bookmark with this name already exists';
 				}
 
-				addBookmark(conversationId, name, currentLeafId);
-				resolve(name);
-				return true; // Close modal
-			});
+				return true;
+			}
+		);
 
-			modal.show();
-
-			// Focus the input
-			setTimeout(() => input.focus(), 100);
-
-			// Allow Enter key to submit
-			input.addEventListener('keypress', (e) => {
-				if (e.key === 'Enter') {
-					// Click the confirm button (last button added)
-					const confirmBtn = modal.buttons[modal.buttons.length - 1];
-					if (confirmBtn) confirmBtn.click();
-				}
-			});
-		});
+		addBookmark(conversationId, name, currentLeafId);
+		return name;
 	}
 
 	// ======== BOOKMARK ITEM ========
@@ -119,7 +88,7 @@
 				window.location.reload();
 			} catch (error) {
 				console.error('Navigation failed:', error);
-				alert('Failed to navigate. The bookmark may be invalid.');
+				showClaudeAlert('Navigation Error', 'Failed to navigate. The bookmark may be invalid.');
 			}
 		};
 		item.appendChild(nameDiv);
@@ -128,17 +97,14 @@
 		const deleteBtn = createClaudeButton('×', 'icon');
 		deleteBtn.classList.remove('h-9', 'w-9');
 		deleteBtn.classList.add('h-7', 'w-7', 'text-lg');
-		deleteBtn.onclick = (e) => {
+		deleteBtn.onclick = async (e) => {
 			e.stopPropagation(); // Prevent triggering navigation
-			
-			const confirmModal = new ClaudeModal('Delete Bookmark', `Delete bookmark "${name}"?`);
-			confirmModal.addCancel('Cancel');
-			confirmModal.addConfirm('Delete', () => {
+			const confirmed = await showClaudeConfirm('Delete Bookmark', `Are you sure you want to delete the bookmark "${name}"?`);
+			if (confirmed) {
 				deleteBookmark(conversationId, name);
 				item.remove();
 				onUpdate();
-			});
-			confirmModal.show();
+			}
 		};
 		item.appendChild(deleteBtn);
 

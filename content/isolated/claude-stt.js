@@ -171,7 +171,7 @@
 						modal.destroy();
 						await showSettingsModal();
 					} catch (err) {
-						alert('Microphone permission denied. Please allow microphone access in your browser settings.');
+						showClaudeAlert('Permission Denied', 'Microphone permission denied. Please allow microphone access in your browser settings.');
 					}
 				}
 			);
@@ -254,9 +254,7 @@
 
 			// Check if API key is required but missing
 			if (providerConfig.requiresApiKey && !apiKey) {
-				const noKeyModal = new ClaudeModal('API Key Required', 'Please set your API key in settings first.');
-				noKeyModal.addConfirm('OK');
-				noKeyModal.show();
+				showClaudeAlert('API Key Required', 'Please set your API key in settings first.');
 				return;
 			}
 
@@ -270,7 +268,7 @@
 
 		} catch (error) {
 			console.error('Error starting recording:', error);
-			alert('Failed to access microphone. Please check permissions.');
+			showClaudeAlert('Microphone Error', 'Failed to access microphone. Please check permissions.');
 		}
 	}
 
@@ -300,9 +298,7 @@
 			updateMicButton();
 
 			// Show error modal
-			const errorModal = new ClaudeModal('Transcription Failed', 'Please try again.');
-			errorModal.addConfirm('OK');
-			errorModal.show();
+			showClaudeAlert('Transcription Failed', 'An error occurred during transcription. Please try again.');
 		}
 	}
 

@@ -249,9 +249,7 @@
 			loadingModal.destroy();
 
 			// Show error modal
-			const errorModal = new ClaudeModal('Error', 'Failed to load conversation data.');
-			errorModal.addConfirm('OK');
-			errorModal.show();
+			showClaudeAlert('Error', 'Failed to load conversation data.')
 			return;
 		}
 

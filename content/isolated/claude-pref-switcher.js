@@ -55,78 +55,6 @@
 		}
 	}
 
-	function showPrompt(title, placeholder = '') {
-		return new Promise((resolve) => {
-			const input = createClaudeInput({
-				type: 'text',
-				placeholder: placeholder
-			});
-
-			const modal = new ClaudeModal(title, input);
-
-			modal.addCancel('Cancel', () => {
-				resolve(null);
-			});
-
-			modal.addConfirm('OK', () => {
-				resolve(input.value.trim() || null);
-			});
-
-			// Override backdrop click to resolve with null
-			modal.backdrop.onclick = (e) => {
-				if (e.target === modal.backdrop) {
-					modal.hide();
-					resolve(null);
-				}
-			};
-
-			modal.show();
-
-			// Focus input after modal is shown
-			setTimeout(() => input.focus(), 0);
-
-			// Add keyboard handlers
-			input.onkeydown = (e) => {
-				if (e.key === 'Enter') {
-					resolve(input.value.trim() || null);
-					modal.hide();
-				}
-				if (e.key === 'Escape') {
-					resolve(null);
-					modal.hide();
-				}
-			};
-		});
-	}
-
-	function showConfirm(message) {
-		return new Promise((resolve) => {
-			const messageEl = document.createElement('p');
-			messageEl.className = 'text-text-100';
-			messageEl.textContent = message;
-
-			const modal = new ClaudeModal('', messageEl);
-
-			modal.addCancel('Cancel', () => {
-				resolve(false);
-			});
-
-			modal.addConfirm('Confirm', () => {
-				resolve(true);
-			});
-
-			// Override backdrop click to resolve with false
-			modal.backdrop.onclick = (e) => {
-				if (e.target === modal.backdrop) {
-					modal.hide();
-					resolve(false);
-				}
-			};
-
-			modal.show();
-		});
-	}
-
 	// ======== PRESET MANAGEMENT ========
 	async function getStoredPresets() {
 		const result = await chrome.storage.local.get('preference_presets');
@@ -439,7 +367,7 @@
 
 			if (presetName === '__unsaved') {
 				// Prompt for new name
-				const name = await showPrompt('Enter a name for this preset:', 'Preset name');
+				const name = await showClaudePrompt('Enter a name for this preset:', 'Preset name');
 				if (!name) return;
 
 				await savePreset(name, content);
@@ -467,7 +395,7 @@
 			const presetName = selector.value;
 			if (presetName === 'None' || presetName === '__unsaved') return;
 
-			if (await showConfirm(`Delete preset "${presetName}"?`)) {
+			if (await showClaudeConfirm(`Delete preset "${presetName}"?`)) {
 				const presets = await getStoredPresets();
 				delete presets[presetName];
 				await chrome.storage.local.set({ preference_presets: presets });
@@ -482,7 +410,7 @@
 
 		// New preset button
 		newBtn.addEventListener('click', async () => {
-			const name = await showPrompt('Enter a name for the new preset:', 'Preset name');
+			const name = await showClaudePrompt('Enter a name for the new preset:', 'Preset name');
 			if (!name || name === "") return;
 
 			await savePreset(name, '');

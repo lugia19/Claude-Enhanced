@@ -169,11 +169,7 @@
 		} catch (error) {
 			console.error('Error loading styles:', error);
 			loadingModal.destroy();
-
-			// Show error modal
-			const errorModal = new ClaudeModal('Error', 'Failed to load styles. Please try again.');
-			errorModal.addConfirm('OK');
-			errorModal.show();
+			showClaudeAlert('Error', 'Failed to load styles. Please try again.');
 		}
 	}
 

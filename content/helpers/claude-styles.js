@@ -237,6 +237,113 @@ function createLoadingModal(text = 'Loading...') {
 	return new ClaudeModal('', createLoadingContent(text), false);
 }
 
+function showClaudeConfirm(title, message) {
+	return new Promise((resolve) => {
+		const messageEl = document.createElement('p');
+		messageEl.className = 'text-text-100';
+		messageEl.textContent = message;
+
+		const modal = new ClaudeModal(title, messageEl);
+
+		modal.addCancel('Cancel', () => {
+			resolve(false);
+		});
+
+		modal.addConfirm('Confirm', () => {
+			resolve(true);
+		});
+
+		// Override backdrop click to resolve with false
+		modal.backdrop.onclick = (e) => {
+			if (e.target === modal.backdrop) {
+				modal.hide();
+				resolve(false);
+			}
+		};
+
+		modal.show();
+	});
+}
+
+// Full-featured prompt with all options
+function showClaudePrompt(title, message, placeholder = '', defaultValue = '', onValidate = null) {
+	return new Promise((resolve, reject) => {
+		const contentDiv = document.createElement('div');
+
+		if (message) {
+			const label = document.createElement('label');
+			label.className = CLAUDE_CLASSES.LABEL;
+			label.textContent = message;
+			contentDiv.appendChild(label);
+		}
+
+		const input = createClaudeInput({
+			type: 'text',
+			placeholder: placeholder,
+			value: defaultValue,
+		});
+		contentDiv.appendChild(input);
+
+		const modal = new ClaudeModal(title, contentDiv);
+
+		modal.addCancel('Cancel', () => {
+			reject(new Error('User cancelled'));
+		});
+
+		modal.addConfirm('OK', async (btn, modal) => {
+			const value = input.value.trim();
+
+			// Run validation if provided
+			if (onValidate) {
+				const validationResult = await onValidate(value);
+				if (validationResult !== true) {
+					// Show error message if validation failed
+					if (typeof validationResult === 'string') {
+						showClaudeAlert('Validation Error', validationResult);
+					}
+					return false; // Keep modal open
+				}
+			}
+
+			resolve(value);
+			return true; // Close modal
+		});
+
+		modal.show();
+
+		// Focus the input
+		setTimeout(() => input.focus(), 100);
+
+		// Allow Enter key to submit
+		input.addEventListener('keypress', (e) => {
+			if (e.key === 'Enter') {
+				const confirmBtn = modal.buttons[modal.buttons.length - 1];
+				if (confirmBtn) confirmBtn.click();
+			}
+		});
+	});
+}
+
+// Full-featured alert with customization
+function showClaudeAlert(title, message, buttonText = 'OK') {
+	return new Promise((resolve) => {
+		const contentDiv = document.createElement('div');
+		contentDiv.className = 'text-text-200';
+
+		if (typeof message === 'string') {
+			contentDiv.textContent = message;
+		} else if (message instanceof HTMLElement) {
+			contentDiv.appendChild(message);
+		}
+
+		const modal = new ClaudeModal(title, contentDiv);
+		modal.addButton(buttonText, 'primary', () => {
+			resolve();
+		});
+		modal.show();
+	});
+}
+
 function createClaudeButton(content, variant = 'primary', onClick = null, contentIsHTML = false) {
 	const button = document.createElement('button');
 	button.setAttribute('data-toolbox-button', 'true');
@@ -696,4 +803,20 @@ function addMessageButtonWithPriority(buttonGenerator, buttonClass) {
 			container.appendChild(button);
 		}
 	});
+}
+
+
+// Simple alert overwrite for ISOLATED context
+if (typeof window !== 'undefined') {
+	// Store original in case needed
+	const nativeAlert = window.alert;
+
+	// Override alert with Claude-styled version
+	window.alert = function (message) {
+		showClaudeAlert('', String(message || ''));
+		// Returns immediately (fire-and-forget style)
+	};
+
+	// Provide access to original if ever needed
+	window.nativeAlert = nativeAlert;
 }

@@ -248,7 +248,7 @@
 			// Get text from message
 			const text = await captureMessageText(button);
 			if (!text) {
-				alert('Failed to capture message text');
+				showClaudeAlert('Error', 'Failed to capture message text');
 				return;
 			}
 
@@ -260,15 +260,21 @@
 			const quotesResult = await chrome.storage.local.get(`chatQuotesOnly_${conversationId}`);
 			const quotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] === true; // Explicitly check for true
 
-			if (!settings.apiKey) {
-				alert('Please configure TTS settings first');
+			if (ttsProvider && ttsProvider.requiresApiKey && settings.apiKey) {
+				const isValid = await ttsProvider.testApiKey(settings.apiKey);
+				if (!isValid) {
+					showClaudeAlert('API Key Error', 'Invalid API key.');
+					return;
+				}
+			} else if (ttsProvider.requiresApiKey && !settings.apiKey) {
+				showClaudeAlert('API Key Required', 'Provider requires an API key. Please enter one.');
 				return;
 			}
 
 			// Process text with per-chat quotes setting
 			const finalText = cleanupText(text, quotesOnly);
 			if (!finalText) {
-				alert('No text to speak' + (quotesOnly ? ' (no quoted text found)' : ''));
+				showClaudeAlert('No Text Available', 'No text to speak' + (quotesOnly ? ' (no quoted text found)' : ''));
 				return;
 			}
 
@@ -276,7 +282,7 @@
 			try {
 				await playText(finalText, settings, conversationId);
 			} catch (error) {
-				alert('Failed to play audio: ' + error.message);
+				showClaudeAlert('Playback Error', 'Failed to play audio: ' + error.message);
 			}
 		});
 
@@ -325,7 +331,7 @@
 			);
 
 			if (!copyButton) {
-				alert('Could not find copy button');
+				showClaudeAlert('Error', 'Could not find copy button');
 				return;
 			}
 
@@ -340,7 +346,7 @@
 			isCapturingText = false;
 
 			if (!capturedText) {
-				alert('Failed to capture artifact text');
+				showClaudeAlert('Error', 'Failed to capture artifact text');
 				return;
 			}
 
@@ -351,21 +357,27 @@
 			const quotesResult = await chrome.storage.local.get(`chatQuotesOnly_${conversationId}`);
 			const quotesOnly = quotesResult[`chatQuotesOnly_${conversationId}`] === true;
 
-			if (!settings.apiKey) {
-				alert('Please configure TTS settings first');
+			if (ttsProvider && ttsProvider.requiresApiKey && settings.apiKey) {
+				const isValid = await ttsProvider.testApiKey(settings.apiKey);
+				if (!isValid) {
+					showClaudeAlert('API Key Error', 'Invalid API key.');
+					return;
+				}
+			} else if (ttsProvider.requiresApiKey && !settings.apiKey) {
+				showClaudeAlert('API Key Required', 'Provider requires an API key. Please enter one.');
 				return;
 			}
 
 			const finalText = cleanupText(capturedText, quotesOnly);
 			if (!finalText) {
-				alert('No text to speak' + (quotesOnly ? ' (no quoted text found)' : ''));
+				showClaudeAlert('No Text Available', 'No text to speak' + (quotesOnly ? ' (no quoted text found)' : ''));
 				return;
 			}
 
 			try {
 				await playText(finalText, settings, conversationId);
 			} catch (error) {
-				alert('Failed to play audio: ' + error.message);
+				showClaudeAlert('Playback Error', 'Failed to play audio: ' + error.message);
 			}
 		};
 
@@ -661,11 +673,11 @@
 					const isValid = await tempProvider.testApiKey(newSettings.apiKey);
 
 					if (!isValid) {
-						alert(`Invalid ${providerInfo.name} API key. Please check your key and try again.`);
+						showClaudeAlert('API Key Error', `Invalid ${providerInfo.name} API key. Please check your key and try again.`);
 						return; // Don't save, keep modal open
 					}
 				} else if (providerInfo.requiresApiKey && !newSettings.apiKey) {
-					alert(`${providerInfo.name} requires an API key. Please enter one.`);
+					showClaudeAlert('API Key Required', `${providerInfo.name} requires an API key. Please enter one.`);
 					return; // Don't save, keep modal open
 				}
 
@@ -808,7 +820,7 @@
 						const newModelOptions = newModels.map(m => ({ value: m.model_id, label: m.name }));
 						populateSelect(modelSelect, newModelOptions);
 					} else {
-						alert('Invalid API key');
+						showClaudeAlert('API Key Error', 'Invalid API key');
 						e.target.value = settings.apiKey || '';
 
 						// Restore original state
@@ -831,7 +843,7 @@
 
 		} catch (error) {
 			loadingModal.destroy();
-			alert('Failed to load settings: ' + error.message);
+			showClaudeAlert('Error', 'Failed to load settings: ' + error.message);
 			console.error('Settings modal error:', error);
 		}
 	}
@@ -1041,7 +1053,7 @@
 
 		} catch (error) {
 			loadingModal.destroy();
-			alert('Failed to load character configuration: ' + error.message);
+			showClaudeAlert('Error', 'Failed to load character configuration: ' + error.message);
 			console.error('Actor config modal error:', error);
 		}
 	}
@@ -1107,7 +1119,7 @@
 	//#region Settings Button
 	function createSettingsButton() {
 		const button = createClaudeButton(SPEAKER_ICON, 'icon', async () => {
-			if (ttsProvider.isActive()) {
+			if (ttsProvider && ttsProvider.isActive()) {
 				ttsProvider.stop();
 			} else {
 				await createSettingsModal();

@@ -275,11 +275,11 @@
 		}
 
 		static isAvailable() {
-			return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+			return !!(window.SpeechRecognition);
 		}
 
 		async startRecording(deviceId) {
-			const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+			const SpeechRecognition = window.SpeechRecognition;
 
 			if (!SpeechRecognition) {
 				throw new Error('Speech Recognition not supported');
