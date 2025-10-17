@@ -608,6 +608,7 @@
 			const quotesSection = document.createElement('div');
 			quotesSection.className = 'mb-4';
 			const quotesOnlyToggle = createClaudeToggle('Only speak quoted text', chatQuotesOnly, null);
+			createClaudeTooltip(quotesOnlyToggle.container, 'Quick dialogue-only playback using regex (instant, no API call)');
 			quotesSection.appendChild(quotesOnlyToggle.container);
 			perChatSection.appendChild(quotesSection);
 
@@ -638,7 +639,9 @@
 			const actorToggleContainer = document.createElement('div');
 			actorToggleContainer.className = 'flex-1';
 			const actorModeToggle = createClaudeToggle('Actor mode', actorModeEnabled, null);
+			createClaudeTooltip(actorModeToggle.container, 'Multi-voice character assignment with AI attribution (+latency)');
 			actorToggleContainer.appendChild(actorModeToggle.container);
+
 			actorContainer.appendChild(actorToggleContainer);
 
 			const configureActorsBtn = createClaudeButton('Configure Characters', 'secondary');
@@ -683,9 +686,23 @@
 
 				// Handle per-chat settings
 				if (conversationId) {
-					await chrome.storage.local.set({
-						[`chatQuotesOnly_${conversationId}`]: quotesOnlyToggle.input.checked
-					});
+					// Enforce mutual exclusivity: if both are checked (shouldn't happen due to UI logic),
+					// prioritize actor mode
+					const quotesOnlyValue = quotesOnlyToggle.input.checked;
+					const actorModeValue = actorModeToggle.input.checked;
+
+					if (quotesOnlyValue && actorModeValue) {
+						// Shouldn't happen, but if it does, prefer actor mode
+						await chrome.storage.local.set({
+							[`chatQuotesOnly_${conversationId}`]: false,
+							[`chatActorMode_${conversationId}`]: true
+						});
+					} else {
+						await chrome.storage.local.set({
+							[`chatQuotesOnly_${conversationId}`]: quotesOnlyValue,
+							[`chatActorMode_${conversationId}`]: actorModeValue
+						});
+					}
 
 					const chatOverride = chatVoiceOverrideSelect.value;
 					if (chatOverride) {
@@ -693,10 +710,6 @@
 					} else {
 						await chrome.storage.local.remove(`chatVoice_${conversationId}`);
 					}
-
-					await chrome.storage.local.set({
-						[`chatActorMode_${conversationId}`]: actorModeToggle.input.checked
-					});
 				}
 
 				// Reinitialize provider if changed
@@ -714,8 +727,21 @@
 				}
 			});
 
-			// Handle actor mode toggle
+			// Handle mutual exclusivity between quotes-only and actor mode
+			quotesOnlyToggle.input.addEventListener('change', (e) => {
+				if (e.target.checked) {
+					// Turn off actor mode when quotes-only is enabled
+					actorModeToggle.input.checked = false;
+					configureActorsBtn.style.display = 'none';
+				}
+			});
+
 			actorModeToggle.input.addEventListener('change', (e) => {
+				if (e.target.checked) {
+					// Turn off quotes-only when actor mode is enabled
+					quotesOnlyToggle.input.checked = false;
+				}
+				// Also update configure button visibility
 				configureActorsBtn.style.display = e.target.checked ? 'block' : 'none';
 			});
 

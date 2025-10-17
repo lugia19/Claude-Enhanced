@@ -24,7 +24,7 @@ const CLAUDE_CLASSES = {
 	TEXT_MUTED: 'text-sm text-text-400',
 
 	// Tooltip
-	TOOLTIP_WRAPPER: 'fixed left-0 top-0 min-w-max z-50 pointer-events-none',
+	TOOLTIP_WRAPPER: 'fixed left-0 top-0 min-w-max z-[100] pointer-events-none',
 	TOOLTIP_CONTENT: 'px-2 py-1 text-xs font-normal font-ui leading-tight rounded-md shadow-md text-white bg-black/80 backdrop-blur break-words max-w-[13rem]',
 
 	// Layout helpers
