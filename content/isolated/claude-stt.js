@@ -441,7 +441,7 @@
 	}
 
 	// ======== INITIALIZATION ========
-	function initialize() {
+	async function initialize() {
 		const style = document.createElement('style');
 		style.id = 'stt-spinner-style';
 		style.textContent = `
@@ -456,6 +456,19 @@
 		if (!document.querySelector('#stt-spinner-style')) {
 			document.head.appendChild(style);
 		}
+
+		/*
+		// Register shortcut with manager
+		await shortcutManager.register('stt-toggle');
+
+		// Listen for shortcut messages
+		window.addEventListener('message', (event) => {
+			if (event.data.type === 'shortcut' && event.data.action === 'stt-toggle') {
+				const button = document.querySelector('.stt-mic-container button');
+				if (button) button.click();
+			}
+		});
+		*/
 
 		setInterval(async () => {
 			tryAddTopRightButton("stt-settings-button", createSettingsButton, 'STT Settings');

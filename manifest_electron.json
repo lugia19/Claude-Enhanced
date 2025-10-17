@@ -41,8 +41,8 @@
 			],
 			"js": [
 				"content/helpers/claude-styles.js",
-				"content/main/claude-phantom-messages.js",
 				"content/helpers/claude-api.js",
+				"content/main/claude-phantom-messages.js",
 				"content/main/claude-search-interceptor.js",
 				"content/main/claude-forking.js",
 				"content/main/claude-edit-files.js",
