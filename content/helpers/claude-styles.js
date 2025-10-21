@@ -177,6 +177,10 @@ class ClaudeModal {
 		document.addEventListener('keydown', this._handleEscape);
 		this.isVisible = true;
 
+		// Steal focus
+		this.backdrop.setAttribute('tabindex', '-1');
+		this.backdrop.focus();
+
 		return this;
 	}
 
