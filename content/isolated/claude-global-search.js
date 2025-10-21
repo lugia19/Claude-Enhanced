@@ -5,7 +5,6 @@
 	const { searchDB } = window.ClaudeSearchShared;
 
 	// ======== STATE ========
-	let isTextSearchEnabled = sessionStorage.getItem('text_search_enabled') === 'true';
 	let isFirstSyncOnRecents = true;
 	// Poll for navigation away from /recents
 	setInterval(() => {
@@ -148,7 +147,9 @@
 
 						newLoadingModal.destroy();
 					} else {
-						// User cancelled
+						// User cancelled. Reload page and set text search off
+						sessionStorage.setItem('text_search_enabled', 'false');
+						window.location.reload();
 						return;
 					}
 				}
@@ -358,7 +359,8 @@
 		console.log('[Search Handler] Received intercept request:', query);
 
 		// If text search is not enabled, don't intercept
-		if (!isTextSearchEnabled) {
+
+		if (sessionStorage.getItem('text_search_enabled') != 'true') {
 			console.log('[Search Handler] Text search disabled, not intercepting');
 			window.postMessage({
 				type: 'SEARCH_RESPONSE',
@@ -391,50 +393,66 @@
 		}
 	});
 
-	// ======== SEARCH FUNCTION ========
+	// ======== SEARCH FUNCTION (NEW) ========
 	async function searchAllConversations(query) {
 		if (!query || query.trim() === '') {
 			return [];
 		}
 
-		const matchedConversations = [];
-		const allMetadata = await searchDB.getAllMetadata();
+		const totalStart = performance.now();
+		console.log('========================================');
+		console.log('[Search] Query:', query);
 
-		for (const metadata of allMetadata) {
-			try {
-				const messages = await searchDB.getMessages(metadata.uuid);
-				if (!messages) continue;
+		const lowerQuery = query.toLowerCase();
 
-				// Search through messages for matches
-				let matchCount = 0;
-				const lowerQuery = query.toLowerCase();
+		// Load everything
+		const loadStart = performance.now();
+		const [allMetadata, allMessages] = await Promise.all([
+			searchDB.getAllMetadata(),
+			searchDB.getAllMessages()
+		]);
+		const loadTime = performance.now() - loadStart;
+		console.log(`[Search] Loaded ${allMessages.length} conversations in ${loadTime.toFixed(0)}ms`);
 
-				for (const message of messages) {
-					const text = ClaudeConversation.extractMessageText(message);
-					const lowerText = text.toLowerCase();
+		// Search through plain text
+		const searchStart = performance.now();
+		const matches = [];
 
-					if (lowerText.includes(lowerQuery)) {
-						matchCount++;
-					}
-				}
+		for (const entry of allMessages) {
+			const lowerText = entry.searchableText.toLowerCase();
+			const matchCount = (lowerText.match(new RegExp(lowerQuery, 'gi')) || []).length;
 
-				if (matchCount > 0) {
-					const result = { ...metadata };
-					result.name = `${metadata.name} (${matchCount} match${matchCount > 1 ? 'es' : ''})`;
-					matchedConversations.push(result);
-				}
-
-			} catch (error) {
-				console.error(`Failed to search conversation ${metadata.uuid}:`, error);
+			if (matchCount > 0) {
+				matches.push({ uuid: entry.uuid, matchCount });
 			}
 		}
+		const searchTime = performance.now() - searchStart;
 
-		// Sort by updated_at (most recent first)
-		matchedConversations.sort((a, b) =>
+		// Look up metadata
+		const results = matches.map(match => {
+			const metadata = allMetadata.find(m => m.uuid === match.uuid);
+			return {
+				...metadata,
+				name: `${metadata.name} (${match.matchCount} match${match.matchCount > 1 ? 'es' : ''})`,
+				matchCount: match.matchCount
+			};
+		});
+
+		// Sort
+		results.sort((a, b) =>
 			new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
 		);
 
-		return matchedConversations;
+		const totalTime = performance.now() - totalStart;
+
+		console.log(`[Search] Results:`);
+		console.log(`  - Load: ${loadTime.toFixed(0)}ms`);
+		console.log(`  - Search: ${searchTime.toFixed(0)}ms`);
+		console.log(`  - TOTAL: ${totalTime.toFixed(0)}ms`);
+		console.log(`  - Found: ${results.length} matches`);
+		console.log('========================================');
+
+		return results;
 	}
 
 	// ======== GLOBAL SEARCH TOGGLE ========

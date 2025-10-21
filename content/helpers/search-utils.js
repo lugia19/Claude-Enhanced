@@ -53,161 +53,72 @@
 	};
 
 	// ======== INDEXEDDB MANAGEMENT ========
-	const DB_NAME = 'claudeSearchIndex';
-	const DB_VERSION = 1;
-	const METADATA_STORE = 'metadata';
-	const MESSAGES_STORE = 'messages';
+	const db = new Dexie('ClaudeSearchDB');
+
+	db.version(1).stores({
+		metadata: 'uuid',
+		messages: 'uuid'
+	});
+
+	// One-time migration: delete old databases
+	async function deleteOldDatabases() {
+		try {
+			await Dexie.delete('claudeSearchIndex');
+			console.log('[DB] Deleted old database: claudeSearchIndex');
+		} catch (e) {
+			// Doesn't exist, that's fine
+		}
+	}
+
+	deleteOldDatabases();
 
 	class SearchDatabase {
 		constructor() {
-			this.db = null;
-		}
-
-		async init() {
-			console.log('[IndexedDB] Starting init...');
-
-			if (this.initPromise) {
-				console.log('[IndexedDB] Already initializing, waiting...');
-				return this.initPromise;
-			}
-
-			if (this.db) {
-				console.log('[IndexedDB] Already initialized');
-				return;
-			}
-
-			this.initPromise = new Promise((resolve, reject) => {
-				console.log('[IndexedDB] Opening database...');
-				const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-				request.onerror = () => {
-					console.error('[IndexedDB] Error:', request.error);
-					this.initPromise = null;
-					reject(request.error);
-				};
-
-				request.onsuccess = () => {
-					console.log('[IndexedDB] Success!');
-					this.db = request.result;
-					this.initPromise = null;
-					resolve();
-				};
-
-				request.onupgradeneeded = (event) => {
-					console.log('[IndexedDB] Upgrade needed');
-					const db = event.target.result;
-					// Metadata store: uuid -> full conversation object from API
-					if (!db.objectStoreNames.contains(METADATA_STORE)) {
-						db.createObjectStore(METADATA_STORE, { keyPath: 'uuid' });
-					}
-
-					// Messages store: uuid -> compressed messages
-					if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
-						db.createObjectStore(MESSAGES_STORE, { keyPath: 'uuid' });
-					}
-				};
-
-				request.onblocked = () => {
-					console.warn('[IndexedDB] BLOCKED - close other tabs!');
-				};
-			});
-
-			return this.initPromise;
-		}
-
-		async getMetadata(conversationId) {
-			if (!this.db) await this.init();
-			return new Promise((resolve, reject) => {
-				const transaction = this.db.transaction([METADATA_STORE], 'readonly');
-				const store = transaction.objectStore(METADATA_STORE);
-				const request = store.get(conversationId);
-
-				request.onsuccess = () => resolve(request.result);
-				request.onerror = () => reject(request.error);
-			});
-		}
-
-		async getAllMetadata() {
-			if (!this.db) await this.init();
-			return new Promise((resolve, reject) => {
-				const transaction = this.db.transaction([METADATA_STORE], 'readonly');
-				const store = transaction.objectStore(METADATA_STORE);
-				const request = store.getAll();
-
-				request.onsuccess = () => resolve(request.result);
-				request.onerror = () => reject(request.error);
-			});
+			// No initialization needed! Dexie handles it.
 		}
 
 		async setMetadata(conversationObj) {
-			if (!this.db) await this.init();
-			return new Promise((resolve, reject) => {
-				const transaction = this.db.transaction([METADATA_STORE], 'readwrite');
-				const store = transaction.objectStore(METADATA_STORE);
-				const request = store.put(conversationObj);
+			await db.metadata.put(conversationObj);
+		}
 
-				request.onsuccess = () => resolve();
-				request.onerror = () => reject(request.error);
+		async getMetadata(conversationId) {
+			return await db.metadata.get(conversationId);
+		}
+
+		async getAllMetadata() {
+			return await db.metadata.toArray();
+		}
+
+		async setMessages(conversationId, messages) {
+			// Extract searchable text only
+			const searchableText = messages
+				.map(m => ClaudeConversation.extractMessageText(m))
+				.join('\n');
+
+			await db.messages.put({
+				uuid: conversationId,
+				searchableText: searchableText
 			});
 		}
 
 		async getMessages(conversationId) {
-			if (!this.db) await this.init();
-			return new Promise((resolve, reject) => {
-				const transaction = this.db.transaction([MESSAGES_STORE], 'readonly');
-				const store = transaction.objectStore(MESSAGES_STORE);
-				const request = store.get(conversationId);
-
-				request.onsuccess = () => {
-					const result = request.result;
-					if (!result) {
-						resolve(null);
-						return;
-					}
-
-					// Decompress
-					const decompressed = LZString.decompressFromUTF16(result.compressedData);
-					resolve(JSON.parse(decompressed));
-				};
-				request.onerror = () => reject(request.error);
-			});
+			const result = await db.messages.get(conversationId);
+			return result ? result.searchableText : null;
 		}
 
-		async setMessages(conversationId, messages) {
-			if (!this.db) await this.init();
-			return new Promise((resolve, reject) => {
-				// Compress
-				const json = JSON.stringify(messages);
-				const compressed = LZString.compressToUTF16(json);
-
-				const transaction = this.db.transaction([MESSAGES_STORE], 'readwrite');
-				const store = transaction.objectStore(MESSAGES_STORE);
-				const request = store.put({
-					uuid: conversationId,
-					compressedData: compressed
-				});
-
-				request.onsuccess = () => resolve();
-				request.onerror = () => reject(request.error);
-			});
+		async getAllMessages() {
+			return await db.messages.toArray();
 		}
 
 		async deleteConversation(conversationId) {
-			if (!this.db) await this.init();
-			return new Promise((resolve, reject) => {
-				const transaction = this.db.transaction([METADATA_STORE, MESSAGES_STORE], 'readwrite');
-
-				const metadataStore = transaction.objectStore(METADATA_STORE);
-				const messagesStore = transaction.objectStore(MESSAGES_STORE);
-
-				metadataStore.delete(conversationId);
-				messagesStore.delete(conversationId);
-
-				transaction.oncomplete = () => resolve();
-				transaction.onerror = () => reject(transaction.error);
-			});
+			await Promise.all([
+				db.metadata.delete(conversationId),
+				db.messages.delete(conversationId)
+			]);
 		}
 	}
+
+
 
 	// Global database instance
 	window.ClaudeSearchShared.searchDB = new SearchDatabase();

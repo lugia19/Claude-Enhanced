@@ -18,7 +18,7 @@
 				"https://claude.ai/*"
 			],
 			"js": [
-				"lib/lz-string.min.js",
+				"lib/dexie.min.js",
 				"content/helpers/claude-styles.js",
 				"content/helpers/claude-api.js",
 				"content/helpers/search-utils.js",
