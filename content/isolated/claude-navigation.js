@@ -228,23 +228,26 @@
 	}
 
 	// ======== USER NAVIGATION ========
-	const UP_ARROW_SVG = `<div class="flex items-center justify-center" style="width: 18px; height: 18px;">
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" xmlns="http://www.w3.org/2000/svg" class="shrink-0" aria-hidden="true">
+	const UP_ARROW_SVG = `<div class="flex items-center justify-center" style="width: 14px; height: 14px;">
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg" class="shrink-0" aria-hidden="true">
     <path d="M3.16011 13.8662C2.98312 13.7018 2.95129 13.4389 3.07221 13.2402L3.13374 13.1602L9.63377 6.16016C9.72836 6.05829 9.86101 6 9.99999 6C10.1043 6 10.2053 6.03247 10.289 6.0918L10.3662 6.16016L16.8662 13.1602C17.054 13.3625 17.0421 13.6783 16.8399 13.8662C16.6375 14.054 16.3217 14.0422 16.1338 13.8399L9.99999 7.2334L3.86616 13.8399L3.78999 13.9072C3.60085 14.0422 3.33709 14.0305 3.16011 13.8662Z"/>
   </svg>
 </div>`;
 
-	const DOWN_ARROW_SVG = `<div class="flex items-center justify-center" style="width: 18px; height: 18px;">
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" xmlns="http://www.w3.org/2000/svg" class="shrink-0" aria-hidden="true">
+	const DOWN_ARROW_SVG = `<div class="flex items-center justify-center" style="width: 14px; height: 14px;">
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg" class="shrink-0" aria-hidden="true">
     <path d="M3.16011 6.13378C2.98312 6.29824 2.95129 6.5611 3.07221 6.75976L3.13374 6.83984L9.63377 13.8398C9.72836 13.9417 9.86101 14 9.99999 14C10.1043 14 10.2053 13.9675 10.289 13.9082L10.3662 13.8398L16.8662 6.83984C17.054 6.6375 17.0421 6.32166 16.8399 6.13378C16.6375 5.94599 16.3217 5.95783 16.1338 6.16015L9.99999 12.7666L3.86616 6.16015L3.78999 6.09277C3.60085 5.95776 3.33709 5.96954 3.16011 6.13378Z"/>
   </svg>
 </div>`;
+
 	function addUserNavigationButtons() {
+		// Check if portrait mode (mobile)
 		if (window.innerHeight > window.innerWidth) {
 			// Remove any existing buttons
 			document.querySelectorAll('[user-nav-buttons]').forEach(btn => btn.remove());
 			return;
 		}
+
 		const messages = document.querySelectorAll('.\\!font-user-message');
 
 		messages.forEach((message) => {
@@ -261,12 +264,15 @@
 			// Create button container
 			const navContainer = document.createElement('div');
 			navContainer.setAttribute('user-nav-buttons', 'true');
-			navContainer.className = 'flex flex-col gap-1 items-center bg-bg-300 px-0.5 py-1';
+			navContainer.className = 'flex flex-col items-center bg-bg-100/80 border-border-300 border-0.5';
 			navContainer.style.position = 'absolute';
 			navContainer.style.left = '-50px';
 			navContainer.style.top = '50%';
 			navContainer.style.transform = 'translateY(-50%)';
 			navContainer.style.borderRadius = '6px';
+			navContainer.style.opacity = '0';
+			navContainer.style.transition = 'opacity 0.2s ease';
+			navContainer.style.pointerEvents = 'auto';
 
 			// Create up button
 			const upBtn = createClaudeButton(UP_ARROW_SVG, 'icon', () => {
@@ -289,6 +295,20 @@
 			navContainer.appendChild(upBtn);
 			navContainer.appendChild(downBtn);
 			messageRow.appendChild(navContainer);
+
+			// Show on hover
+			let hideTimeout;
+
+			messageRow.addEventListener('mouseenter', () => {
+				clearTimeout(hideTimeout);
+				navContainer.style.opacity = '1';
+			});
+
+			messageRow.addEventListener('mouseleave', () => {
+				hideTimeout = setTimeout(() => {
+					navContainer.style.opacity = '0';
+				}, 100); // Small delay
+			});
 		});
 	}
 
