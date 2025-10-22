@@ -74,7 +74,7 @@
 		const presets = await getStoredPresets();
 		presets[name] = {
 			name: name,
-			content: content,
+			content: content.trim(),  // <-- Trim on save
 			lastModified: Date.now()
 		};
 		await chrome.storage.local.set({ preference_presets: presets });
@@ -86,13 +86,13 @@
 
 		// Check if current preferences match any stored preset
 		for (const [name, preset] of Object.entries(presets)) {
-			if (preset.content === currentPrefs) {
+			if (preset.content.trim() === currentPrefs.trim()) {  // <-- Just add .trim()
 				return name;
 			}
 		}
 
 		// If no match and preferences are not empty, return "Unsaved"
-		return currentPrefs ? 'Unsaved' : 'None';
+		return currentPrefs.trim() ? 'Unsaved' : 'None';  // <-- And here too
 	}
 
 	// ======== UI COMPONENTS ========
