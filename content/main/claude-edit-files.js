@@ -12,13 +12,9 @@
 
 	//#region Edit Button Interception
 	function addAdvancedEditButtons() {
-		const userMessages = document.querySelectorAll('[data-testid="user-message"]');
-
+		const { userMessages } = getUIMessages();
 		userMessages.forEach(messageEl => {
-			const groupEl = messageEl.closest('.group');
-			if (!groupEl) return;
-
-			const controlsContainer = groupEl.querySelector('.absolute.bottom-0.right-2');
+			const controlsContainer = findMessageControls(messageEl);
 			if (!controlsContainer) return;
 
 			// Check if we already added our button
@@ -1046,7 +1042,7 @@
 				// Update the UI with the new text immediately
 				const bodyData = JSON.parse(modifiedRequest.config.body);
 				setTimeout(() => {
-					const userMessages = document.querySelectorAll('[data-testid="user-message"]');
+					const { userMessages } = getUIMessages();
 					const lastMessage = userMessages[userMessages.length - 1];
 					if (lastMessage) {
 						updateMessageUI(lastMessage, bodyData.prompt);

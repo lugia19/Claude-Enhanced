@@ -248,7 +248,7 @@
 			return;
 		}
 
-		const messages = document.querySelectorAll('.\\!font-user-message');
+		const { userMessages: messages } = getUIMessages();
 
 		messages.forEach((message) => {
 			// Find the parent row
@@ -276,7 +276,7 @@
 
 			// Create up button
 			const upBtn = createClaudeButton(UP_ARROW_SVG, 'icon', () => {
-				const allMessages = document.querySelectorAll('.\\!font-user-message');
+				const { userMessages: allMessages } = getUIMessages();
 				const currentIndex = Array.from(allMessages).indexOf(message);
 				if (currentIndex > 0) {
 					allMessages[currentIndex - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -285,7 +285,7 @@
 
 			// Create down button
 			const downBtn = createClaudeButton(DOWN_ARROW_SVG, 'icon', () => {
-				const allMessages = document.querySelectorAll('.\\!font-user-message');
+				const { userMessages: allMessages } = getUIMessages();
 				const currentIndex = Array.from(allMessages).indexOf(message);
 				if (currentIndex < allMessages.length - 1) {
 					allMessages[currentIndex + 1].scrollIntoView({ behavior: 'smooth', block: 'center' });

@@ -434,7 +434,7 @@
 			console.log(`Attempt ${attempts} to find text...`);
 			console.log('Looking for:', textToFind);
 
-			const messages = document.querySelectorAll('.font-claude-response, .\\!font-claude-response, .font-user-message, .\\!font-user-message');
+			const { allMessages: messages } = getUIMessages();
 			console.log('Found', messages.length, 'message elements');
 
 			for (const node of messages) {

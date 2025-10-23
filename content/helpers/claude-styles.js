@@ -752,11 +752,34 @@ function showMoreActionsModal() {
 }
 
 function findMessageControls(messageElement) {
-	const group = messageElement.closest('.group');
-	const buttons = group?.querySelectorAll('button');
-	if (!buttons) return null;
-	const copyButton = group.querySelector('[data-testid="action-bar-copy"]');
-	return copyButton?.closest('.justify-between');
+	// Check if it's a user message
+	const isUserMessage = messageElement.closest('[data-testid="user-message"]') !== null;
+
+	if (isUserMessage) {
+		// User message logic
+		const groupEl = messageElement.closest('.group');
+		if (!groupEl) return null;
+
+		return groupEl.querySelector('.absolute.bottom-0.right-2');
+	} else {
+		// Assistant message logic (original code)
+		const group = messageElement.closest('.group');
+		const buttons = group?.querySelectorAll('button');
+		if (!buttons) return null;
+		const copyButton = group.querySelector('[data-testid="action-bar-copy"]');
+		return copyButton?.closest('.justify-between');
+	}
+}
+
+// Retrieve all message elements from the UI
+function getUIMessages() {
+	const assistantMessages = document.querySelectorAll('.font-claude-response, .\\!font-claude-response');
+	const userMessages = document.querySelectorAll('.font-user-message, .\\!font-user-message, [data-testid="user-message"]');
+	return {
+		assistantMessages,
+		userMessages,
+		allMessages: [...assistantMessages, ...userMessages]
+	};
 }
 
 function addMessageButtonWithPriority(buttonGenerator, buttonClass) {
