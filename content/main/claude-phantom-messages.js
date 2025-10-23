@@ -5,6 +5,7 @@
 const PHANTOM_PREFIX = 'phantom_messages_';
 const OLD_FORK_PREFIX = 'fork_history_'; // Backward compatibility
 const PHANTOM_DELIMITER = '===BEGINNING OF REAL CONVERSATION===';
+const PHANTOM_MARKER = '====PHANTOM_MESSAGE====';
 
 // Migrate old fork history to new format
 function migrateOldPhantomStorage(conversationId) {
@@ -134,7 +135,12 @@ function injectPhantomMessages(data, phantomMessages) {
 			...item // Original properties override defaults
 		}));
 
-
+		// Add phantom marker to the end of each text content
+		completeMsg.content.forEach(item => {
+			if (item.text !== undefined) {
+				item.text = item.text + '\n\n' + PHANTOM_MARKER;
+			}
+		});
 
 		return completeMsg;
 	});
@@ -193,3 +199,66 @@ window.addEventListener('message', (event) => {
 		storePhantomMessages(conversationId, phantomMessages);
 	}
 });
+
+// Style phantom messages in the DOM
+function stylePhantomMessages() {
+	const { allMessages, userMessages } = getUIMessages();
+
+	// Convert to Set for efficient lookups
+	const userMessageSet = new Set(userMessages);
+
+	// Process all containers the same way
+	allMessages.forEach(container => {
+		// Check if already processed
+		if (container.hasAttribute('data-phantom-styled')) return;
+
+		// Check if this message contains the phantom marker
+		const textContent = container.textContent || '';
+		if (textContent.includes(PHANTOM_MARKER)) {
+			// Remove the marker from all text nodes
+			removeMarkerFromElement(container);
+
+			// Check if it's a user message
+			const isUserMessage = userMessageSet.has(container);
+
+			// Apply styling based on message type
+			if (container.parentElement && container.parentElement.parentElement) {
+				container.parentElement.parentElement.style.filter = 'brightness(0.70)';
+			}
+
+			// Hide message controls
+			const controls = findMessageControls(container);
+			if (controls) {
+				controls.style.display = 'none';
+			}
+
+			container.setAttribute('data-phantom-styled', 'true');
+		}
+	});
+}
+
+
+function removeMarkerFromElement(element) {
+	const walker = document.createTreeWalker(
+		element,
+		NodeFilter.SHOW_TEXT,
+		null,
+		false
+	);
+
+	const textNodes = [];
+	let node;
+	while (node = walker.nextNode()) {
+		textNodes.push(node);
+	}
+
+	textNodes.forEach(textNode => {
+		if (textNode.textContent.includes(PHANTOM_MARKER)) {
+			textNode.textContent = textNode.textContent.replace(PHANTOM_MARKER, '');
+		}
+	});
+}
+
+
+// Run styling check every second
+setInterval(stylePhantomMessages, 1000);
