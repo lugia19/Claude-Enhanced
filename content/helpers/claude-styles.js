@@ -117,11 +117,22 @@ class ClaudeModal {
 			}
 		};
 
-		this.backdrop.onclick = (e) => {
-			if (e.target === this.backdrop && this.config.dismissible) {
+		// Track where the mousedown occurred
+		let mouseDownOnBackdrop = false;
+
+		this.backdrop.addEventListener('mousedown', (e) => {
+			// Only set flag if mousedown is directly on backdrop (not modal)
+			mouseDownOnBackdrop = e.target === this.backdrop;
+		});
+
+		this.backdrop.addEventListener('mouseup', (e) => {
+			// Only close if both mousedown AND mouseup were on backdrop
+			if (mouseDownOnBackdrop && e.target === this.backdrop && this.config.dismissible) {
 				this.hide();
 			}
-		};
+			// Reset flag
+			mouseDownOnBackdrop = false;
+		});
 	}
 
 	addButton(text, variant = 'primary', onClick = null, closeOnClick = true) {
@@ -806,7 +817,6 @@ function tryAddTopRightButton(buttonClass, createButtonFn, tooltipText = '', for
 	if (!container && isChatPage) container = document.querySelector("[data-testid=\"wiggle-controls-actions\"]")
 
 	if (!container) {
-		console.log("Top right button container not found");
 		return false;
 	}
 
