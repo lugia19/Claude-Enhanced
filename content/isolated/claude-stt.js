@@ -471,7 +471,7 @@
 		*/
 
 		setInterval(async () => {
-			tryAddTopRightButton("stt-settings-button", createSettingsButton, 'STT Settings');
+			tryAddTopRightButton("stt-settings-button", createSettingsButton, 'STT Settings', false, true);
 			await tryAddMicButton();
 		}, 1000);
 	}

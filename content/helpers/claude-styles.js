@@ -587,8 +587,10 @@ function createClaudeTooltip(element, tooltipText, deleteOnClick) {
 
 
 // All top right buttons must be in ISOLATED only!
-function tryAddTopRightButton(buttonClass, createButtonFn, tooltipText = '', forceDisplay = false) {
-	if (!window.location.href.includes("/chat/")) return false;
+// All top right buttons must be in ISOLATED only!
+function tryAddTopRightButton(buttonClass, createButtonFn, tooltipText = '', forceDisplayOnMobile = false, displayOnNewPage = false) {
+	const isChatPage = window.location.href.includes("/chat/");
+	if (!isChatPage && !displayOnNewPage) return false;
 
 	const BUTTON_PRIORITY = [
 		'search-button',
@@ -599,17 +601,27 @@ function tryAddTopRightButton(buttonClass, createButtonFn, tooltipText = '', for
 		'tts-settings-button',
 	];
 
-	const container = document.querySelector('div.right-3:has(> div.flex > button)') ||
-		document.querySelector('div.right-3:has(> button)');
-	if (!container || container.querySelectorAll("button").length == 0) {
+	let container;
+	if (isChatPage) container = document.querySelector("[data-testid=\"chat-actions\"]")
+	else container = document.querySelector(".absolute.top-3.right-3.z-header.draggable-none")
+
+	if (!container) {
+		console.log("Top right button container not found");
 		return false;
 	}
 
 	const isMobile = window.innerHeight > window.innerWidth;
 	let madeChanges = false;
 
-	// On desktop OR if forceDisplay is true, add button normally
-	if (!isMobile || forceDisplay) {
+	// On desktop OR if forceDisplay is true, add button to container
+	if (!isMobile || forceDisplayOnMobile || (!isChatPage && displayOnNewPage)) {
+		// Remove from mobile modal if it's there
+		const modalIndex = mobileModalButtons.findIndex(b => b.class === buttonClass);
+		if (modalIndex !== -1) {
+			mobileModalButtons.splice(modalIndex, 1);
+			madeChanges = true;
+		}
+
 		// Add button if it doesn't exist
 		if (!container.querySelector('.' + buttonClass)) {
 			const button = createButtonFn();
@@ -670,10 +682,31 @@ function tryAddTopRightButton(buttonClass, createButtonFn, tooltipText = '', for
 			madeChanges = true;
 		}
 
+		// Remove "More" button if we're on desktop and no buttons need it
+		if (!isMobile && isChatPage) {
+			const moreButton = container.querySelector('.more-actions-button');
+			if (moreButton) {
+				moreButton.remove();
+				madeChanges = true;
+			}
+		}
+
 		return madeChanges;
 	}
 
-	// On mobile AND forceDisplay is false: add to modal instead
+	// If we're not on a chat page, ignore the mobile stuff
+	if (!isChatPage) return false;
+
+	// On mobile AND forceDisplay is false: handle mobile modal logic
+
+	// Remove button from container if it exists
+	const existingButtonInContainer = container.querySelector('.' + buttonClass);
+	if (existingButtonInContainer) {
+		existingButtonInContainer.remove();
+		madeChanges = true;
+	}
+
+	// Add to modal array if not already there
 	const existingButton = mobileModalButtons.find(b => b.class === buttonClass);
 	if (!existingButton) {
 		mobileModalButtons.push({

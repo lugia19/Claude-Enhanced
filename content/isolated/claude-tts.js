@@ -1196,9 +1196,7 @@
 
 	function initialize() {
 		addTTSStyles();
-		// Try to add the settings button immediately
-		tryAddTopRightButton("tts-settings-button", createSettingsButton, "TTS Settings", true);
-		setInterval(() => tryAddTopRightButton('tts-settings-button', createSettingsButton, "TTS Settings", true), 1000);
+		setInterval(() => tryAddTopRightButton('tts-settings-button', createSettingsButton, "TTS Settings", true, true), 1000);
 		setInterval(addSpeakButtons, 1000);
 	}
 
