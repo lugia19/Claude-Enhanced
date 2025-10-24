@@ -1,19 +1,32 @@
 // pref-switcher.js
 (function () {
 	'use strict';
+	const channel = new BroadcastChannel('pref-switcher-updates');
 
-	// Listen for messages from the fetch watcher
-	window.addEventListener('message', async (event) => {
-		if (event.data.type === 'pref-switcher-external-update') {
-			console.log('Detected external preferences update, refreshing UI...');
-			setTimeout(async () => {
-				const select = document.querySelector('.preset-switcher-dropdown select');
-				if (select) {
-					await updateDropdownOptions(select);
-				}
-			}, 500);
+	channel.addEventListener('message', (event) => {
+		if (event.data.type === 'preferences-changed') {
+			console.log('Preferences changed in another tab, refreshing UI...');
+			updateAllUI();
 		}
 	});
+
+	async function updateAllUI() {
+		setTimeout(async () => {
+			// Update sidebar dropdown if present
+			const sidebarSelect = document.querySelector('.preset-switcher-dropdown select');
+			if (sidebarSelect) {
+				await updateDropdownOptions(sidebarSelect);
+			}
+
+			// Update settings UI if present
+			const settingsSelect = document.querySelector('.preset-manager-settings .preset-selector');
+			const settingsContent = document.querySelector('.preset-manager-settings .preset-content');
+			if (settingsSelect && settingsContent) {
+				await updatePresetSelector(settingsSelect, settingsContent);
+			}
+		}, 500);
+	}
+
 
 	// ======== API FUNCTIONS ========
 	async function getCurrentPreferences() {
@@ -43,9 +56,9 @@
 
 			if (response.ok) {
 				// Manually trigger the UI update since our fetch won't go through the interceptor
-				window.postMessage({
-					type: 'pref-switcher-external-update'
-				}, '*');
+				channel.postMessage({ type: 'preferences-changed' });
+				// Trigger our own update as well
+				updateAllUI();
 			}
 
 			return response.ok;
@@ -378,7 +391,7 @@
 				await savePreset(presetName, content);
 			}
 
-			// Apply the preferences (without source param to trigger sidebar update)
+			// Apply the preferences
 			await setPreferences(content);
 
 			// Show success feedback
@@ -518,32 +531,6 @@
 				}, 500);
 			}
 		}, 1000);
-
-		// Handle tab visibility changes for multi-tab sync
-		document.addEventListener('visibilitychange', async () => {
-			if (!document.hidden) {
-				console.log('Tab became visible, checking for preference changes...');
-
-				// Update sidebar dropdown if present
-				const sidebarSelect = document.querySelector('.preset-switcher-dropdown select');
-				if (sidebarSelect) {
-					const currentValue = sidebarSelect.value;
-					await updateDropdownOptions(sidebarSelect);
-					const newValue = sidebarSelect.value;
-
-					if (currentValue !== newValue) {
-						console.log(`Preset changed from "${currentValue}" to "${newValue}"`);
-					}
-				}
-
-				// Update settings UI if present
-				const settingsSelect = document.querySelector('.preset-manager-settings .preset-selector');
-				const settingsContent = document.querySelector('.preset-manager-settings .preset-content');
-				if (settingsSelect && settingsContent) {
-					await updatePresetSelector(settingsSelect, settingsContent);
-				}
-			}
-		});
 	}
 
 	// Start the script

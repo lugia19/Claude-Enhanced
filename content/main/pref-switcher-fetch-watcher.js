@@ -1,6 +1,7 @@
 // pref-switcher-fetch-watcher.js
 (function () {
 	'use strict';
+	const channel = new BroadcastChannel('pref-switcher-updates');
 
 	const originalFetch = window.fetch;
 	window.fetch = async function (...args) {
@@ -21,11 +22,8 @@
 
 			// Call the original fetch
 			const response = await originalFetch.apply(this, args);
-			// If it's not our call and it succeeded, notify the isolated script
 			if (response.ok) {
-				window.postMessage({
-					type: 'pref-switcher-external-update'
-				}, '*');
+				channel.postMessage({ type: 'preferences-changed' });
 			}
 
 			return response;
