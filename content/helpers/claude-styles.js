@@ -587,7 +587,6 @@ function createClaudeTooltip(element, tooltipText, deleteOnClick) {
 
 
 // All top right buttons must be in ISOLATED only!
-// All top right buttons must be in ISOLATED only!
 function tryAddTopRightButton(buttonClass, createButtonFn, tooltipText = '', forceDisplayOnMobile = false, displayOnNewPage = false) {
 	const isChatPage = window.location.href.includes("/chat/");
 	if (!isChatPage && !displayOnNewPage) return false;
@@ -604,6 +603,7 @@ function tryAddTopRightButton(buttonClass, createButtonFn, tooltipText = '', for
 	let container;
 	if (isChatPage) container = document.querySelector("[data-testid=\"chat-actions\"]")
 	else container = document.querySelector(".absolute.top-3.right-3.z-header.draggable-none")
+	if (!container && isChatPage) container = document.querySelector("[data-testid=\"wiggle-controls-actions\"]")
 
 	if (!container) {
 		console.log("Top right button container not found");
