@@ -214,8 +214,7 @@
 				model: model,
 				attachments: [chatlogAttachment],
 				files: [],
-				syncSources: [],
-				waitMinutes: 3
+				syncSources: []
 			}
 		);
 

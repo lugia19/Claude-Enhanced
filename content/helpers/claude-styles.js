@@ -505,6 +505,206 @@ function createClaudeToggle(labelText = '', checked = false, onChange = null) {
 }
 
 
+function createClaudeSlider(label, defaultValue = 100, options = {}) {
+	const {
+		min = 0,
+		max = 100,
+		step = 25,
+		showLabels = true,
+		suffix = '%'
+	} = options;
+
+	const container = document.createElement('div');
+	container.className = 'space-y-2';
+	container.style.paddingBottom = '1rem';
+
+	// Label
+	if (label) {
+		const labelElement = document.createElement('label');
+		labelElement.className = CLAUDE_CLASSES.LABEL;
+		labelElement.textContent = label;
+		container.appendChild(labelElement);
+	}
+
+	// Slider wrapper
+	const sliderWrapper = document.createElement('div');
+	sliderWrapper.className = 'relative px-4 py-4 select-none';
+
+	// Track
+	const track = document.createElement('div');
+	track.className = 'relative w-full h-2 bg-bg-300 rounded-lg cursor-pointer';
+
+	// Filled track (progress)
+	const fillTrack = document.createElement('div');
+	fillTrack.className = 'absolute left-0 top-0 h-full rounded-lg pointer-events-none';
+	fillTrack.style.backgroundColor = '#2c84db';
+
+	// Thumb
+	const thumb = document.createElement('div');
+	thumb.className = 'absolute top-1/2 w-5 h-5 rounded-full border-2 border-white shadow-md cursor-grab active:cursor-grabbing';
+	thumb.style.backgroundColor = '#2c84db';
+	thumb.style.transform = 'translate(-50%, -50%)';
+	thumb.style.transition = 'none';
+
+	track.appendChild(fillTrack);
+	track.appendChild(thumb);
+	sliderWrapper.appendChild(track);
+
+	// Hidden input for form compatibility
+	const input = document.createElement('input');
+	input.type = 'hidden';
+	input.value = defaultValue;
+	sliderWrapper.appendChild(input);
+
+	// Tick marks and labels
+	if (showLabels) {
+		const ticksContainer = document.createElement('div');
+		ticksContainer.className = 'relative w-full mt-3';
+
+		for (let value = min; value <= max; value += step) {
+			const percentage = ((value - min) / (max - min)) * 100;
+
+			const tickWrapper = document.createElement('div');
+			tickWrapper.className = 'absolute flex flex-col items-center cursor-pointer';
+			tickWrapper.style.left = `${percentage}%`;
+			tickWrapper.style.transform = 'translateX(-50%)';
+
+			// Tick mark
+			const tick = document.createElement('div');
+			tick.className = 'w-0.5 h-2 bg-border-300 mb-1';
+			tickWrapper.appendChild(tick);
+
+			// Label
+			const tickLabel = document.createElement('span');
+			tickLabel.className = 'text-xs text-text-400 select-none whitespace-nowrap';
+			tickLabel.textContent = `${value}${suffix}`;
+			tickWrapper.appendChild(tickLabel);
+
+			// Click on tick to set value
+			tickWrapper.addEventListener('click', () => {
+				setValue(value);
+			});
+
+			ticksContainer.appendChild(tickWrapper);
+		}
+
+		sliderWrapper.appendChild(ticksContainer);
+	}
+
+	container.appendChild(sliderWrapper);
+
+	// State
+	let currentValue = defaultValue;
+	let isDragging = false;
+
+	// Helper functions
+	const snapToStep = (value) => {
+		const steps = Math.round((value - min) / step);
+		return Math.min(max, Math.max(min, min + steps * step));
+	};
+
+	const setValue = (value) => {
+		currentValue = snapToStep(value);
+		const percentage = ((currentValue - min) / (max - min)) * 100;
+		thumb.style.left = `${percentage}%`;
+		fillTrack.style.width = `${percentage}%`;
+		input.value = currentValue;
+
+		// Dispatch both input (for real-time) and change (for compatibility)
+		input.dispatchEvent(new Event('input', { bubbles: true }));
+		input.dispatchEvent(new Event('change', { bubbles: true }));
+	};
+
+	const handleMove = (clientX) => {
+		const rect = track.getBoundingClientRect();
+		const percentage = ((clientX - rect.left) / rect.width) * 100;
+		const value = min + (percentage / 100) * (max - min);
+		setValue(value);
+	};
+
+	// Mouse events
+	thumb.addEventListener('mousedown', (e) => {
+		isDragging = true;
+		thumb.style.transition = 'none';
+		e.preventDefault();
+	});
+
+	track.addEventListener('mousedown', (e) => {
+		if (e.target === track || e.target === fillTrack) {
+			isDragging = true;
+			thumb.style.transition = 'none';
+			handleMove(e.clientX);
+			e.preventDefault();
+		}
+	});
+
+	document.addEventListener('mousemove', (e) => {
+		if (isDragging) {
+			handleMove(e.clientX);
+		}
+	});
+
+	document.addEventListener('mouseup', () => {
+		if (isDragging) {
+			isDragging = false;
+			thumb.style.transition = '';
+		}
+	});
+
+	// Touch events
+	thumb.addEventListener('touchstart', (e) => {
+		isDragging = true;
+		thumb.style.transition = 'none';
+		e.preventDefault();
+	});
+
+	track.addEventListener('touchstart', (e) => {
+		if (e.target === track || e.target === fillTrack) {
+			isDragging = true;
+			thumb.style.transition = 'none';
+			handleMove(e.touches[0].clientX);
+			e.preventDefault();
+		}
+	});
+
+	document.addEventListener('touchmove', (e) => {
+		if (isDragging) {
+			handleMove(e.touches[0].clientX);
+		}
+	});
+
+	document.addEventListener('touchend', () => {
+		if (isDragging) {
+			isDragging = false;
+			thumb.style.transition = '';
+		}
+	});
+
+	// Initialize
+	setValue(defaultValue);
+
+	// Add hover effect
+	thumb.addEventListener('mouseenter', () => {
+		if (!isDragging) {
+			thumb.style.transform = 'translate(-50%, -50%) scale(1.1)';
+		}
+	});
+
+	thumb.addEventListener('mouseleave', () => {
+		if (!isDragging) {
+			thumb.style.transform = 'translate(-50%, -50%)';
+		}
+	});
+
+	return {
+		container,
+		input,
+		setValue,
+		getValue: () => currentValue
+	};
+}
+
+
 function createClaudeTooltip(element, tooltipText, deleteOnClick) {
 	const tooltipId = `tooltip-${Math.random().toString(36).substring(2, 11)}`;
 

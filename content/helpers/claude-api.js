@@ -46,10 +46,10 @@ class ClaudeConversation {
 			attachments = [],
 			files = [],
 			syncSources = [],
-			personalizedStyles = null,
-			waitMinutes = 2
+			personalizedStyles = null
 		} = options;
 
+		const waitMinutes = 4;
 		// Build the request body dynamically
 		const requestBody = {
 			prompt,
@@ -73,35 +73,66 @@ class ClaudeConversation {
 			body: JSON.stringify(requestBody)
 		});
 
-
 		if (!response.ok) {
 			console.error(await response.json());
 			throw new Error('Failed to send message');
 		}
 
-		// Wait for assistant response
-		return await this.waitForAssistantMessage(waitMinutes);
+		// Wait for completion using the new status endpoint
+		await this.waitForCompletion(waitMinutes);
+
+		// Now fetch the actual assistant message
+		let messages = await this.getMessages(false, true);
+		let assistantMessage = messages.find(msg => msg.sender === 'assistant');
+
+		// Retry once if not found
+		if (!assistantMessage) {
+			console.log('Assistant message not found, waiting 10 seconds and retrying...');
+			await new Promise(r => setTimeout(r, 10000));
+			messages = await this.getMessages(false, true);
+			assistantMessage = messages.find(msg => msg.sender === 'assistant');
+		}
+
+		if (!assistantMessage) {
+			throw new Error('Completion finished but no assistant message found after retry');
+		}
+
+		return assistantMessage;
 	}
 
-	// Wait for assistant message
-	async waitForAssistantMessage(maxMinutes = 2) {
-		const maxRetries = Math.floor((maxMinutes * 60) / 10);
+	// Wait for completion using the status endpoint
+	async waitForCompletion(maxMinutes = 2) {
+		const maxRetries = Math.floor((maxMinutes * 60) / 5); // Check every 5 seconds
+		const pollInterval = 5000; // 5 seconds
 
 		for (let attempt = 0; attempt < maxRetries; attempt++) {
-			await new Promise(r => setTimeout(r, 10000));
+			await new Promise(r => setTimeout(r, pollInterval));
 
-			console.log(`Checking for assistant response in ${this.conversationId} (attempt ${attempt + 1}/${maxRetries})...`);
+			console.log(`Checking completion status for ${this.conversationId} (attempt ${attempt + 1}/${maxRetries})...`);
 
-			const messages = await this.getMessages(false, true);
-			const assistantMessage = messages.find(msg => msg.sender === 'assistant');
+			const response = await fetch(
+				`/api/organizations/${this.orgId}/chat_conversations/${this.conversationId}/completion_status?poll=false`
+			);
 
-			if (assistantMessage) {
-				console.log('Found assistant response');
-				return assistantMessage;
+			if (!response.ok) {
+				throw new Error('Failed to check completion status');
+			}
+
+			const status = await response.json();
+
+			// Check for errors
+			if (status.is_error) {
+				throw new Error(`Completion error: ${status.error_detail || status.error_code || 'Unknown error'}`);
+			}
+
+			// Check if complete
+			if (!status.is_pending) {
+				console.log('Completion finished');
+				return;
 			}
 		}
 
-		throw new Error(`No assistant response after ${maxMinutes} minutes`);
+		throw new Error(`Completion timed out after ${maxMinutes} minutes`);
 	}
 
 	// Lazy load conversation data
