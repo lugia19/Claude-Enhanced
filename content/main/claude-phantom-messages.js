@@ -4,7 +4,6 @@
 
 const PHANTOM_PREFIX = 'phantom_messages_';
 const OLD_FORK_PREFIX = 'fork_history_'; // Backward compatibility
-const PHANTOM_DELIMITER = '===BEGINNING OF REAL CONVERSATION===';
 const PHANTOM_MARKER = '====PHANTOM_MESSAGE====';
 
 // Migrate old fork history to new format
@@ -48,10 +47,6 @@ function clearPhantomMessages(conversationId) {
 	// Also clear old format if it exists
 	const oldKey = `${OLD_FORK_PREFIX}${conversationId}`;
 	localStorage.removeItem(oldKey);
-}
-
-function getPhantomDelimiter() {
-	return PHANTOM_DELIMITER;
 }
 
 // Fetch interceptor - inject phantom messages into conversation data
@@ -102,6 +97,46 @@ window.fetch = async (...args) => {
 		}
 	}
 
+	// Check if this is a completion request
+	if (url && url.includes('/completion') && config && config.method === 'POST') {
+		// Extract conversation ID from URL
+		const urlParts = url.split('/');
+		const conversationIdIndex = urlParts.findIndex(part => part === 'chat_conversations') + 1;
+		const conversationId = urlParts[conversationIdIndex]?.split('?')[0];
+
+		if (conversationId) {
+			// Check for phantom messages
+			const phantomMessages = getPhantomMessages(conversationId);
+
+			if (phantomMessages && phantomMessages.length > 0) {
+				const lastPhantomUuid = phantomMessages[phantomMessages.length - 1].uuid;
+
+				// Parse the request body
+				let body;
+				try {
+					body = JSON.parse(config.body);
+				} catch (e) {
+					// If we can't parse it, just pass through
+					return originalFetch(...args);
+				}
+
+				// Check if parent_message_uuid matches last phantom
+				if (body.parent_message_uuid === lastPhantomUuid) {
+					console.log('Fixing parent_message_uuid from phantom to root for completion request');
+					body.parent_message_uuid = "00000000-0000-4000-8000-000000000000";
+
+					// Create new config with modified body
+					const newConfig = {
+						...config,
+						body: JSON.stringify(body)
+					};
+
+					return originalFetch(input, newConfig);
+				}
+			}
+		}
+	}
+
 	// Pass through for all other requests
 	return originalFetch(...args);
 };
@@ -145,24 +180,6 @@ function injectPhantomMessages(data, phantomMessages) {
 		return completeMsg;
 	});
 
-	// Find the first assistant message and modify it
-	const firstRealAssistantIndex = data.chat_messages.findIndex(
-		msg => msg.sender === 'assistant'
-	);
-
-	if (firstRealAssistantIndex !== -1) {
-		const firstAssistant = data.chat_messages[firstRealAssistantIndex];
-
-		// Modify the text content
-		if (firstAssistant.content && firstAssistant.content.length > 0) {
-			for (let content of firstAssistant.content) {
-				if (content.text) {
-					content.text = "I've loaded the conversation history from the attached file. Please continue from here.";
-					break;
-				}
-			}
-		}
-	}
 
 	// Update parent UUID of ALL root messages to link to last phantom
 	const lastPhantom = phantomMessages[phantomMessages.length - 1];
@@ -174,15 +191,6 @@ function injectPhantomMessages(data, phantomMessages) {
 		// Link all root messages to phantom history and add delimiter
 		rootMessages.forEach(msg => {
 			msg.parent_message_uuid = lastPhantom.uuid;
-
-			// Add delimiter to the bottom of the message content
-			if (msg.content && msg.content.length > 0) {
-				// Append to the last text content item
-				const lastContent = msg.content[msg.content.length - 1];
-				if (lastContent.text !== undefined) {
-					lastContent.text = PHANTOM_DELIMITER + '\n\n' + lastContent.text;
-				}
-			}
 		});
 	}
 
@@ -209,19 +217,22 @@ function stylePhantomMessages() {
 
 	// Process all containers the same way
 	allMessages.forEach(container => {
-		// Check if already processed
-		if (container.hasAttribute('data-phantom-styled')) return;
+
 
 		// Check if this message contains the phantom marker
 		const textContent = container.textContent || '';
-		if (textContent.includes(PHANTOM_MARKER)) {
+		const hasMarker = textContent.includes(PHANTOM_MARKER);
+		const isMarkedPhantom = container.hasAttribute('data-phantom-styled');
+
+		// If we detect the marker, mark this as a phantom message
+		if (hasMarker) {
+			container.setAttribute('data-phantom-styled', 'true');
 			// Remove the marker from all text nodes
 			removeMarkerFromElement(container);
+		}
 
-			// Check if it's a user message
-			const isUserMessage = userMessageSet.has(container);
-
-			// Apply styling based on message type
+		if (hasMarker || isMarkedPhantom) {
+			// Apply styling
 			if (container.parentElement && container.parentElement.parentElement) {
 				container.parentElement.parentElement.style.filter = 'brightness(0.70)';
 			}
@@ -231,34 +242,26 @@ function stylePhantomMessages() {
 			if (controls) {
 				controls.style.display = 'none';
 			}
-
-			container.setAttribute('data-phantom-styled', 'true');
 		}
 	});
 }
 
 
 function removeMarkerFromElement(element) {
-	const walker = document.createTreeWalker(
-		element,
-		NodeFilter.SHOW_TEXT,
-		null,
-		false
-	);
+	const paragraphs = element.querySelectorAll('p');
 
-	const textNodes = [];
-	let node;
-	while (node = walker.nextNode()) {
-		textNodes.push(node);
-	}
+	paragraphs.forEach(p => {
+		if (p.textContent.includes(PHANTOM_MARKER)) {
+			p.textContent = p.textContent.replace(PHANTOM_MARKER, '');
 
-	textNodes.forEach(textNode => {
-		if (textNode.textContent.includes(PHANTOM_MARKER)) {
-			textNode.textContent = textNode.textContent.replace(PHANTOM_MARKER, '');
+			// If the paragraph is now empty (or only whitespace), remove it
+			if (p.textContent.trim() === '') {
+				console.log('Removing empty paragraph element');
+				p.remove();
+			}
 		}
 	});
 }
-
 
 // Run styling check every second
 setInterval(stylePhantomMessages, 1000);
