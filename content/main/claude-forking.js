@@ -1,12 +1,15 @@
 // claude-forking.js
 (function () {
 	'use strict';
-	const defaultSummaryPrompt = "I've attached a chatlog from a previous conversation. Please create a complete, detailed summary of the conversation that covers all important points, questions, and responses. This summary will be used to continue the conversation in a new chat, so make sure it provides enough context to understand the full discussion. Be through, and think things through. Don't include any information already present in the other attachments, as those will be forwarded to the new chat as well.";
+	const defaultSummaryPrompt =
+		`I've attached a chatlog from a previous conversation. Please create a complete, detailed summary of the conversation that covers all important points, questions, and responses. This summary will be used to continue the conversation in a new chat, so make sure it provides enough context to understand the full discussion. Be thorough, and think things through. Make it lengthy.
+If this is a technical discussion, include any relevant technical details, code snippets, or explanations that were part of the conversation, maintaining information concerning only the latest version of any code discussed.
+If this is a writing or creative discussion, include sections for characters, plot points, setting info, etcetera.`;
 
 	let pendingFork = {
 		model: null,
 		includeAttachments: true,
-		useSummary: false,
+		rawTextPercentage: 100,
 		summaryPrompt: defaultSummaryPrompt,
 		originalSettings: null
 	};
@@ -51,6 +54,7 @@
 			{ value: 'claude-sonnet-4-20250514', label: 'Sonnet 4' },
 			{ value: 'claude-opus-4-1-20250805', label: 'Opus 4.1' },
 			{ value: 'claude-opus-4-20250514', label: 'Opus 4' },
+			{ value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
 			{ value: 'claude-3-7-sonnet-20250219', label: 'Sonnet 3.7' },
 			{ value: 'claude-3-opus-20240229', label: 'Opus 3' },
 			{ value: 'claude-3-5-haiku-20241022', label: 'Haiku 3.5' }
@@ -59,38 +63,13 @@
 		modelSelect.classList.add('mb-4');
 		content.appendChild(modelSelect);
 
-		// Fork type section with toggle
-		const forkTypeContainer = document.createElement('div');
-		forkTypeContainer.className = 'mb-4 space-y-2 border border-border-300 rounded p-3';
+		// Raw text slider section
+		const rawTextContainer = document.createElement('div');
+		rawTextContainer.className = 'mb-4 space-y-2 border border-border-300 rounded p-3';
 
-		const forkTypeBox = document.createElement('div');
-		forkTypeBox.className = 'flex items-center justify-between rounded';
-
-		const forkTypeLabel = document.createElement('span');
-		forkTypeLabel.className = 'text-text-100 font-medium';
-		forkTypeLabel.textContent = 'Fork Type:';
-
-		const toggleContainer = document.createElement('div');
-		toggleContainer.className = 'flex items-center gap-2';
-
-		const fullLabel = document.createElement('span');
-		fullLabel.className = 'text-text-100 select-none';
-		fullLabel.textContent = 'Full';
-
-		const summaryToggle = createClaudeToggle('', false);
-		summaryToggle.input.id = 'summaryMode';
-
-		const summaryLabel = document.createElement('span');
-		summaryLabel.className = 'text-text-100 select-none';
-		summaryLabel.textContent = 'Summary';
-
-		toggleContainer.appendChild(fullLabel);
-		toggleContainer.appendChild(summaryToggle.container);
-		toggleContainer.appendChild(summaryLabel);
-
-		forkTypeBox.appendChild(forkTypeLabel);
-		forkTypeBox.appendChild(toggleContainer);
-		forkTypeContainer.appendChild(forkTypeBox);
+		const rawTextSlider = createClaudeSlider('Preserve X% of recent messages:', 100);
+		rawTextSlider.input.id = 'rawTextPercentage';
+		rawTextContainer.appendChild(rawTextSlider.container);
 
 		// Summary prompt input (initially hidden)
 		const summaryPromptContainer = document.createElement('div');
@@ -112,12 +91,12 @@
 		promptInput.id = 'summaryPrompt';
 		summaryPromptContainer.appendChild(promptInput);
 
-		forkTypeContainer.appendChild(summaryPromptContainer);
-		content.appendChild(forkTypeContainer);
+		rawTextContainer.appendChild(summaryPromptContainer);
+		content.appendChild(rawTextContainer);
 
-		// Toggle visibility of summary prompt input
-		summaryToggle.input.addEventListener('change', (e) => {
-			summaryPromptContainer.style.display = e.target.checked ? 'block' : 'none';
+		// Toggle visibility of summary prompt input based on slider value
+		rawTextSlider.input.addEventListener('change', (e) => {
+			summaryPromptContainer.style.display = e.target.value < 100 ? 'block' : 'none';
 		});
 
 		// Include files toggle
@@ -139,13 +118,13 @@
 		modal.addCancel();
 		modal.addConfirm('Fork Chat', async () => {
 			const model = modelSelect.value;
-			const useSummary = summaryToggle.input.checked;
+			const rawTextPercentage = parseInt(rawTextSlider.input.value);
 			const customPrompt = promptInput.value;
 			const includeFiles = includeFilesToggle.input.checked;
 
 			// Destroy config modal and show loading modal
 			modal.destroy();
-			await forkConversationClicked(model, forkButton, useSummary, customPrompt, includeFiles);
+			await forkConversationClicked(model, forkButton, rawTextPercentage, customPrompt, includeFiles);
 
 			return false; // Modal already destroyed
 		});
@@ -170,7 +149,7 @@
 	}
 	//#endregion
 
-	async function forkConversationClicked(model, forkButton, useSummary, customPrompt, includeFiles) {
+	async function forkConversationClicked(model, forkButton, rawTextPercentage, customPrompt, includeFiles) {
 		const loadingModal = createLoadingModal('Preparing to fork conversation...');
 		loadingModal.show();
 
@@ -178,17 +157,10 @@
 			const conversationId = getConversationId();
 			console.log('Forking conversation', conversationId, 'with model', model);
 
-			if (pendingFork.originalSettings) {
-				const newSettings = { ...pendingFork.originalSettings };
-				newSettings.paprika_mode = null;
-				console.log('Updating settings:', newSettings);
-				await updateAccountSettings(newSettings);
-			}
-
 			// Set up our global to catch the next retry request
 			pendingFork.model = model;
 			pendingFork.includeAttachments = includeFiles;
-			pendingFork.useSummary = useSummary;
+			pendingFork.rawTextPercentage = rawTextPercentage;
 			pendingFork.summaryPrompt = customPrompt || defaultSummaryPrompt;
 			pendingFork.loadingModal = loadingModal; // Store reference for updates
 
@@ -358,20 +330,15 @@
 			storePhantomMessages(newUuid, context.fullMessageObjects);
 		}
 
-		if (context.messages) {
-			const chatlog = context.messages.join('\n\n');
-
-			context.attachments.push({
-				"extracted_content": chatlog,
-				"file_name": "chatlog.txt",
-				"file_size": chatlog.length,
-				"file_type": "text/plain"
-			});
+		// Determine the instructional message based on what's included
+		let message;
+		if (context.summary && context.rawChatlog) {
+			message = "This conversation is forked from the attached conversation history. The older portion has been summarized in conversation_summary.txt, while the recent messages are preserved verbatim in recent_chatlog.txt. Simply say 'Acknowledged' and wait for user input.";
+		} else if (context.summary) {
+			message = "This conversation is forked based on the summary in conversation_summary.txt. Simply say 'Acknowledged' and wait for user input.";
+		} else {
+			message = "This conversation is forked from the attached chatlog.txt. Simply say 'Acknowledged' and wait for user input.";
 		}
-
-		const message = context.messages
-			? "This conversation is forked from the attached chatlog.txt\n Simply say 'Acknowledged' and wait for user input."
-			: "This conversation is forked based on the summary in conversation_summary.txt\nSimply say 'Acknowledged' and wait for user input.";
 
 		await conversation.sendMessageAndWaitForResponse(message, {
 			model: model,
@@ -385,29 +352,57 @@
 		return newUuid;
 	}
 
-	async function generateSummary(orgId, context, summaryPrompt) {
+	async function generateSummary(orgId, context, summaryPrompt, rawTextPercentage, includeAttachments) {
+		const totalMessages = context.messages.length;
+
+		// Calculate how many messages to keep as raw text (rounding up)
+		const rawMessageCount = Math.ceil(totalMessages * rawTextPercentage / 100);
+		const summaryMessageCount = totalMessages - rawMessageCount;
+
+		// Check character count threshold
+		const messagesToSummarize = context.messages.slice(0, summaryMessageCount);
+		const rawMessages = context.messages.slice(summaryMessageCount);
+
+		/*
+		const summarizeCharCount = messagesToSummarize.join('\n\n').length;
+
+		// If below 20k characters, just include everything as raw
+		if (summarizeCharCount < 20000) {
+			console.log('Content to summarize is below 20k characters, including all as raw text');
+			return {
+				summary: null,
+				rawChatlog: context.messages.join('\n\n')
+			};
+		}*/
+
+		// Modify the prompt based on whether files are included
+		let finalPrompt = summaryPrompt;
+		if (includeAttachments) {
+			finalPrompt += "\n\nnIMPORTANT: Don't include any information already present in the other attachments, as those will be forwarded to the new chat as well. Do not summarize the content of any attached files - only summarize the conversation itself."
+		} else {
+			finalPrompt += "\n\nIMPORTANT: Since files will NOT be forwarded to the new conversation, please also include summaries of any file contents that are relevant to understanding the conversation.";
+		}
+
+		// Generate summary for the older portion
 		const summaryConvoName = `Temp_Summary_${Date.now()}`;
 		const conversation = new ClaudeConversation(orgId);
 
-		const userType = await getUserType(orgId);
-		const paprikaMode = userType !== 'free';
-
-		const summaryConvoId = await conversation.create(summaryConvoName, null, context.projectUuid, paprikaMode);
+		const summaryConvoId = await conversation.create(summaryConvoName, 'claude-haiku-4-5-20251001', context.projectUuid);
 
 		try {
-			const chatlog = context.messages.map((msg, index) => {
+			const chatlogToSummarize = messagesToSummarize.map((msg, index) => {
 				const role = index % 2 === 0 ? '[User]' : '[Assistant]';
 				return `${role}\n${msg}`;
 			}).join('\n\n');
 
 			const summaryAttachments = [...context.attachments, {
-				"extracted_content": chatlog,
+				"extracted_content": chatlogToSummarize,
 				"file_name": "chatlog.txt",
 				"file_size": 0,
 				"file_type": "text/plain"
 			}];
 
-			const assistantMessage = await conversation.sendMessageAndWaitForResponse(summaryPrompt, {
+			const assistantMessage = await conversation.sendMessageAndWaitForResponse(finalPrompt, {
 				attachments: summaryAttachments,
 				files: [],
 				syncSources: [],
@@ -416,7 +411,17 @@
 
 			const summaryText = ClaudeConversation.extractMessageText(assistantMessage);
 
-			return summaryText;
+			// Format raw messages with role labels
+			const rawChatlog = rawMessages.map((msg, index) => {
+				const absoluteIndex = summaryMessageCount + index;
+				const role = absoluteIndex % 2 === 0 ? '[User]' : '[Assistant]';
+				return `${role}\n${msg}`;
+			}).join('\n\n');
+
+			return {
+				summary: summaryText,
+				rawChatlog: rawChatlog
+			};
 		} finally {
 			await conversation.delete();
 		}
@@ -481,33 +486,54 @@
 
 				let newConversationId;
 
-				if (pendingFork.useSummary) {
+				if (pendingFork.rawTextPercentage < 100) {
 					if (loadingModal) {
 						loadingModal.setContent(createLoadingContent('Generating conversation summary...'));
 					}
 
-					console.log("Generating summary for forking");
-					const summary = await generateSummary(orgId, context, pendingFork.summaryPrompt);
+					console.log(`Generating hybrid fork with ${pendingFork.rawTextPercentage}% raw text`);
+					const result = await generateSummary(orgId, context, pendingFork.summaryPrompt, pendingFork.rawTextPercentage, pendingFork.includeAttachments);
 
-					if (summary === null) {
-						throw new Error('Failed to generate summary. This may be due to service disruption or usage limits.');
+					const hybridContext = { ...context };
+					hybridContext.messages = null;
+					hybridContext.attachments = [...context.attachments];
+
+					if (result.summary) {
+						hybridContext.summary = result.summary;
+						hybridContext.attachments.push({
+							"extracted_content": result.summary,
+							"file_name": "conversation_summary.txt",
+							"file_size": 0,
+							"file_type": "text/plain"
+						});
 					}
 
-					const summaryContext = { ...context };
-					summaryContext.messages = null;
-					summaryContext.attachments = [{
-						"extracted_content": summary,
-						"file_name": "conversation_summary.txt",
-						"file_size": 0,
-						"file_type": "text/plain"
-					}];
+					if (result.rawChatlog) {
+						hybridContext.rawChatlog = result.rawChatlog;
+						hybridContext.attachments.push({
+							"extracted_content": result.rawChatlog,
+							"file_name": "recent_chatlog.txt",
+							"file_size": 0,
+							"file_type": "text/plain"
+						});
+					}
 
 					if (loadingModal) {
 						loadingModal.setContent(createLoadingContent('Creating forked conversation...'));
 					}
 
-					newConversationId = await createForkedConversation(orgId, summaryContext, pendingFork.model, styleData);
+					newConversationId = await createForkedConversation(orgId, hybridContext, pendingFork.model, styleData);
 				} else {
+					// 100% raw text - full chatlog mode
+					const chatlog = context.messages.join('\n\n');
+
+					context.attachments.push({
+						"extracted_content": chatlog,
+						"file_name": "chatlog.txt",
+						"file_size": chatlog.length,
+						"file_type": "text/plain"
+					});
+
 					if (loadingModal) {
 						loadingModal.setContent(createLoadingContent('Creating forked conversation...'));
 					}
@@ -540,7 +566,7 @@
 				pendingFork = {
 					model: null,
 					includeAttachments: true,
-					useSummary: false,
+					rawTextPercentage: 100,
 					summaryPrompt: defaultSummaryPrompt,
 					originalSettings: null,
 					loadingModal: null
