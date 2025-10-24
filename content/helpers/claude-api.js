@@ -48,8 +48,6 @@ class ClaudeConversation {
 			syncSources = [],
 			personalizedStyles = null
 		} = options;
-
-		const waitMinutes = 4;
 		// Build the request body dynamically
 		const requestBody = {
 			prompt,
@@ -79,7 +77,7 @@ class ClaudeConversation {
 		}
 
 		// Wait for completion using the new status endpoint
-		await this.waitForCompletion(waitMinutes);
+		await this.waitForCompletion();
 
 		// Now fetch the actual assistant message
 		let messages = await this.getMessages(false, true);
@@ -101,7 +99,7 @@ class ClaudeConversation {
 	}
 
 	// Wait for completion using the status endpoint
-	async waitForCompletion(maxMinutes = 2) {
+	async waitForCompletion(maxMinutes = 3) {
 		const maxRetries = Math.floor((maxMinutes * 60) / 5); // Check every 5 seconds
 		const pollInterval = 5000; // 5 seconds
 
