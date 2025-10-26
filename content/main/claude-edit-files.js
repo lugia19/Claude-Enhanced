@@ -178,7 +178,7 @@
 		if (originalStyleText == "Normal") originalStyleText = '';
 
 		const enrichedData = {
-			prompt: bodyData.prompt,
+			prompt: bodyData.prompt.trim(),
 			files: bodyData.files || [],
 			attachments: bodyData.attachments || [],
 			parent_message_uuid: bodyData.parent_message_uuid,
@@ -209,30 +209,22 @@
 
 			// Add confirm button with async handling
 			const submitBtn = modal.addConfirm('Submit Edit', async (btn) => {
-				btn.disabled = true;
-				btn.style.opacity = '0.5';
-				btn.style.cursor = 'not-allowed';
-				const originalText = btn.textContent;
-				btn.textContent = 'Submitting...';
+				// Show loading modal
+				const loadingModal = createLoadingModal('Submitting edit...');
+				loadingModal.show();
 
 				const modalData = collectModalData();
 
 				try {
 					const modifiedRequest = await formatNewRequest(url, config, modalData);
 					console.log("Resolving request with modified data:", modifiedRequest);
+					loadingModal.destroy();
 					resolve(modifiedRequest);
 					return true; // Close modal
 				} catch (error) {
 					console.error('Error formatting new request:', error);
-					btn.disabled = false;
-					btn.style.opacity = '1';
-					btn.style.cursor = 'pointer';
-					btn.style.backgroundColor = '#dc2626';
-					btn.textContent = 'Style Error: ' + error.message;
-					setTimeout(() => {
-						btn.style.backgroundColor = '';
-						btn.textContent = originalText;
-					}, 3000);
+					loadingModal.destroy();
+					showClaudeAlert('Edit Error', error.message || 'Failed to submit edit');
 					return false; // Keep modal open on error
 				}
 			});

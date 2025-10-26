@@ -202,26 +202,19 @@
 
 			// Validate API key if provider requires it
 			if (provider.requiresApiKey && newKey) {
-				// Show loading state
-				btn.disabled = true;
-				btn.textContent = 'Validating...';
+				// Show loading modal
+				const loadingModal = createLoadingModal('Validating API key...');
+				loadingModal.show();
 
 				const isValid = await provider.class.validateApiKey(newKey);
 
 				if (!isValid) {
-					// Show error state
-					btn.style.backgroundColor = '#c51c1c';
-					btn.textContent = 'Invalid Key';
-
-					// Restore after 2 seconds
-					setTimeout(() => {
-						btn.style.backgroundColor = '';
-						btn.textContent = 'Save';
-						btn.disabled = false;
-					}, 2000);
-
+					loadingModal.destroy();
+					showClaudeAlert('Validation Error', 'Invalid API key');
 					return false; // Keep modal open
 				}
+
+				loadingModal.destroy();
 			}
 
 			await chrome.storage.local.set({

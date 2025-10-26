@@ -762,23 +762,26 @@
 				// Show/hide API key section
 				apiKeySection.style.display = newProviderInfo.requiresApiKey ? 'block' : 'none';
 
-				// Reset voices and models
-				voiceSelect.innerHTML = '<option value="">Loading...</option>';
-				voiceSelect.disabled = true;
-				modelSelect.innerHTML = '<option value="">Loading...</option>';
-				modelSelect.disabled = true;
-
 				const tempProvider = initializeProvider(newProviderKey, null);
+
+				// Check if we need to load data
+				if (newProviderInfo.requiresApiKey) {
+					const currentApiKey = apiKeyInput.value.trim();
+					if (!currentApiKey) {
+						voiceSelect.innerHTML = '<option value="">Set an API key...</option>';
+						modelSelect.innerHTML = '<option value="">Set an API key...</option>';
+						return;
+					}
+				}
+
+				// Show loading modal
+				const loadingModal = createLoadingModal('Loading voices and models...');
+				loadingModal.show();
 
 				try {
 					let newVoices, newModels;
 					if (newProviderInfo.requiresApiKey) {
 						const currentApiKey = apiKeyInput.value.trim();
-						if (!currentApiKey) {
-							voiceSelect.innerHTML = '<option value="">Set an API key...</option>';
-							modelSelect.innerHTML = '<option value="">Set an API key...</option>';
-							return;
-						}
 						[newVoices, newModels] = await Promise.all([
 							tempProvider.getVoices(currentApiKey),
 							tempProvider.getModels(currentApiKey)
@@ -798,10 +801,12 @@
 
 					const newModelOptions = newModels.map(m => ({ value: m.model_id, label: m.name }));
 					populateSelect(modelSelect, newModelOptions);
+
+					loadingModal.destroy();
 				} catch (error) {
 					console.error('Failed to load provider data:', error);
-					voiceSelect.innerHTML = '<option value="">Failed to load</option>';
-					modelSelect.innerHTML = '<option value="">Failed to load</option>';
+					loadingModal.destroy();
+					showClaudeAlert('Loading Error', 'Failed to load provider data');
 				}
 			});
 
@@ -814,13 +819,9 @@
 				if (!currentProviderInfo.requiresApiKey) return;
 
 				if (newKey) {
-					// Show inline loading state
-					voiceSelect.innerHTML = '<option value="">Loading...</option>';
-					voiceSelect.disabled = true;
-					modelSelect.innerHTML = '<option value="">Loading...</option>';
-					modelSelect.disabled = true;
-					chatVoiceOverrideSelect.innerHTML = '<option value="">Loading...</option>';
-					chatVoiceOverrideSelect.disabled = true;
+					// Show loading modal
+					const loadingModal = createLoadingModal('Validating API key...');
+					loadingModal.show();
 
 					const tempProvider = initializeProvider(currentProviderKey, null);
 					const isValid = await tempProvider.testApiKey(newKey);
@@ -847,22 +848,12 @@
 
 						const newModelOptions = newModels.map(m => ({ value: m.model_id, label: m.name }));
 						populateSelect(modelSelect, newModelOptions);
+
+						loadingModal.destroy();
 					} else {
+						loadingModal.destroy();
 						showClaudeAlert('API Key Error', 'Invalid API key');
 						e.target.value = settings.apiKey || '';
-
-						// Restore original state
-						populateSelect(voiceSelect, voiceOptions, settings.voice);
-						populateSelect(modelSelect, modelOptions, settings.model);
-						chatVoiceOverrideSelect.innerHTML = '<option value="">Use default voice</option>';
-						voiceOptions.filter(opt => opt.value).forEach(opt => {
-							const option = document.createElement('option');
-							option.value = opt.value;
-							option.textContent = opt.label;
-							chatVoiceOverrideSelect.appendChild(option);
-						});
-						chatVoiceOverrideSelect.value = chatVoiceOverride;
-						chatVoiceOverrideSelect.disabled = !settings.apiKey;
 					}
 				}
 			});

@@ -356,32 +356,24 @@
 			if (!proceed) return;
 		}
 
-		// Update button state
-		importButton.disabled = true;
-		importButton.textContent = 'Importing...';
+		// Show loading modal
+		const loadingModal = createLoadingModal('Importing...');
+		loadingModal.show();
 
 		try {
 			await performImport(parsedData, modelSelect.value);
-			// Navigation happens in performImport, button state doesn't matter
+			// Navigation happens in performImport, loading modal cleaned up automatically
 		} catch (error) {
 			console.error('Import failed:', error);
-			importButton.textContent = 'Import failed';
-			setTimeout(() => {
-				importButton.disabled = false;
-				importButton.textContent = 'Import';
-			}, 2000);
+			loadingModal.destroy();
+			showClaudeAlert('Import Error', error.message || 'Failed to import conversation');
 		}
 	}
 
 	async function handleReplacePhantom(replaceButton) {
 		const conversationId = getConversationId();
 		if (!conversationId) {
-			replaceButton.disabled = true;
-			replaceButton.textContent = 'Not in a conversation';
-			setTimeout(() => {
-				replaceButton.disabled = false;
-				replaceButton.textContent = 'Replace from File';
-			}, 2000);
+			showClaudeAlert('Replace Error', 'Not in a conversation');
 			return;
 		}
 
@@ -404,13 +396,7 @@
 		try {
 			parsedData = parseAndValidateText(fileContent);
 		} catch (error) {
-			// Show error on button
-			replaceButton.disabled = true;
-			replaceButton.textContent = 'Invalid format';
-			setTimeout(() => {
-				replaceButton.disabled = false;
-				replaceButton.textContent = 'Replace from File';
-			}, 2000);
+			showClaudeAlert('Replace Error', error.message || 'Invalid format');
 			return;
 		}
 
@@ -420,9 +406,9 @@
 			if (!proceed) return;
 		}
 
-		// Update button state
-		replaceButton.disabled = true;
-		replaceButton.textContent = 'Replacing...';
+		// Show loading modal
+		const loadingModal = createLoadingModal('Replacing phantom messages...');
+		loadingModal.show();
 
 		try {
 			// Convert and store phantom messages
@@ -437,11 +423,8 @@
 			window.location.reload();
 		} catch (error) {
 			console.error('Replace failed:', error);
-			replaceButton.textContent = 'Replace failed';
-			setTimeout(() => {
-				replaceButton.disabled = false;
-				replaceButton.textContent = 'Replace from File';
-			}, 2000);
+			loadingModal.destroy();
+			showClaudeAlert('Replace Error', error.message || 'Failed to replace phantom messages');
 		}
 	}
 	//#endregion
@@ -578,8 +561,9 @@
 
 		// Add event listeners
 		exportButton.onclick = async () => {
-			exportButton.disabled = true;
-			exportButton.textContent = 'Exporting...';
+			// Show loading modal
+			const loadingModal = createLoadingModal('Exporting...');
+			loadingModal.show();
 
 			try {
 				// Save the selected format
@@ -598,14 +582,12 @@
 				const content = await formatExport(conversationData, format, conversationId);
 				downloadFile(filename, content);
 
+				loadingModal.destroy();
 				modal.hide();
 			} catch (error) {
 				console.error('Export failed:', error);
-				exportButton.textContent = 'Export failed';
-				setTimeout(() => {
-					exportButton.disabled = false;
-					exportButton.textContent = 'Export';
-				}, 2000);
+				loadingModal.destroy();
+				showClaudeAlert('Export Error', error.message || 'Failed to export conversation');
 			}
 		};
 
