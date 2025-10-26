@@ -5,51 +5,71 @@
 (function () {
 	'use strict';
 
-	async function getMessages(fullTree = false) {
-		const conversationId = getConversationId();
-		if (!conversationId) {
-			throw new Error('Not in a conversation');
+	// Global role configuration
+	const ROLES = {
+		USER: {
+			apiName: "human",
+			exportDelimiter: "User",
+			librechatName: "User",
+			jsonlName: "user"
+		},
+		ASSISTANT: {
+			apiName: "assistant",
+			exportDelimiter: "Assistant",
+			librechatName: "Claude",
+			jsonlName: "assistant"
+		},
+		THINKING: {
+			apiName: "thinking",
+			contentType: "thinking",
+			exportDelimiter: "Thinking"
 		}
-
-		const orgId = getOrgId();
-		const conversation = new ClaudeConversation(orgId, conversationId);
-		const conversationData = await conversation.getData(fullTree);
-
-		const messages = [];
-
-		for (const message of conversationData.chat_messages) {
-			const messageContent = ClaudeConversation.extractMessageText(message);
-			messages.push({
-				role: message.sender === 'human' ? 'user' : 'assistant',
-				content: messageContent
-			});
-		}
-
-		return {
-			title: conversationData.name,
-			updated_at: conversationData.updated_at,
-			messages: messages,
-			raw: conversationData
-		};
-	}
+	};
 
 	async function formatExport(conversationData, format, conversationId) {
-		const { title, updated_at, messages } = conversationData;
-
 		switch (format) {
 			case 'txt':
-				return `Title: ${title}\nDate: ${updated_at}\n\n` +
-					messages.map(msg => {
-						const role = msg.role === 'user' ? 'User' : 'Assistant';
-						return `[${role}]\n${msg.content}\n`;
-					}).join('\n');
+				let output = `Title: ${conversationData.name}\nDate: ${conversationData.updated_at}\n\n`;
+
+				for (const message of conversationData.chat_messages) {
+					if (message.sender === ROLES.USER.apiName) {
+						const textContent = message.content
+							.filter(c => c.type === 'text')
+							.map(c => c.text)
+							.join('\n');
+						output += `[${ROLES.USER.exportDelimiter}]\n${textContent}\n\n`;
+					} else {
+						// Assistant message - output all content blocks
+						for (const content of message.content) {
+							if (content.type === ROLES.THINKING.apiName) {
+								let thinkingText = content.thinking;
+								if (content.summaries && content.summaries.length > 0) {
+									const lastSummary = content.summaries[content.summaries.length - 1].summary;
+									thinkingText = `Summary: ${lastSummary}\n\n${content.thinking}`;
+								}
+								output += `[${ROLES.THINKING.exportDelimiter}]\n${thinkingText}\n\n`;
+							} else if (content.type === 'text') {
+								output += `[${ROLES.ASSISTANT.exportDelimiter}]\n${content.text}\n\n`;
+							} else {
+								output += `[${content.type}]\n${JSON.stringify(content)}\n\n`;
+							}
+						}
+					}
+				}
+
+				return output;
 
 			case 'jsonl':
-				return messages.map(JSON.stringify).join('\n');
+				// Simple JSONL - just role and text
+				return conversationData.chat_messages.map(msg => {
+					return JSON.stringify({
+						role: msg.sender === ROLES.USER.apiName ? ROLES.USER.jsonlName : ROLES.ASSISTANT.jsonlName,
+						content: ClaudeConversation.extractMessageText(msg)
+					});
+				}).join('\n');
 
 			case 'librechat':
-				// Process all messages' content
-				const processedMessages = conversationData.raw.chat_messages.map((msg) => {
+				const processedMessages = conversationData.chat_messages.map((msg) => {
 					const contentText = ClaudeConversation.extractMessageText(msg);
 
 					return {
@@ -58,25 +78,24 @@
 							? null
 							: msg.parent_message_uuid,
 						text: contentText,
-						sender: msg.sender === "assistant" ? "Claude" : "User",
-						isCreatedByUser: msg.sender === "human",
+						sender: msg.sender === ROLES.ASSISTANT.apiName ? ROLES.ASSISTANT.librechatName : ROLES.USER.librechatName,
+						isCreatedByUser: msg.sender === ROLES.USER.apiName,
 						createdAt: msg.created_at
 					};
 				});
 
-				// Create and return the final object
 				return JSON.stringify({
-					title: conversationData.raw.name,
+					title: conversationData.name,
 					endpoint: "anthropic",
 					conversationId: conversationId,
 					options: {
-						model: conversationData.raw.model ?? "claude-3-5-sonnet-latest"
+						model: conversationData.model ?? "claude-3-5-sonnet-latest"
 					},
 					messages: processedMessages
 				}, null, 2);
 
 			case 'raw':
-				return JSON.stringify(conversationData.raw, null, 2);
+				return JSON.stringify(conversationData, null, 2);
 
 			default:
 				throw new Error(`Unsupported format: ${format}`);
@@ -101,84 +120,137 @@
 		const titleMatch = text.match(/^Title: (.+)/m);
 		const title = titleMatch ? titleMatch[1].trim() : 'Imported Conversation';
 
-		// Remove header (everything before first message marker)
-		const contentStart = text.search(/\n\[(User|Assistant)\]\n/);
+		// Remove header
+		const contentStart = text.search(/\n\[(\w+)\]\n/);
 		if (contentStart === -1) {
 			throw new Error('No messages found in file');
 		}
-		const content = text.slice(contentStart);
 
-		// Basic counts
-		const userCount = (content.match(/\[User\]/g) || []).length;
-		const assistantCount = (content.match(/\[Assistant\]/g) || []).length;
+		const lines = text.slice(contentStart).split('\n');
 
-		if (userCount === 0 && assistantCount === 0) {
-			throw new Error('No messages found in file');
-		}
-
-		if (Math.abs(userCount - assistantCount) > 0) {
-			throw new Error(`Message count mismatch: ${userCount} User, ${assistantCount} Assistant messages`);
-		}
-
-		if (!content.trim().match(/^\n?\[User\]/)) {
-			throw new Error('Conversation must start with a User message');
-		}
-
-		// Parse messages
 		const messages = [];
-		const parts = content.split(/\n\[(User|Assistant)\]\n/);
+		let currentRole = null;
+		let currentMessage = null;
+		let currentContentType = null;
+		let textBuffer = '';
 
-		let lastRole = null;
-		let currentText = '';
+		function flushTextBuffer() {
+			if (textBuffer && currentContentType) {
+				if (currentContentType === ROLES.USER.exportDelimiter || currentContentType === ROLES.ASSISTANT.exportDelimiter || currentContentType === ROLES.THINKING.exportDelimiter) {
+					// Text content
+					if (currentContentType === ROLES.THINKING.exportDelimiter) {
+						const text = textBuffer.trim();
+						const summaryMatch = text.match(/^Summary: (.+?)(\n\n|$)/s);
 
-		for (let i = 1; i < parts.length; i += 2) {
-			const role = parts[i];
-			const content = parts[i + 1]?.trim();
-
-			if (role === lastRole) {
-				warnings.push(`Sequential ${role} messages were merged`);
-				currentText += '\n\n' + content;
-			} else {
-				if (currentText) {
-					messages.push({
-						role: lastRole === 'User' ? 'human' : 'assistant',
-						text: currentText
-					});
+						if (summaryMatch) {
+							const summary = summaryMatch[1].trim();
+							const thinking = text.slice(summaryMatch[0].length).trim();
+							currentMessage.content.push({
+								type: ROLES.THINKING.apiName,
+								thinking: thinking || text,  // Fallback to full text if nothing after summary
+								summaries: [{ summary: summary }]
+							});
+						} else {
+							currentMessage.content.push({
+								type: ROLES.THINKING.apiName,
+								thinking: text,
+								summaries: []
+							});
+						}
+					} else {
+						currentMessage.content.push({
+							type: 'text',
+							text: textBuffer.trim()
+						});
+					}
+				} else {
+					// JSON content
+					try {
+						const jsonData = JSON.parse(textBuffer.trim());
+						if (!jsonData.type) jsonData.type = currentContentType.toLowerCase();
+						currentMessage.content.push(jsonData);
+					} catch (error) {
+						warnings.push(`Failed to parse [${currentContentType}] block: ${error.message}`);
+					}
 				}
-				currentText = content;
-				lastRole = role;
+				textBuffer = '';
 			}
 		}
 
-		if (currentText) {
-			messages.push({
-				role: lastRole === 'User' ? 'human' : 'assistant',
-				text: currentText
-			});
+		for (const line of lines) {
+			const markerMatch = line.match(/^\[(\w+)\]$/);
+
+			if (markerMatch) {
+				const marker = markerMatch[1];
+
+				// Flush previous content
+				flushTextBuffer();
+
+				if (marker === ROLES.USER.exportDelimiter) {
+					// Check for consecutive User markers
+					if (currentRole === ROLES.USER) {
+						throw new Error(`Consecutive [${ROLES.USER.exportDelimiter}] blocks not allowed`);
+					}
+
+					// Start new message
+					if (currentMessage) messages.push(currentMessage);
+					currentMessage = { sender: ROLES.USER.apiName, content: [] };
+					currentRole = ROLES.USER;
+					currentContentType = ROLES.USER.exportDelimiter;
+				} else {
+					// Assistant content block
+					// Switch to assistant role if needed
+					if (currentRole !== ROLES.ASSISTANT) {
+						if (currentMessage) messages.push(currentMessage);
+						currentMessage = { sender: ROLES.ASSISTANT.apiName, content: [] };
+						currentRole = ROLES.ASSISTANT;
+					}
+					currentContentType = marker;
+				}
+			} else {
+				// Regular line - add to buffer
+				if (textBuffer) textBuffer += '\n';
+				textBuffer += line;
+			}
 		}
 
-		return { title, messages, warnings };
+		// Flush final content
+		flushTextBuffer();
+		if (currentMessage) messages.push(currentMessage);
+
+		// Validation
+		if (messages.length === 0) {
+			throw new Error('No messages found in file');
+		}
+		if (messages[0].sender !== ROLES.USER.apiName) {
+			throw new Error(`Conversation must start with a ${ROLES.USER.exportDelimiter} message`);
+		}
+
+		return { name: title, chat_messages: messages, warnings };
 	}
 
-	function convertToPhantomMessages(messages) {
+	function convertToPhantomMessages(chat_messages) {
 		const phantomMessages = [];
 		let parentId = "00000000-0000-4000-8000-000000000000";
 
-		for (const message of messages) {
+		for (const message of chat_messages) {
 			const messageId = crypto.randomUUID();
 			const timestamp = new Date().toISOString();
+
+			// Build content array - add timestamps to each content item
+			const content = message.content.map(contentItem => {
+				const item = { ...contentItem };
+				if (!item.start_timestamp) item.start_timestamp = timestamp;
+				if (!item.stop_timestamp) item.stop_timestamp = timestamp;
+				if (!item.citations) item.citations = [];
+				return item;
+			});
 
 			phantomMessages.push({
 				uuid: messageId,
 				parent_message_uuid: parentId,
-				sender: message.role,
-				content: [{
-					type: "text",
-					text: message.text,
-					start_timestamp: timestamp,
-					stop_timestamp: timestamp,
-					citations: []
-				}],
+				sender: message.sender,
+				content: content,
 				created_at: timestamp,
 				files_v2: [],
 				files: [],
@@ -191,15 +263,21 @@
 		return phantomMessages;
 	}
 
-	async function performImport(title, messages, model) {
+	async function performImport(parsedData, model) {
 		const orgId = getOrgId();
 
-		// Create new conversation with parsed title
+		// Create new conversation with parsed name
 		const conversation = new ClaudeConversation(orgId);
-		const newConvoId = await conversation.create(title, model);
+		const newConvoId = await conversation.create(parsedData.name, model);
 
 		// Build chatlog attachment
-		const cleanedContent = messages.map(msg => msg.text).join('\n\n');
+		const cleanedContent = parsedData.chat_messages
+			.map(msg => msg.content
+				.filter(c => c.type === 'text')
+				.map(c => c.text)
+				.join('\n'))
+			.join('\n\n');
+
 		const chatlogAttachment = {
 			extracted_content: cleanedContent,
 			file_name: "chatlog.txt",
@@ -219,9 +297,7 @@
 		);
 
 		// Convert and store phantom messages
-		console.log("Imported messages:", messages);
-		const phantomMessages = convertToPhantomMessages(messages);
-		console.log("Converted to phantom messages:", phantomMessages);
+		const phantomMessages = convertToPhantomMessages(parsedData.chat_messages);
 		window.postMessage({
 			type: 'STORE_PHANTOM_MESSAGES',
 			conversationId: newConvoId,
@@ -264,27 +340,19 @@
 
 		// Parse and validate
 		const fileContent = await file.text();
-		let title, messages, warnings;
+		let parsedData;
 
 		try {
-			const result = parseAndValidateText(fileContent);
-			title = result.title;
-			messages = result.messages;
-			warnings = result.warnings;
+			parsedData = parseAndValidateText(fileContent);
 		} catch (error) {
-			// Show error on button
-			importButton.disabled = true;
-			importButton.textContent = 'Invalid format';
-			setTimeout(() => {
-				importButton.disabled = false;
-				importButton.textContent = 'Import';
-			}, 2000);
+			// Show error
+			showClaudeAlert('Import Error', error.message);
 			return;
 		}
 
 		// Show warnings modal if needed
-		if (warnings.length > 0) {
-			const proceed = await showWarningsModal(warnings);
+		if (parsedData.warnings.length > 0) {
+			const proceed = await showWarningsModal(parsedData.warnings);
 			if (!proceed) return;
 		}
 
@@ -293,8 +361,7 @@
 		importButton.textContent = 'Importing...';
 
 		try {
-			// Create conversation and import with parsed title
-			await performImport(title, messages, modelSelect.value);
+			await performImport(parsedData, modelSelect.value);
 			// Navigation happens in performImport, button state doesn't matter
 		} catch (error) {
 			console.error('Import failed:', error);
@@ -332,12 +399,10 @@
 
 		// Parse and validate
 		const fileContent = await file.text();
-		let messages, warnings;
+		let parsedData;
 
 		try {
-			const result = parseAndValidateText(fileContent);
-			messages = result.messages;
-			warnings = result.warnings;
+			parsedData = parseAndValidateText(fileContent);
 		} catch (error) {
 			// Show error on button
 			replaceButton.disabled = true;
@@ -350,8 +415,8 @@
 		}
 
 		// Show warnings modal if needed
-		if (warnings.length > 0) {
-			const proceed = await showWarningsModal(warnings);
+		if (parsedData.warnings.length > 0) {
+			const proceed = await showWarningsModal(parsedData.warnings);
 			if (!proceed) return;
 		}
 
@@ -361,7 +426,7 @@
 
 		try {
 			// Convert and store phantom messages
-			const phantomMessages = convertToPhantomMessages(messages);
+			const phantomMessages = convertToPhantomMessages(parsedData.chat_messages);
 			window.postMessage({
 				type: 'STORE_PHANTOM_MESSAGES',
 				conversationId: conversationId,
@@ -382,6 +447,11 @@
 	//#endregion
 
 	async function showExportImportModal() {
+		const conversationId = getConversationId();
+		if (!conversationId) {
+			throw new Error('Not in a conversation');
+		}
+
 		// Get last used format from localStorage
 		const lastFormat = localStorage.getItem('lastExportFormat') || 'txt_txt';
 
@@ -448,15 +518,7 @@
 		importContainer.className = 'mb-2 flex gap-2';
 
 		// Model select
-		const modelList = [
-			{ value: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5' },
-			{ value: 'claude-sonnet-4-20250514', label: 'Sonnet 4' },
-			{ value: 'claude-opus-4-1-20250805', label: 'Opus 4.1' },
-			{ value: 'claude-opus-4-20250514', label: 'Opus 4' },
-			{ value: 'claude-3-7-sonnet-20250219', label: 'Sonnet 3.7' },
-			{ value: 'claude-3-opus-20240229', label: 'Opus 3' },
-			{ value: 'claude-3-5-haiku-20241022', label: 'Haiku 3.5' }
-		]
+		const modelList = CLAUDE_MODELS;
 		const modelSelect = createClaudeSelect(modelList, modelList[0].value);
 		modelSelect.style.flex = '1';
 		importContainer.appendChild(modelSelect);
@@ -528,9 +590,11 @@
 				const extension = parts[1];
 				const exportTree = toggleInput.checked;
 
-				const conversationData = await getMessages(exportTree);
-				const conversationId = getConversationId();
-				const filename = `Claude_export_${conversationData.title}_${conversationId}.${extension}`;
+				const orgId = getOrgId();
+				const conversation = new ClaudeConversation(orgId, conversationId);
+				const conversationData = await conversation.getData(exportTree);
+
+				const filename = `Claude_export_${conversationData.name}_${conversationId}.${extension}`;
 				const content = await formatExport(conversationData, format, conversationId);
 				downloadFile(filename, content);
 
