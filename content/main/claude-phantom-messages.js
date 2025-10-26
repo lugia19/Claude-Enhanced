@@ -257,7 +257,7 @@ function removeMarkerFromElement(element) {
 			// If the paragraph is now empty (or only whitespace), remove it
 			if (p.textContent.trim() === '') {
 				console.log('Removing empty paragraph element');
-				p.remove();
+				p.style.display = 'none';
 			}
 		}
 	});
