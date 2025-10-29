@@ -195,94 +195,24 @@ If this is a writing or creative discussion, include sections for characters, pl
 	}
 
 	//#region Convo extraction & Other API
-	async function getConversationContext(orgId, conversationId, targetParentUuid) {
+	async function getConversationMessages(orgId, conversationId, targetParentUuid) {
 		const conversation = new ClaudeConversation(orgId, conversationId);
 		const conversationData = await conversation.getData(false);
 
 		let messages = [];
-		let fullMessageObjects = [];
-		let projectUuid = conversationData?.project?.uuid || null;
-		const chatName = conversationData.name;
-		const files = [];
-		const syncsources = [];
-		const attachments = [];
 
 		for (const message of conversationData.chat_messages) {
-			// Extract message text using the ClaudeConversation helper
-			const messageContent = ClaudeConversation.extractMessageText(message);
-
-			// Collect files
-			if (message.files_v2) {
-				for (const file of message.files_v2) {
-					let fileUrl;
-					if (file.file_kind === "image") {
-						fileUrl = file.preview_asset.url;
-					} else if (file.file_kind === "document") {
-						fileUrl = file.document_asset.url;
-					}
-
-					if (fileUrl) {
-						files.push({
-							uuid: file.file_uuid,
-							url: fileUrl,
-							kind: file.file_kind,
-							name: file.file_name
-						});
-					}
-				}
-			}
-
-			// Collect attachments
-			if (message.attachments) {
-				for (const attachment of message.attachments) {
-					attachments.push(attachment);
-				}
-			}
-
-			// Collect sync sources
-			for (const sync of message.sync_sources) {
-				syncsources.push(sync);
-			}
-
-			messages.push(messageContent);
-
-			fullMessageObjects.push({
-				uuid: message.uuid,
-				parent_message_uuid: message.parent_message_uuid,
-				sender: message.sender,
-				content: message.content,
-				files_v2: message.files_v2,
-				files: message.files,
-				attachments: message.attachments,
-				sync_sources: message.sync_sources,
-				created_at: message.created_at,
-			});
+			messages.push(message); // Keep full message object with all properties
 
 			if (message.parent_message_uuid === targetParentUuid) {
 				break;
 			}
 		}
 
-		if (!pendingFork.includeAttachments) {
-			return {
-				chatName,
-				messages,
-				fullMessageObjects,
-				syncsources: [],
-				attachments: [],
-				files: [],
-				projectUuid
-			};
-		}
-
 		return {
-			chatName,
-			messages,
-			fullMessageObjects,
-			syncsources,
-			attachments,
-			files,
-			projectUuid
+			conversation,      // The ClaudeConversation instance
+			conversationData,  // Raw data with name, projectUuid, etc.
+			messages          // Clean array of message objects
 		};
 	}
 
@@ -308,111 +238,182 @@ If this is a writing or creative discussion, include sections for characters, pl
 	}
 	//#endregion
 
-	//#region Convo forking
+	//#region Fork creation
+	function deduplicateByFilename(items) {
+		const seen = new Map();
+		// Iterate in reverse so newer items (later in array) win
+		for (let i = items.length - 1; i >= 0; i--) {
+			const item = items[i];
+			const name = item.file_name || item.name;
+			if (name && !seen.has(name)) {
+				seen.set(name, item);
+			}
+		}
+		return Array.from(seen.values()).reverse();
+	}
 
-	async function createForkedConversation(orgId, context, model, styleData) {
-		if (!context.chatName || context.chatName.trim() === '') context.chatName = "Untitled"
-		const newName = `Fork of ${context.chatName}`;
+	async function createFork(orgId, messages, chatName, projectUuid, model, includeAttachments, styleData) {
+		if (!chatName || chatName.trim() === '') chatName = "Untitled";
+		const newName = `Fork of ${chatName}`;
 
 		const conversation = new ClaudeConversation(orgId);
-		const newUuid = await conversation.create(newName, model, context.projectUuid);
+		const newUuid = await conversation.create(newName, model, projectUuid);
 
-		if (context.fullMessageObjects && context.fullMessageObjects.length > 0) {
-			storePhantomMessages(newUuid, context.fullMessageObjects);
+		// Store all messages as phantoms for UI display
+		storePhantomMessages(newUuid, messages);
+
+		// Format all messages as chatlog
+		const chatlogText = messages.map((msg, index) => {
+			return ClaudeConversation.extractMessageText(msg);
+		}).join('\n\n');
+
+		// Collect files and attachments
+		let finalFiles = [];
+		let finalAttachments = [];
+
+		if (includeAttachments) {
+			const allFiles = messages.flatMap(m => m.files_v2 || []);
+			const allAttachments = messages.flatMap(m => m.attachments || []);
+			const allSyncSources = messages.flatMap(m => m.sync_sources || []);
+
+			// Deduplicate by filename, keeping newest
+			const dedupedFiles = deduplicateByFilename(allFiles);
+			const dedupedAttachments = deduplicateByFilename(allAttachments);
+
+			// Download and upload files
+			const downloadedFiles = await downloadFiles(dedupedFiles.map(f => ({
+				uuid: f.file_uuid,
+				url: f.file_kind === "image" ? f.preview_asset.url : f.document_asset.url,
+				kind: f.file_kind,
+				name: f.file_name
+			})));
+
+			finalFiles = await Promise.all(
+				downloadedFiles.map(file => uploadFile(orgId, file).then(meta => meta.file_uuid))
+			);
+
+			/*const processedSyncSources = await Promise.all(
+				allSyncSources.map(sync => processSyncSource(orgId, sync))
+			);*/
+
+			finalAttachments = [...dedupedAttachments];
 		}
 
-		// Determine the instructional message based on what's included
-		let message;
-		if (context.summary && context.rawChatlog) {
-			message = "This conversation is forked from the attached conversation history. The older portion has been summarized in conversation_summary.txt, while the recent messages are preserved verbatim in recent_chatlog.txt. Simply say 'Acknowledged' and wait for user input.";
-		} else if (context.summary) {
-			message = "This conversation is forked based on the summary in conversation_summary.txt. Simply say 'Acknowledged' and wait for user input.";
-		} else {
-			message = "This conversation is forked from the attached chatlog.txt. Simply say 'Acknowledged' and wait for user input.";
-		}
+		// Add chatlog.txt
+		finalAttachments.push({
+			extracted_content: chatlogText,
+			file_name: "chatlog.txt",
+			file_size: chatlogText.length,
+			file_type: "text/plain"
+		});
+
+		const message = "This conversation is forked from the attached chatlog.txt. Simply say 'Acknowledged' and wait for user input.";
 
 		await conversation.sendMessageAndWaitForResponse(message, {
 			model: model,
-			attachments: context.attachments,
-			files: context.files,
-			syncSources: context.syncsources,
+			attachments: finalAttachments,
+			files: finalFiles,
+			syncSources: [],
 			personalizedStyles: styleData
 		});
 
 		return newUuid;
 	}
 
-	async function generateSummary(orgId, context, summaryPrompt, rawTextPercentage, includeAttachments) {
-		const totalMessages = context.messages.length;
+	async function getSummaryMessages(orgId, messagesToSummarize, summaryPrompt, includeAttachments) {
+		// Collect all files and attachments from messages being summarized
+		const files = messagesToSummarize.flatMap(m => m.files_v2 || []);
+		const attachments = messagesToSummarize.flatMap(m => m.attachments || []);
+		const syncSources = messagesToSummarize.flatMap(m => m.sync_sources || []);
 
-		// Calculate how many messages to keep as raw text (rounding up)
-		const rawMessageCount = Math.ceil(totalMessages * rawTextPercentage / 100);
-		const summaryMessageCount = totalMessages - rawMessageCount;
-
-		// Check character count threshold
-		const messagesToSummarize = context.messages.slice(0, summaryMessageCount);
-		const rawMessages = context.messages.slice(summaryMessageCount);
-
-		/*
-		const summarizeCharCount = messagesToSummarize.join('\n\n').length;
-
-		// If below 20k characters, just include everything as raw
-		if (summarizeCharCount < 20000) {
-			console.log('Content to summarize is below 20k characters, including all as raw text');
-			return {
-				summary: null,
-				rawChatlog: context.messages.join('\n\n')
-			};
-		}*/
-
-		// Modify the prompt based on whether files are included
-		let finalPrompt = summaryPrompt;
+		// Adjust prompt based on whether files will be forwarded
+		let fullPrompt = summaryPrompt;
 		if (includeAttachments) {
-			finalPrompt += "\n\nnIMPORTANT: Don't include any information already present in the other attachments, as those will be forwarded to the new chat as well. Do not summarize the content of any attached files - only summarize the conversation itself."
+			fullPrompt += "\n\nIMPORTANT: Don't include any information already present in the other attachments, as those will be forwarded to the new chat as well. Do not summarize the content of any attached files - only summarize the conversation itself.";
 		} else {
-			finalPrompt += "\n\nIMPORTANT: Since files will NOT be forwarded to the new conversation, please also include summaries of any file contents that are relevant to understanding the conversation.";
+			fullPrompt += "\n\nIMPORTANT: Since files will NOT be forwarded to the new conversation, please also include summaries of any file contents that are relevant to understanding the conversation.";
 		}
 
-		// Generate summary for the older portion
-		const summaryConvoName = `Temp_Summary_${Date.now()}`;
-		const conversation = new ClaudeConversation(orgId);
+		// Format messages as chatlog for summarization
+		const chatlogText = messagesToSummarize.map((msg, index) => {
+			const role = msg.sender === 'human' ? '[User]' : '[Assistant]';
+			const text = ClaudeConversation.extractMessageText(msg);
+			return `${role}\n${text}`;
+		}).join('\n\n');
 
-		const summaryConvoId = await conversation.create(summaryConvoName, 'claude-haiku-4-5-20251001', context.projectUuid);
+		// Create temporary conversation for summary
+		const summaryConvoName = `Temp_Summary_${Date.now()}`;
+		const tempConversation = new ClaudeConversation(orgId);
+		const summaryConvoId = await tempConversation.create(summaryConvoName, 'claude-haiku-4-5-20251001', null);
 
 		try {
-			const chatlogToSummarize = messagesToSummarize.map((msg, index) => {
-				const role = index % 2 === 0 ? '[User]' : '[Assistant]';
-				return `${role}\n${msg}`;
-			}).join('\n\n');
+			// Download and upload files for summary generation
+			const downloadedFiles = await downloadFiles(files.map(f => ({
+				uuid: f.file_uuid,
+				url: f.file_kind === "image" ? f.preview_asset.url : f.document_asset.url,
+				kind: f.file_kind,
+				name: f.file_name
+			})));
 
-			const summaryAttachments = [...context.attachments, {
-				"extracted_content": chatlogToSummarize,
-				"file_name": "chatlog.txt",
-				"file_size": 0,
-				"file_type": "text/plain"
-			}];
+			const uploadedFileUuids = await Promise.all(
+				downloadedFiles.map(file => uploadFile(orgId, file).then(meta => meta.file_uuid))
+			);
 
-			const assistantMessage = await conversation.sendMessageAndWaitForResponse(finalPrompt, {
+			/*const processedSyncSources = await Promise.all(
+				syncSources.map(sync => processSyncSource(orgId, sync))
+			);*/
+			// TODO: Support these. For now, skip them.
+
+			// Add chatlog as attachment
+			const summaryAttachments = [
+				...attachments,
+				{
+					extracted_content: chatlogText,
+					file_name: "chatlog.txt",
+					file_size: chatlogText.length,
+					file_type: "text/plain"
+				}
+			];
+
+			// Get summary
+			const assistantMessage = await tempConversation.sendMessageAndWaitForResponse(fullPrompt, {
 				attachments: summaryAttachments,
-				files: [],
-				syncSources: []
+				files: uploadedFileUuids,
+				//syncSources: processedSyncSources
 			});
 
 			const summaryText = ClaudeConversation.extractMessageText(assistantMessage);
 
-			// Format raw messages with role labels
-			const rawChatlog = rawMessages.map((msg, index) => {
-				const absoluteIndex = summaryMessageCount + index;
-				const role = absoluteIndex % 2 === 0 ? '[User]' : '[Assistant]';
-				return `${role}\n${msg}`;
-			}).join('\n\n');
+			// Return synthetic messages
+			// If includeAttachments is true, attach the files/attachments to the synthetic user message
+			const userUuid = crypto.randomUUID();
 
-			return {
-				summary: summaryText,
-				rawChatlog: rawChatlog
-			};
+			return [
+				{
+					uuid: userUuid,
+					parent_message_uuid: "00000000-0000-4000-8000-000000000000", // Root
+					sender: 'human',
+					content: [{ type: 'text', text: summaryText }],
+					files_v2: includeAttachments ? files : [],
+					files: includeAttachments ? files.map(f => f.file_uuid) : [],
+					attachments: includeAttachments ? attachments : [],
+					sync_sources: [],
+					created_at: new Date().toISOString(),
+				},
+				{
+					uuid: crypto.randomUUID(),
+					parent_message_uuid: userUuid, // Chain to the user message
+					sender: 'assistant',
+					content: [{ type: 'text', text: 'Acknowledged. I understand the context from the summary and am ready to continue our conversation.' }],
+					files_v2: [],
+					files: [],
+					attachments: [],
+					sync_sources: [],
+					created_at: new Date().toISOString(),
+				}
+			];
 		} finally {
-			await conversation.delete();
+			//await tempConversation.delete();
 		}
 	}
 	//#endregion
@@ -432,103 +433,72 @@ If this is a writing or creative discussion, include sections for characters, pl
 		}
 
 		if (url && url.includes('/retry_completion') && pendingFork.model) {
-			console.log('Intercepted retry request:', config?.body);
+			console.log('Intercepted retry request');
 			const bodyJSON = JSON.parse(config?.body);
 			const messageID = bodyJSON?.parent_message_uuid;
 			const urlParts = url.split('/');
 			const orgId = urlParts[urlParts.indexOf('organizations') + 1];
 			const conversationId = urlParts[urlParts.indexOf('chat_conversations') + 1];
-
-			let styleData = bodyJSON?.personalized_styles;
+			const styleData = bodyJSON?.personalized_styles;
 			const loadingModal = pendingFork.loadingModal;
 
 			try {
 				if (loadingModal) {
-					loadingModal.setContent(createLoadingContent('Getting conversation context...'));
+					loadingModal.setContent(createLoadingContent('Getting conversation messages...'));
 				}
 
-				console.log('Getting conversation context, pendingFork.includeAttachments:', pendingFork.includeAttachments);
-				const context = await getConversationContext(orgId, conversationId, messageID);
+				let { conversation, conversationData, messages } =
+					await getConversationMessages(orgId, conversationId, messageID);
 
-				if (pendingFork.includeAttachments) {
-					if (loadingModal) {
-						loadingModal.setContent(createLoadingContent('Downloading files...'));
-					}
+				const chatName = conversationData.name;
+				const projectUuid = conversationData.project?.uuid || null;
 
-					const downloadedFiles = await downloadFiles(context.files);
-
-					if (loadingModal) {
-						loadingModal.setContent(createLoadingContent('Uploading files to new conversation...'));
-					}
-
-					[context.files, context.syncsources] = await Promise.all([
-						Promise.all(downloadedFiles.map(async file => {
-							const metadata = await uploadFile(orgId, file);
-							return metadata.file_uuid;
-						})),
-						Promise.all(context.syncsources.map(syncsource => processSyncSource(orgId, syncsource)))
-					]);
-				} else {
-					context.files = [];
-					context.syncsources = [];
-				}
-
-				let newConversationId;
-
+				// Apply summary if needed
 				if (pendingFork.rawTextPercentage < 100) {
 					if (loadingModal) {
 						loadingModal.setContent(createLoadingContent('Generating conversation summary...'));
 					}
 
-					console.log(`Generating hybrid fork with ${pendingFork.rawTextPercentage}% raw text`);
-					const result = await generateSummary(orgId, context, pendingFork.summaryPrompt, pendingFork.rawTextPercentage, pendingFork.includeAttachments);
+					let split = Math.ceil(messages.length * pendingFork.rawTextPercentage / 100);
 
-					const hybridContext = { ...context };
-					hybridContext.messages = null;
-					hybridContext.attachments = [...context.attachments];
-
-					if (result.summary) {
-						hybridContext.summary = result.summary;
-						hybridContext.attachments.push({
-							"extracted_content": result.summary,
-							"file_name": "conversation_summary.txt",
-							"file_size": 0,
-							"file_type": "text/plain"
-						});
+					// Adjust split to ensure we cut before a user message
+					while (split < messages.length && messages[split].sender !== 'human') {
+						split++;
 					}
 
-					if (result.rawChatlog) {
-						hybridContext.rawChatlog = result.rawChatlog;
-						hybridContext.attachments.push({
-							"extracted_content": result.rawChatlog,
-							"file_name": "recent_chatlog.txt",
-							"file_size": 0,
-							"file_type": "text/plain"
-						});
+					// If we went past the end, just keep everything
+					if (split >= messages.length) {
+						split = 0; // Don't summarize anything
 					}
 
-					if (loadingModal) {
-						loadingModal.setContent(createLoadingContent('Creating forked conversation...'));
+					const toSummarize = messages.slice(0, messages.length - split);
+					const toKeep = messages.slice(messages.length - split);
+
+					if (toSummarize.length > 0) {
+						const summaryMsgs = await getSummaryMessages(orgId, toSummarize, pendingFork.summaryPrompt, pendingFork.includeAttachments);
+						if (toKeep.length > 0) {
+							toKeep[0] = {
+								...toKeep[0],
+								parent_message_uuid: summaryMsgs[1].uuid  // Point to synthetic assistant
+							};
+						}
+						messages = [...summaryMsgs, ...toKeep];
 					}
-
-					newConversationId = await createForkedConversation(orgId, hybridContext, pendingFork.model, styleData);
-				} else {
-					// 100% raw text - full chatlog mode
-					const chatlog = context.messages.join('\n\n');
-
-					context.attachments.push({
-						"extracted_content": chatlog,
-						"file_name": "chatlog.txt",
-						"file_size": chatlog.length,
-						"file_type": "text/plain"
-					});
-
-					if (loadingModal) {
-						loadingModal.setContent(createLoadingContent('Creating forked conversation...'));
-					}
-
-					newConversationId = await createForkedConversation(orgId, context, pendingFork.model, styleData);
 				}
+
+				if (loadingModal) {
+					loadingModal.setContent(createLoadingContent('Creating forked conversation...'));
+				}
+
+				const newConversationId = await createFork(
+					orgId,
+					messages,
+					chatName,
+					projectUuid,
+					pendingFork.model,
+					pendingFork.includeAttachments,
+					styleData
+				);
 
 				if (loadingModal) {
 					loadingModal.setContent(createLoadingContent('Fork complete! Redirecting...'));
@@ -536,7 +506,7 @@ If this is a writing or creative discussion, include sections for characters, pl
 
 				console.log('Forked conversation created:', newConversationId);
 				setTimeout(() => {
-					window.location.href = `/chat/${newConversationId}`;
+					if (newConversationId) window.location.href = `/chat/${newConversationId}`;
 				}, 100);
 
 			} catch (error) {
