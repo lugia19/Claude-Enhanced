@@ -58,14 +58,14 @@ If this is a writing or creative discussion, include sections for characters, pl
 		const rawTextContainer = document.createElement('div');
 		rawTextContainer.className = 'mb-4 space-y-2 border border-border-300 rounded p-3';
 
-		const rawTextSlider = createClaudeSlider('Preserve X% of recent messages:', 100);
+		const rawTextSlider = createClaudeSlider('Preserve X% of recent messages:', 50);
 		rawTextSlider.input.id = 'rawTextPercentage';
 		rawTextContainer.appendChild(rawTextSlider.container);
 
 		// Summary prompt input (initially hidden)
 		const summaryPromptContainer = document.createElement('div');
 		summaryPromptContainer.id = 'summaryPromptContainer';
-		summaryPromptContainer.style.display = 'none';
+		summaryPromptContainer.style.display = rawTextSlider.input.value < 100 ? 'block' : 'none';
 		summaryPromptContainer.className = 'mt-2';
 
 		const promptLabel = document.createElement('label');
@@ -94,10 +94,53 @@ If this is a writing or creative discussion, include sections for characters, pl
 		const includeFilesContainer = document.createElement('div');
 		includeFilesContainer.className = 'mb-4';
 		includeFilesContainer.id = 'includeFilesContainer';
-		const includeFilesToggle = createClaudeToggle('Include files', true);
+		const includeFilesToggle = createClaudeToggle('Forward files', true);
 		includeFilesToggle.input.id = 'includeFiles';
 		includeFilesContainer.appendChild(includeFilesToggle.container);
+
+
+		const keepFilesFromSummarizedToggle = createClaudeToggle('Forward files from summarized section', false);
+		keepFilesFromSummarizedToggle.container.classList.add('pl-4');
+		keepFilesFromSummarizedToggle.container.style.display = 'none';
+		keepFilesFromSummarizedToggle.input.id = 'keepFilesFromSummarized';
+		includeFilesContainer.appendChild(keepFilesFromSummarizedToggle.container);
 		content.appendChild(includeFilesContainer);
+
+
+		const includeToolCallsContainer = document.createElement('div');
+		includeToolCallsContainer.className = 'mb-4';
+		includeToolCallsContainer.id = 'includeToolCallsContainer';
+		const includeToolCallsToggle = createClaudeToggle('Forward tool calls', false); // Default OFF
+		includeToolCallsToggle.input.id = 'includeToolCalls';
+		includeToolCallsContainer.appendChild(includeToolCallsToggle.container);
+
+		const keepToolCallsFromSummarizedToggle = createClaudeToggle('Forward tool calls from summarized section', false);
+		keepToolCallsFromSummarizedToggle.container.classList.add('pl-4');
+		keepToolCallsFromSummarizedToggle.container.style.display = 'none';
+		keepToolCallsFromSummarizedToggle.input.id = 'keepToolCallsFromSummarized';
+		includeToolCallsContainer.appendChild(keepToolCallsFromSummarizedToggle.container);
+		content.appendChild(includeToolCallsContainer);
+
+		// Show/hide sub-toggles based on conditions
+		function updateSubToggleVisibility() {
+			const isSummarizing = rawTextSlider.input.value < 100;
+
+			keepFilesFromSummarizedToggle.container.style.display =
+				(includeFilesToggle.input.checked && isSummarizing) ? 'flex' : 'none';
+
+			keepToolCallsFromSummarizedToggle.container.style.display =
+				(includeToolCallsToggle.input.checked && isSummarizing) ? 'flex' : 'none';
+
+		}
+
+		// Attach listeners
+		rawTextSlider.input.addEventListener('change', updateSubToggleVisibility);
+		includeFilesToggle.input.addEventListener('change', updateSubToggleVisibility);
+		includeToolCallsToggle.input.addEventListener('change', updateSubToggleVisibility);
+
+		// Initial state
+		updateSubToggleVisibility();
+
 
 		// Create modal
 		const modal = new ClaudeModal('Choose Model for Fork', content);
@@ -108,14 +151,16 @@ If this is a writing or creative discussion, include sections for characters, pl
 
 		modal.addCancel();
 		modal.addConfirm('Fork Chat', async () => {
-			const model = modelSelect.value;
-			const rawTextPercentage = parseInt(rawTextSlider.input.value);
-			const customPrompt = promptInput.value;
-			const includeFiles = includeFilesToggle.input.checked;
+			pendingFork.model = modelSelect.value;
+			pendingFork.rawTextPercentage = parseInt(rawTextSlider.input.value);
+			pendingFork.summaryPrompt = promptInput.value;
+			pendingFork.includeAttachments = includeFilesToggle.input.checked;
+			pendingFork.includeToolCalls = includeToolCallsToggle.input.checked;
+			pendingFork.keepFilesFromSummarized = keepFilesFromSummarizedToggle.input.checked;
+			pendingFork.keepToolCallsFromSummarized = keepToolCallsFromSummarizedToggle.input.checked;
 
-			// Destroy config modal and show loading modal
 			modal.destroy();
-			await forkConversationClicked(model, forkButton, rawTextPercentage, customPrompt, includeFiles);
+			await forkConversationClicked(forkButton);
 
 			return false; // Modal already destroyed
 		});
@@ -140,20 +185,15 @@ If this is a writing or creative discussion, include sections for characters, pl
 	}
 	//#endregion
 
-	async function forkConversationClicked(model, forkButton, rawTextPercentage, customPrompt, includeFiles) {
+	async function forkConversationClicked(forkButton) {
 		const loadingModal = createLoadingModal('Preparing to fork conversation...');
 		loadingModal.show();
 
+		pendingFork.loadingModal = loadingModal;
+
 		try {
 			const conversationId = getConversationId();
-			console.log('Forking conversation', conversationId, 'with model', model);
-
-			// Set up our global to catch the next retry request
-			pendingFork.model = model;
-			pendingFork.includeAttachments = includeFiles;
-			pendingFork.rawTextPercentage = rawTextPercentage;
-			pendingFork.summaryPrompt = customPrompt || defaultSummaryPrompt;
-			pendingFork.loadingModal = loadingModal; // Store reference for updates
+			console.log('Forking conversation', conversationId, 'with model', pendingFork.model);
 
 			loadingModal.setContent(createLoadingContent('Triggering fork process...'));
 
@@ -216,6 +256,26 @@ If this is a writing or creative discussion, include sections for characters, pl
 		};
 	}
 
+	function formatMessageContent(message) {
+		if (!message.content || !Array.isArray(message.content)) {
+			return '';
+		}
+
+		const parts = [];
+
+		for (const item of message.content) {
+			if (item.type === 'text') {
+				parts.push(item.text);
+			} else if (item.type === 'tool_use' || item.type === 'tool_result') {
+				parts.push(JSON.stringify(item, null, 2));
+			}
+			// Could add more types here later (thinking, etc.)
+		}
+
+		return parts.join('\n\n');
+	}
+	//#endregion
+
 	//#region File handlers (download, upload, sync)
 	async function downloadFiles(files) {
 		const downloadedFiles = [];
@@ -252,79 +312,78 @@ If this is a writing or creative discussion, include sections for characters, pl
 		return Array.from(seen.values()).reverse();
 	}
 
-	async function createFork(orgId, messages, chatName, projectUuid, model, includeAttachments, styleData) {
+	async function createFork(orgId, messages, chatName, projectUuid, styleData) {
 		if (!chatName || chatName.trim() === '') chatName = "Untitled";
 		const newName = `Fork of ${chatName}`;
+		const model = pendingFork.model;
 
 		const conversation = new ClaudeConversation(orgId);
 		const newUuid = await conversation.create(newName, model, projectUuid);
 
-		// Store all messages as phantoms for UI display
 		storePhantomMessages(newUuid, messages);
 
-		// Format all messages as chatlog
-		const chatlogText = messages.map((msg, index) => {
-			return ClaudeConversation.extractMessageText(msg);
-		}).join('\n\n');
+		const chatlogText = messages.map(msg => formatMessageContent(msg)).join('\n\n');
 
-		// Collect files and attachments
-		let finalFiles = [];
-		let finalAttachments = [];
+		// Just collect what's in the messages (already filtered)
+		const allFiles = messages.flatMap(m => m.files_v2 || []);
+		const allAttachments = messages.flatMap(m => m.attachments || []);
 
-		if (includeAttachments) {
-			const allFiles = messages.flatMap(m => m.files_v2 || []);
-			const allAttachments = messages.flatMap(m => m.attachments || []);
-			const allSyncSources = messages.flatMap(m => m.sync_sources || []);
+		const dedupedFiles = deduplicateByFilename(allFiles);
+		const dedupedAttachments = deduplicateByFilename(allAttachments);
 
-			// Deduplicate by filename, keeping newest
-			const dedupedFiles = deduplicateByFilename(allFiles);
-			const dedupedAttachments = deduplicateByFilename(allAttachments);
+		// Download and upload files
+		const downloadedFiles = await downloadFiles(dedupedFiles.map(f => ({
+			uuid: f.file_uuid,
+			url: f.file_kind === "image" ? f.preview_asset.url : f.document_asset.url,
+			kind: f.file_kind,
+			name: f.file_name
+		})));
 
-			// Download and upload files
-			const downloadedFiles = await downloadFiles(dedupedFiles.map(f => ({
-				uuid: f.file_uuid,
-				url: f.file_kind === "image" ? f.preview_asset.url : f.document_asset.url,
-				kind: f.file_kind,
-				name: f.file_name
-			})));
+		const finalFiles = await Promise.all(
+			downloadedFiles.map(file => uploadFile(orgId, file).then(meta => meta.file_uuid))
+		);
 
-			finalFiles = await Promise.all(
-				downloadedFiles.map(file => uploadFile(orgId, file).then(meta => meta.file_uuid))
-			);
+		const finalAttachments = [
+			...dedupedAttachments,
+			{
+				extracted_content: chatlogText,
+				file_name: "chatlog.txt",
+				file_size: chatlogText.length,
+				file_type: "text/plain"
+			}
+		];
 
-			/*const processedSyncSources = await Promise.all(
+		/*const processedSyncSources = await Promise.all(
 				allSyncSources.map(sync => processSyncSource(orgId, sync))
 			);*/
 
-			finalAttachments = [...dedupedAttachments];
-		}
-
-		// Add chatlog.txt
-		finalAttachments.push({
-			extracted_content: chatlogText,
-			file_name: "chatlog.txt",
-			file_size: chatlogText.length,
-			file_type: "text/plain"
-		});
-
-		const message = "This conversation is forked from the attached chatlog.txt. Simply say 'Acknowledged' and wait for user input.";
-
-		await conversation.sendMessageAndWaitForResponse(message, {
-			model: model,
-			attachments: finalAttachments,
-			files: finalFiles,
-			syncSources: [],
-			personalizedStyles: styleData
-		});
+		await conversation.sendMessageAndWaitForResponse(
+			"This conversation is forked from the attached chatlog.txt. Simply say 'Acknowledged' and wait for user input.",
+			{
+				model: model,
+				attachments: finalAttachments,
+				files: finalFiles,
+				syncSources: [],
+				personalizedStyles: styleData
+			}
+		);
 
 		return newUuid;
 	}
 
-	async function getSummaryMessages(orgId, messagesToSummarize, summaryPrompt, includeAttachments) {
+	async function getSummaryMessages(orgId, messagesToSummarize) {
+		const summaryPrompt = pendingFork.summaryPrompt;
+		const includeAttachments = pendingFork.includeAttachments && pendingFork.keepFilesFromSummarized;
+
 		// Collect all files and attachments from messages being summarized
 		const files = messagesToSummarize.flatMap(m => m.files_v2 || []);
 		const attachments = messagesToSummarize.flatMap(m => m.attachments || []);
 		const syncSources = messagesToSummarize.flatMap(m => m.sync_sources || []);
+		const toolCallContent = messagesToSummarize.flatMap(msg =>
+			msg.content.filter(item =>
+				item.type === 'tool_use' || item.type === 'tool_result'
+			)
+		);
 
 		// Adjust prompt based on whether files will be forwarded
 		let fullPrompt = summaryPrompt;
@@ -337,7 +396,7 @@ If this is a writing or creative discussion, include sections for characters, pl
 		// Format messages as chatlog for summarization
 		const chatlogText = messagesToSummarize.map((msg, index) => {
 			const role = msg.sender === 'human' ? '[User]' : '[Assistant]';
-			const text = ClaudeConversation.extractMessageText(msg);
+			const text = formatMessageContent(msg);
 			return `${role}\n${text}`;
 		}).join('\n\n');
 
@@ -391,20 +450,23 @@ If this is a writing or creative discussion, include sections for characters, pl
 			return [
 				{
 					uuid: userUuid,
-					parent_message_uuid: "00000000-0000-4000-8000-000000000000", // Root
+					parent_message_uuid: "00000000-0000-4000-8000-000000000000",
 					sender: 'human',
 					content: [{ type: 'text', text: summaryText }],
-					files_v2: includeAttachments ? files : [],
-					files: includeAttachments ? files.map(f => f.file_uuid) : [],
-					attachments: includeAttachments ? attachments : [],
+					files_v2: (pendingFork.includeAttachments && pendingFork.keepFilesFromSummarized) ? files : [],
+					files: (pendingFork.includeAttachments && pendingFork.keepFilesFromSummarized) ? files.map(f => f.file_uuid) : [],
+					attachments: (pendingFork.includeAttachments && pendingFork.keepFilesFromSummarized) ? attachments : [],
 					sync_sources: [],
 					created_at: new Date().toISOString(),
 				},
 				{
 					uuid: crypto.randomUUID(),
-					parent_message_uuid: userUuid, // Chain to the user message
+					parent_message_uuid: userUuid,
 					sender: 'assistant',
-					content: [{ type: 'text', text: 'Acknowledged. I understand the context from the summary and am ready to continue our conversation.' }],
+					content: [
+						{ type: 'text', text: 'Acknowledged. I understand the context from the summary and am ready to continue our conversation.' },
+						...(pendingFork.includeToolCalls && pendingFork.keepToolCallsFromSummarized ? toolCallContent : [])
+					],
 					files_v2: [],
 					files: [],
 					attachments: [],
@@ -475,7 +537,7 @@ If this is a writing or creative discussion, include sections for characters, pl
 					const toKeep = messages.slice(messages.length - split);
 
 					if (toSummarize.length > 0) {
-						const summaryMsgs = await getSummaryMessages(orgId, toSummarize, pendingFork.summaryPrompt, pendingFork.includeAttachments);
+						const summaryMsgs = await getSummaryMessages(orgId, toSummarize);
 						if (toKeep.length > 0) {
 							toKeep[0] = {
 								...toKeep[0],
@@ -490,13 +552,31 @@ If this is a writing or creative discussion, include sections for characters, pl
 					loadingModal.setContent(createLoadingContent('Creating forked conversation...'));
 				}
 
+				// Now clean up the entire messages array based on toggles
+				if (!pendingFork.includeAttachments) {
+					messages = messages.map(msg => ({
+						...msg,
+						files_v2: [],
+						files: [],
+						attachments: []
+					}));
+				}
+
+				if (!pendingFork.includeToolCalls) {
+					messages = messages.map(msg => ({
+						...msg,
+						content: msg.content.filter(item =>
+							item.type !== 'tool_use' && item.type !== 'tool_result'
+						)
+					}));
+				}
+
+
 				const newConversationId = await createFork(
 					orgId,
 					messages,
 					chatName,
 					projectUuid,
-					pendingFork.model,
-					pendingFork.includeAttachments,
 					styleData
 				);
 
