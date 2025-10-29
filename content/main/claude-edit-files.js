@@ -124,11 +124,8 @@
 		if (!pendingEditIntercept) return;
 
 		// Find the submit button
-		const saveButton = document.querySelector('button[type="submit"].bg-text-000');
-
+		const saveButton = document.querySelector('button[type="submit"]');
 		if (saveButton) {
-			console.log('Auto-submitting edit');
-
 			// Find the form
 			const form = saveButton.closest('form');
 			if (!form) {
