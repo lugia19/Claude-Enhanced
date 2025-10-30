@@ -1,4 +1,4 @@
-// claude-navigation.js
+// navigation.js
 (function () {
 	'use strict';
 

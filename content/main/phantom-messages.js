@@ -1,4 +1,4 @@
-// claude-phantom-messages.js
+// phantom-messages.js
 'use strict';
 
 const PHANTOM_PREFIX = 'phantom_messages_';

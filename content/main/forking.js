@@ -1,4 +1,4 @@
-// claude-forking.js
+// forking.js
 (function () {
 	'use strict';
 	const defaultSummaryPrompt =

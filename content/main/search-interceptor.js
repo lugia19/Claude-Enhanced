@@ -1,4 +1,4 @@
-// claude-search-interceptor.js
+// search-interceptor.js
 (function () {
 	'use strict';
 

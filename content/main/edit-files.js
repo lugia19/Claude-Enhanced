@@ -1,4 +1,4 @@
-// claude-edit-files.js
+// edit-files.js
 (function () {
 	'use strict';
 

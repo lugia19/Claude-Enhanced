@@ -1,6 +1,6 @@
-// claude-exporter.js
+// exporter.js
 // Chat export and import functionality for Claude.ai
-// Depends on: claude-styles.js, claude-phantom-messages.js, claude-api.js
+// Depends on: claude-styles.js, phantom-messages.js, claude-api.js
 
 (function () {
 	'use strict';
