@@ -26,8 +26,19 @@ function migrateOldPhantomStorage(conversationId) {
 }
 
 function storePhantomMessages(conversationId, messages) {
+	// TODO: Move to IndexedDB and remove the stripping of heavy data
 	const key = `${PHANTOM_PREFIX}${conversationId}`;
-	localStorage.setItem(key, JSON.stringify(messages));
+
+	// Strip heavy data before storing
+	const lightMessages = messages.map(msg => ({
+		...msg,
+		attachments: (msg.attachments || []).map(att => ({
+			...att,  // Keep all other fields
+			extracted_content: "[SKIPPED]"  // Just empty this one
+		}))
+	}));
+
+	localStorage.setItem(key, JSON.stringify(lightMessages));
 	console.log(`Stored ${messages.length} phantom messages for ${conversationId}`);
 }
 
@@ -84,7 +95,7 @@ window.fetch = async (...args) => {
 			const phantomMessages = getPhantomMessages(conversationId);
 
 			if (phantomMessages && phantomMessages.length > 0) {
-				console.log(`Injecting ${phantomMessages.length} phantom messages into conversation ${conversationId}`);
+
 				injectPhantomMessages(originalData, phantomMessages);
 			}
 
@@ -170,6 +181,8 @@ function injectPhantomMessages(data, phantomMessages) {
 			...item // Original properties override defaults
 		}));
 
+
+
 		// Add phantom marker to the end of each text content
 		completeMsg.content.forEach(item => {
 			if (item.text !== undefined) {
@@ -180,6 +193,8 @@ function injectPhantomMessages(data, phantomMessages) {
 		return completeMsg;
 	});
 
+
+	console.log(`Injecting ${phantomMessages.length} phantom messages into conversation`);
 
 	// Update parent UUID of ALL root messages to link to last phantom
 	const lastPhantom = phantomMessages[phantomMessages.length - 1];

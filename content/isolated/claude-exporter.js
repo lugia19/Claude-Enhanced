@@ -18,89 +18,99 @@
 			exportDelimiter: "Assistant",
 			librechatName: "Claude",
 			jsonlName: "assistant"
-		},
-		THINKING: {
-			apiName: "thinking",
-			contentType: "thinking",
-			exportDelimiter: "Thinking"
 		}
 	};
+
+	//#region Export format handlers
+	function formatTxtExport(conversationData, conversationId) {
+		let output = `Title: ${conversationData.name}\nDate: ${conversationData.updated_at}\n\n`;
+
+		for (const message of conversationData.chat_messages) {
+			// Message boundary
+			output += `[${message.sender === ROLES.USER.apiName ? ROLES.USER.exportDelimiter : ROLES.ASSISTANT.exportDelimiter}]\n`;
+
+			// Content blocks
+			for (const content of message.content) {
+				if (content.type === 'text') {
+					output += `[content-text]\n${content.text}\n\n`;
+				} else {
+					// All other content types as JSON
+					output += `[content-${content.type}]\n${JSON.stringify(content)}\n\n`;
+				}
+			}
+
+			// Files/attachments (user messages only)
+			if (message.sender === ROLES.USER.apiName) {
+				if (message.files_v2 && message.files_v2.length > 0) {
+					output += `[files_v2]\n${JSON.stringify(message.files_v2)}\n\n`;
+				}
+
+				if (message.attachments && message.attachments.length > 0) {
+					output += `[attachments]\n${JSON.stringify(message.attachments)}\n\n`;
+				}
+			}
+		}
+
+		return output;
+	}
+
+	function formatJsonlExport(conversationData, conversationId) {
+		// Simple JSONL - just role and text
+		return conversationData.chat_messages.map(msg => {
+			return JSON.stringify({
+				role: msg.sender === ROLES.USER.apiName ? ROLES.USER.jsonlName : ROLES.ASSISTANT.jsonlName,
+				content: ClaudeConversation.extractMessageText(msg)
+			});
+		}).join('\n');
+	}
+
+	function formatLibrechatExport(conversationData, conversationId) {
+		const processedMessages = conversationData.chat_messages.map((msg) => {
+			const contentText = ClaudeConversation.extractMessageText(msg);
+
+			return {
+				messageId: msg.uuid,
+				parentMessageId: msg.parent_message_uuid === "00000000-0000-4000-8000-000000000000"
+					? null
+					: msg.parent_message_uuid,
+				text: contentText,
+				sender: msg.sender === ROLES.ASSISTANT.apiName ? ROLES.ASSISTANT.librechatName : ROLES.USER.librechatName,
+				isCreatedByUser: msg.sender === ROLES.USER.apiName,
+				createdAt: msg.created_at
+			};
+		});
+
+		return JSON.stringify({
+			title: conversationData.name,
+			endpoint: "anthropic",
+			conversationId: conversationId,
+			options: {
+				model: conversationData.model ?? "claude-3-5-sonnet-latest"
+			},
+			messages: processedMessages
+		}, null, 2);
+	}
+
+	function formatRawExport(conversationData, conversationId) {
+		return JSON.stringify(conversationData, null, 2);
+	}
+	//#endregion
 
 	async function formatExport(conversationData, format, conversationId) {
 		switch (format) {
 			case 'txt':
-				let output = `Title: ${conversationData.name}\nDate: ${conversationData.updated_at}\n\n`;
-
-				for (const message of conversationData.chat_messages) {
-					if (message.sender === ROLES.USER.apiName) {
-						const textContent = message.content
-							.filter(c => c.type === 'text')
-							.map(c => c.text)
-							.join('\n');
-						output += `[${ROLES.USER.exportDelimiter}]\n${textContent}\n\n`;
-					} else {
-						// Assistant message - output all content blocks
-						for (const content of message.content) {
-							if (content.type === ROLES.THINKING.apiName) {
-								let thinkingText = content.thinking;
-								if (content.summaries && content.summaries.length > 0) {
-									const lastSummary = content.summaries[content.summaries.length - 1].summary;
-									thinkingText = `Summary: ${lastSummary}\n\n${content.thinking}`;
-								}
-								output += `[${ROLES.THINKING.exportDelimiter}]\n${thinkingText}\n\n`;
-							} else if (content.type === 'text') {
-								output += `[${ROLES.ASSISTANT.exportDelimiter}]\n${content.text}\n\n`;
-							} else {
-								output += `[${content.type}]\n${JSON.stringify(content)}\n\n`;
-							}
-						}
-					}
-				}
-
-				return output;
-
+				return formatTxtExport(conversationData, conversationId);
 			case 'jsonl':
-				// Simple JSONL - just role and text
-				return conversationData.chat_messages.map(msg => {
-					return JSON.stringify({
-						role: msg.sender === ROLES.USER.apiName ? ROLES.USER.jsonlName : ROLES.ASSISTANT.jsonlName,
-						content: ClaudeConversation.extractMessageText(msg)
-					});
-				}).join('\n');
-
+				return formatJsonlExport(conversationData, conversationId);
 			case 'librechat':
-				const processedMessages = conversationData.chat_messages.map((msg) => {
-					const contentText = ClaudeConversation.extractMessageText(msg);
-
-					return {
-						messageId: msg.uuid,
-						parentMessageId: msg.parent_message_uuid === "00000000-0000-4000-8000-000000000000"
-							? null
-							: msg.parent_message_uuid,
-						text: contentText,
-						sender: msg.sender === ROLES.ASSISTANT.apiName ? ROLES.ASSISTANT.librechatName : ROLES.USER.librechatName,
-						isCreatedByUser: msg.sender === ROLES.USER.apiName,
-						createdAt: msg.created_at
-					};
-				});
-
-				return JSON.stringify({
-					title: conversationData.name,
-					endpoint: "anthropic",
-					conversationId: conversationId,
-					options: {
-						model: conversationData.model ?? "claude-3-5-sonnet-latest"
-					},
-					messages: processedMessages
-				}, null, 2);
-
+				return formatLibrechatExport(conversationData, conversationId);
 			case 'raw':
-				return JSON.stringify(conversationData, null, 2);
-
+				return formatRawExport(conversationData, conversationId);
 			default:
 				throw new Error(`Unsupported format: ${format}`);
 		}
 	}
+
 
 	function downloadFile(filename, content) {
 		const blob = new Blob([content], { type: 'text/plain' });
@@ -121,7 +131,7 @@
 		const title = titleMatch ? titleMatch[1].trim() : 'Imported Conversation';
 
 		// Remove header
-		const contentStart = text.search(/\n\[(\w+)\]\n/);
+		const contentStart = text.search(/\n\[(.+)\]\n/);
 		if (contentStart === -1) {
 			throw new Error('No messages found in file');
 		}
@@ -129,83 +139,88 @@
 		const lines = text.slice(contentStart).split('\n');
 
 		const messages = [];
-		let currentRole = null;
 		let currentMessage = null;
-		let currentContentType = null;
+		let currentTag = null;
 		let textBuffer = '';
 
 		function flushTextBuffer() {
-			if (textBuffer && currentContentType) {
-				if (currentContentType === ROLES.USER.exportDelimiter || currentContentType === ROLES.ASSISTANT.exportDelimiter || currentContentType === ROLES.THINKING.exportDelimiter) {
-					// Text content
-					if (currentContentType === ROLES.THINKING.exportDelimiter) {
-						const text = textBuffer.trim();
-						const summaryMatch = text.match(/^Summary: (.+?)(\n\n|$)/s);
+			if (!textBuffer || !currentTag) return;
 
-						if (summaryMatch) {
-							const summary = summaryMatch[1].trim();
-							const thinking = text.slice(summaryMatch[0].length).trim();
-							currentMessage.content.push({
-								type: ROLES.THINKING.apiName,
-								thinking: thinking || text,  // Fallback to full text if nothing after summary
-								summaries: [{ summary: summary }]
-							});
-						} else {
-							currentMessage.content.push({
-								type: ROLES.THINKING.apiName,
-								thinking: text,
-								summaries: []
-							});
-						}
-					} else {
-						currentMessage.content.push({
-							type: 'text',
-							text: textBuffer.trim()
-						});
-					}
+			if (currentTag.startsWith('content-')) {
+				// Content block
+				const contentType = currentTag.substring(8); // Remove "content-" prefix
+
+				if (contentType === 'text') {
+					currentMessage.content.push({
+						type: 'text',
+						text: textBuffer.trim()
+					});
 				} else {
-					// JSON content
+					// Parse as JSON
 					try {
 						const jsonData = JSON.parse(textBuffer.trim());
-						if (!jsonData.type) jsonData.type = currentContentType.toLowerCase();
+						if (!jsonData.type) jsonData.type = contentType;
 						currentMessage.content.push(jsonData);
 					} catch (error) {
-						warnings.push(`Failed to parse [${currentContentType}] block: ${error.message}`);
+						warnings.push(`Failed to parse [content-${contentType}] block: ${error.message}`);
 					}
 				}
-				textBuffer = '';
+			} else {
+				// Message property
+				try {
+					const jsonData = JSON.parse(textBuffer.trim());
+					if (currentTag !== 'files_v2') currentMessage[currentTag] = jsonData;
+
+					// Duplicate files_v2 to files (array of UUIDs)
+					if (currentTag === 'files_v2') {
+						//currentMessage.files = jsonData.map(f => f.file_uuid);
+					}
+				} catch (error) {
+					warnings.push(`Failed to parse [${currentTag}] block: ${error.message}`);
+				}
 			}
+
+			textBuffer = '';
 		}
 
 		for (const line of lines) {
-			const markerMatch = line.match(/^\[(\w+)\]$/);
+			const markerMatch = line.match(/^\[([\da-zA-Z_-]+)\]$/);
 
 			if (markerMatch) {
+
 				const marker = markerMatch[1];
 
 				// Flush previous content
 				flushTextBuffer();
 
-				if (marker === ROLES.USER.exportDelimiter) {
-					// Check for consecutive User markers
-					if (currentRole === ROLES.USER) {
-						throw new Error(`Consecutive [${ROLES.USER.exportDelimiter}] blocks not allowed`);
+				if (marker === ROLES.USER.exportDelimiter || marker === ROLES.ASSISTANT.exportDelimiter) {
+					// Role marker - start new message
+					const role = marker === ROLES.USER.exportDelimiter ? ROLES.USER.apiName : ROLES.ASSISTANT.apiName;
+
+					// Check for consecutive messages of same role
+					if (currentMessage && currentMessage.sender === role) {
+						throw new Error(`Consecutive [${marker}] blocks not allowed`);
 					}
 
-					// Start new message
+					// Push previous message
 					if (currentMessage) messages.push(currentMessage);
-					currentMessage = { sender: ROLES.USER.apiName, content: [] };
-					currentRole = ROLES.USER;
-					currentContentType = ROLES.USER.exportDelimiter;
+
+					// Start new message
+					currentMessage = {
+						sender: role,
+						content: [],
+						files_v2: [],
+						files: [],
+						attachments: [],
+						sync_sources: []
+					};
+					currentTag = null;
 				} else {
-					// Assistant content block
-					// Switch to assistant role if needed
-					if (currentRole !== ROLES.ASSISTANT) {
-						if (currentMessage) messages.push(currentMessage);
-						currentMessage = { sender: ROLES.ASSISTANT.apiName, content: [] };
-						currentRole = ROLES.ASSISTANT;
+					// Content or property tag
+					if (!currentMessage) {
+						throw new Error(`Found [${marker}] before any message role`);
 					}
-					currentContentType = marker;
+					currentTag = marker;
 				}
 			} else {
 				// Regular line - add to buffer
@@ -252,15 +267,47 @@
 				sender: message.sender,
 				content: content,
 				created_at: timestamp,
-				files_v2: [],
-				files: [],
-				attachments: [],
+				files_v2: message.files_v2 || [],
+				files: message.files || [],
+				attachments: message.attachments || [],
 				sync_sources: []
 			});
 			parentId = messageId;
 		}
 
 		return phantomMessages;
+	}
+
+	function formatMessageForChatlog(message) {
+		const parts = [];
+
+		// Whitelist of content types to include
+		const allowedContentTypes = ['text', 'tool_use', 'tool_result'];
+
+		// Format content
+		for (const item of message.content) {
+			if (!allowedContentTypes.includes(item.type)) {
+				continue; // Skip thinking, etc.
+			}
+
+			if (item.type === 'text') {
+				parts.push(item.text);
+			} else {
+				parts.push(JSON.stringify(item));
+			}
+		}
+
+		// Dump files_v2 as JSON
+		if (message.files_v2 && message.files_v2.length > 0) {
+			parts.push(JSON.stringify(message.files_v2));
+		}
+
+		// Dump attachments as JSON
+		if (message.attachments && message.attachments.length > 0) {
+			parts.push(JSON.stringify(message.attachments));
+		}
+
+		return parts.join('\n\n');
 	}
 
 	async function performImport(parsedData, model) {
@@ -272,10 +319,7 @@
 
 		// Build chatlog attachment
 		const cleanedContent = parsedData.chat_messages
-			.map(msg => msg.content
-				.filter(c => c.type === 'text')
-				.map(c => c.text)
-				.join('\n'))
+			.map(msg => formatMessageForChatlog(msg))
 			.join('\n\n');
 
 		const chatlogAttachment = {
@@ -297,7 +341,14 @@
 		);
 
 		// Convert and store phantom messages
-		const phantomMessages = convertToPhantomMessages(parsedData.chat_messages);
+		// In performImport, before converting to phantoms:
+		const cleanedMessages = parsedData.chat_messages.map(msg => ({
+			...msg,
+			files_v2: [],  // Strip until we implement re-upload
+			files: []
+		}));
+
+		const phantomMessages = convertToPhantomMessages(cleanedMessages);
 		window.postMessage({
 			type: 'STORE_PHANTOM_MESSAGES',
 			conversationId: newConvoId,
