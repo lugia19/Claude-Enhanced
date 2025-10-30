@@ -20,6 +20,8 @@
 			jsonlName: "assistant"
 		}
 	};
+	const EXPORT_TAG_PREFIX = 'CLEXP:';
+	const TAG_REGEX = new RegExp(`^\\[${EXPORT_TAG_PREFIX}([\\da-zA-Z_-]+)\\]$`);
 
 	//#region Export format handlers
 	function formatTxtExport(conversationData, conversationId) {
@@ -27,26 +29,26 @@
 
 		for (const message of conversationData.chat_messages) {
 			// Message boundary
-			output += `[${message.sender === ROLES.USER.apiName ? ROLES.USER.exportDelimiter : ROLES.ASSISTANT.exportDelimiter}]\n`;
+			output += `[${EXPORT_TAG_PREFIX}${message.sender === ROLES.USER.apiName ? ROLES.USER.exportDelimiter : ROLES.ASSISTANT.exportDelimiter}]\n`;
 
 			// Content blocks
 			for (const content of message.content) {
 				if (content.type === 'text') {
-					output += `[content-text]\n${content.text}\n\n`;
+					output += `[${EXPORT_TAG_PREFIX}content-text]\n${content.text}\n\n`;
 				} else {
 					// All other content types as JSON
-					output += `[content-${content.type}]\n${JSON.stringify(content)}\n\n`;
+					output += `[${EXPORT_TAG_PREFIX}content-${content.type}]\n${JSON.stringify(content)}\n\n`;
 				}
 			}
 
 			// Files/attachments (user messages only)
 			if (message.sender === ROLES.USER.apiName) {
 				if (message.files_v2 && message.files_v2.length > 0) {
-					output += `[files_v2]\n${JSON.stringify(message.files_v2)}\n\n`;
+					output += `[${EXPORT_TAG_PREFIX}files_v2]\n${JSON.stringify(message.files_v2)}\n\n`;
 				}
 
 				if (message.attachments && message.attachments.length > 0) {
-					output += `[attachments]\n${JSON.stringify(message.attachments)}\n\n`;
+					output += `[${EXPORT_TAG_PREFIX}attachments]\n${JSON.stringify(message.attachments)}\n\n`;
 				}
 			}
 		}
@@ -111,16 +113,150 @@
 		}
 	}
 
+	//#region File handling for import
+	function getFileDownloadUrl(file) {
+		// Try preview first (images)
+		if (file.preview_asset?.url) {
+			return file.preview_asset.url;
+		}
 
-	function downloadFile(filename, content) {
-		const blob = new Blob([content], { type: 'text/plain' });
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = filename;
-		link.click();
-		URL.revokeObjectURL(url);
+		// Try document (PDFs, etc.)
+		if (file.document_asset?.url) {
+			return file.document_asset.url;
+		}
+
+		// Find any asset that isn't thumbnail
+		const assetKeys = Object.keys(file).filter(k => k.endsWith('_asset') && k !== 'thumbnail_asset');
+		for (const key of assetKeys) {
+			if (file[key]?.url) {
+				return file[key].url;
+			}
+		}
+
+		// Last resort: thumbnail
+		if (file.thumbnail_asset?.url) {
+			return file.thumbnail_asset.url;
+		}
+
+		throw new Error(`Could not find download URL for file: ${file.file_name}`);
 	}
+
+	async function promptForFile(fileName) {
+		return new Promise((resolve, reject) => {
+			const content = document.createElement('div');
+			const text = document.createElement('p');
+			text.className = CLAUDE_CLASSES.TEXT;
+			text.textContent = `Failed to download "${fileName}". Please select it from your computer:`;
+			content.appendChild(text);
+
+			const modal = new ClaudeModal('File Download Failed', content);
+
+			modal.addCancel('Skip File', () => {
+				resolve(null); // Skip this file
+			});
+
+			modal.addConfirm('Select File', async () => {
+				const fileInput = document.createElement('input');
+				fileInput.type = 'file';
+
+				const file = await new Promise(res => {
+					fileInput.onchange = e => res(e.target.files[0]);
+					fileInput.click();
+				});
+
+				if (file) {
+					resolve({
+						data: file,
+						name: file.name,
+						kind: file.type.startsWith('image/') ? 'image' : 'document'
+					});
+				} else {
+					resolve(null);
+				}
+			});
+
+			modal.show();
+		});
+	}
+
+	async function downloadAndReuploadFiles(messages, loadingModal) {
+		const orgId = getOrgId();
+		const allFiles = messages.flatMap(msg =>
+			(msg.files_v2 || []).map(f => ({
+				uuid: f.file_uuid,
+				url: getFileDownloadUrl(f),
+				kind: f.file_kind,
+				name: f.file_name
+			}))
+		);
+
+		if (allFiles.length === 0) return messages;
+
+		// Download files with fallback
+		const downloadedFiles = [];
+		for (let i = 0; i < allFiles.length; i++) {
+			const file = allFiles[i];
+
+			if (loadingModal) {
+				loadingModal.setContent(createLoadingContent(`Downloading file ${i + 1}/${allFiles.length}: ${file.name}`));
+			}
+
+			try {
+				const blob = await downloadFile(file.url);
+				downloadedFiles.push({
+					data: blob,
+					name: file.name,
+					kind: file.kind,
+					originalUuid: file.uuid
+				});
+			} catch (error) {
+				console.error(`Failed to download ${file.name}:`, error);
+				const userFile = await promptForFile(file.name);
+				if (userFile) {
+					downloadedFiles.push({
+						...userFile,
+						originalUuid: file.uuid
+					});
+				} else {
+					downloadedFiles.push(null);
+				}
+			}
+		}
+
+		// Upload files
+		if (loadingModal) {
+			loadingModal.setContent(createLoadingContent(`Uploading ${downloadedFiles.filter(Boolean).length} files...`));
+		}
+
+		const uploadedFiles = await Promise.all(
+			downloadedFiles.map(file =>
+				file ? uploadFile(orgId, file) : Promise.resolve(null)
+			)
+		);
+
+		// Build UUID mapping
+		const uuidMap = new Map();
+		allFiles.forEach((oldFile, index) => {
+			if (uploadedFiles[index]) {
+				uuidMap.set(oldFile.uuid, uploadedFiles[index]);
+			}
+		});
+
+		// Replace files_v2 in messages
+		return messages.map(msg => ({
+			...msg,
+			files_v2: (msg.files_v2 || [])
+				.map(f => uuidMap.get(f.file_uuid))
+				.filter(Boolean),
+			files: (msg.files_v2 || [])
+				.map(f => {
+					const newFile = uuidMap.get(f.file_uuid);
+					return newFile ? newFile.file_uuid : null;
+				})
+				.filter(Boolean)
+		}));
+	}
+	//#endregion
 
 	//#region Import functionality
 	function parseAndValidateText(text) {
@@ -145,7 +281,6 @@
 
 		function flushTextBuffer() {
 			if (!textBuffer || !currentTag) return;
-
 			if (currentTag.startsWith('content-')) {
 				// Content block
 				const contentType = currentTag.substring(8); // Remove "content-" prefix
@@ -169,11 +304,11 @@
 				// Message property
 				try {
 					const jsonData = JSON.parse(textBuffer.trim());
-					if (currentTag !== 'files_v2') currentMessage[currentTag] = jsonData;
+					currentMessage[currentTag] = jsonData;
 
 					// Duplicate files_v2 to files (array of UUIDs)
 					if (currentTag === 'files_v2') {
-						//currentMessage.files = jsonData.map(f => f.file_uuid);
+						currentMessage.files = jsonData.map(f => f.file_uuid);
 					}
 				} catch (error) {
 					warnings.push(`Failed to parse [${currentTag}] block: ${error.message}`);
@@ -184,10 +319,8 @@
 		}
 
 		for (const line of lines) {
-			const markerMatch = line.match(/^\[([\da-zA-Z_-]+)\]$/);
-
+			const markerMatch = line.match(TAG_REGEX);
 			if (markerMatch) {
-
 				const marker = markerMatch[1];
 
 				// Flush previous content
@@ -310,15 +443,15 @@
 		return parts.join('\n\n');
 	}
 
-	async function performImport(parsedData, model) {
+	async function createNewConversation(name, chat_messages, model) {
 		const orgId = getOrgId();
 
 		// Create new conversation with parsed name
 		const conversation = new ClaudeConversation(orgId);
-		const newConvoId = await conversation.create(parsedData.name, model);
+		const newConvoId = await conversation.create(name, model);
 
 		// Build chatlog attachment
-		const cleanedContent = parsedData.chat_messages
+		const cleanedContent = chat_messages
 			.map(msg => formatMessageForChatlog(msg))
 			.join('\n\n');
 
@@ -329,26 +462,22 @@
 			file_type: "text/plain"
 		};
 
+		// Collect all files from messages (attachments are inlined in chatlog)
+		const allFiles = chat_messages.flatMap(msg => msg.files || []);
+
 		// Send initial message
 		await conversation.sendMessageAndWaitForResponse(
 			"This conversation is imported from the attached chatlog.txt\nYou are Assistant. Simply say 'Acknowledged' and wait for user input.",
 			{
 				model: model,
 				attachments: [chatlogAttachment],
-				files: [],
+				files: allFiles,
 				syncSources: []
 			}
 		);
 
 		// Convert and store phantom messages
-		// In performImport, before converting to phantoms:
-		const cleanedMessages = parsedData.chat_messages.map(msg => ({
-			...msg,
-			files_v2: [],  // Strip until we implement re-upload
-			files: []
-		}));
-
-		const phantomMessages = convertToPhantomMessages(cleanedMessages);
+		const phantomMessages = convertToPhantomMessages(chat_messages);
 		window.postMessage({
 			type: 'STORE_PHANTOM_MESSAGES',
 			conversationId: newConvoId,
@@ -376,7 +505,8 @@
 		});
 	}
 
-	async function handleImport(modelSelect, importButton) {
+
+	async function handleImport(model, includeFiles, includeToolCalls) {
 		// Trigger file picker
 		const fileInput = document.createElement('input');
 		fileInput.type = 'file';
@@ -393,27 +523,50 @@
 		const fileContent = await file.text();
 		let parsedData;
 
-		try {
-			parsedData = parseAndValidateText(fileContent);
-		} catch (error) {
-			// Show error
-			showClaudeAlert('Import Error', error.message);
-			return;
-		}
-
-		// Show warnings modal if needed
-		if (parsedData.warnings.length > 0) {
-			const proceed = await showWarningsModal(parsedData.warnings);
-			if (!proceed) return;
-		}
-
 		// Show loading modal
 		const loadingModal = createLoadingModal('Importing...');
 		loadingModal.show();
 
 		try {
-			await performImport(parsedData, modelSelect.value);
-			// Navigation happens in performImport, loading modal cleaned up automatically
+			parsedData = parseAndValidateText(fileContent);
+		} catch (error) {
+			// Show error
+			showClaudeAlert('Import Error', error.message);
+			loadingModal.destroy();
+			return;
+		}
+
+		let { chat_messages, warnings, name } = parsedData
+
+		// Filter based on toggles
+		if (!includeFiles) {
+			chat_messages = chat_messages.map(msg => ({
+				...msg,
+				files_v2: [],
+				files: [],
+				attachments: []
+			}));
+		}
+
+		if (!includeToolCalls) {
+			chat_messages = chat_messages.map(msg => ({
+				...msg,
+				content: msg.content.filter(item =>
+					item.type !== 'tool_use' && item.type !== 'tool_result'
+				)
+			}));
+		}
+
+		// Show warnings modal if needed
+		if (warnings.length > 0) {
+			const proceed = await showWarningsModal(warnings);
+			if (!proceed) return;
+		}
+
+		try {
+			chat_messages = await downloadAndReuploadFiles(chat_messages, loadingModal);
+			await createNewConversation(name, chat_messages, model);
+			// Navigation happens in createNewConversation, loading modal cleaned up automatically
 		} catch (error) {
 			console.error('Import failed:', error);
 			loadingModal.destroy();
@@ -444,10 +597,16 @@
 		const fileContent = await file.text();
 		let parsedData;
 
+		// Show loading modal
+		const loadingModal = createLoadingModal('Replacing phantom messages...');
+		loadingModal.show();
+
 		try {
 			parsedData = parseAndValidateText(fileContent);
+			parsedData.chat_messages = await downloadAndReuploadFiles(parsedData.chat_messages, loadingModal);
 		} catch (error) {
 			showClaudeAlert('Replace Error', error.message || 'Invalid format');
+			loadingModal.destroy();
 			return;
 		}
 
@@ -457,9 +616,7 @@
 			if (!proceed) return;
 		}
 
-		// Show loading modal
-		const loadingModal = createLoadingModal('Replacing phantom messages...');
-		loadingModal.show();
+
 
 		try {
 			// Convert and store phantom messages
@@ -564,16 +721,20 @@
 
 		content.appendChild(importContainer);
 
+		// Add toggles
+		const importFilesToggle = createClaudeToggle('Import files/attachments', true);
+		importFilesToggle.container.classList.add('mb-2', 'mt-2');
+		content.appendChild(importFilesToggle.container);
+
+		const importToolCallsToggle = createClaudeToggle('Import tool calls', false);
+		importToolCallsToggle.container.classList.add('mb-4');
+		content.appendChild(importToolCallsToggle.container);
+
 		// Import note
 		const note = document.createElement('p');
 		note.className = CLAUDE_CLASSES.TEXT_SM + ' text-text-400';
-		note.textContent = 'Note: File attachments and images cannot be imported.';
-		const note2 = document.createElement('p');
-		note2.className = CLAUDE_CLASSES.TEXT_SM + ' text-text-400';
-		note2.textContent = 'Imports txt format only.';
-
+		note.textContent = 'Imports txt format only.';
 		content.appendChild(note);
-		content.appendChild(note2);
 
 		// Another divider
 		const divider2 = document.createElement('hr');
@@ -631,7 +792,14 @@
 
 				const filename = `Claude_export_${conversationData.name}_${conversationId}.${extension}`;
 				const content = await formatExport(conversationData, format, conversationId);
-				downloadFile(filename, content);
+
+				const blob = new Blob([content], { type: 'text/plain' });
+				const url = URL.createObjectURL(blob);
+				const link = document.createElement('a');
+				link.href = url;
+				link.download = filename;
+				link.click();
+				URL.revokeObjectURL(url);
 
 				loadingModal.destroy();
 				modal.hide();
@@ -642,7 +810,12 @@
 			}
 		};
 
-		importButton.onclick = () => handleImport(modelSelect, importButton);
+		importButton.onclick = () =>
+			handleImport(
+				modelSelect.value,
+				importFilesToggle.input.checked,
+				importToolCallsToggle.input.checked
+			);
 
 		modal.show();
 	}
