@@ -312,6 +312,26 @@ async function downloadFile(url) {
 	return await response.blob();
 }
 
+async function downloadFiles(files) {
+	const downloadedFiles = [];
+
+	for (const file of files) {
+		try {
+			const blob = await downloadFile(file.url);
+			downloadedFiles.push({
+				data: blob,
+				name: file.name,
+				kind: file.kind,
+				originalUuid: file.uuid
+			});
+		} catch (error) {
+			console.error(`Failed to download file ${file.name}:`, error);
+		}
+	}
+
+	return downloadedFiles;
+}
+
 // Sync source processing
 async function processSyncSource(orgId, syncsource) {
 	const response = await fetch(`/api/organizations/${orgId}/sync/chat`, {

@@ -276,28 +276,6 @@ If this is a writing or creative discussion, include sections for characters, pl
 	}
 	//#endregion
 
-	//#region File handlers (download, upload, sync)
-	async function downloadFiles(files) {
-		const downloadedFiles = [];
-
-		for (const file of files) {
-			try {
-				const blob = await downloadFile(file.url);
-				downloadedFiles.push({
-					data: blob,
-					name: file.name,
-					kind: file.kind,
-					originalUuid: file.uuid
-				});
-			} catch (error) {
-				console.error(`Failed to download file ${file.name}:`, error);
-			}
-		}
-
-		return downloadedFiles;
-	}
-	//#endregion
-
 	//#region Fork creation
 	function deduplicateByFilename(items) {
 		const seen = new Map();
@@ -320,7 +298,11 @@ If this is a writing or creative discussion, include sections for characters, pl
 		const conversation = new ClaudeConversation(orgId);
 		const newUuid = await conversation.create(newName, model, projectUuid);
 
-		storePhantomMessages(newUuid, messages);
+		window.postMessage({
+			type: 'STORE_PHANTOM_MESSAGES',
+			conversationId: newUuid,
+			phantomMessages: messages
+		}, '*');
 
 		const chatlogText = messages.map(msg => formatMessageContent(msg)).join('\n\n');
 
