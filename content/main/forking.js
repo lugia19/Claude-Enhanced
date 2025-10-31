@@ -475,7 +475,8 @@ If this is a writing or creative discussion, include sections for characters, pl
 				}
 			];
 		} finally {
-			//await tempConversation.delete();
+			//window.location.href = `/chat/${summaryConvoId}`; // For debugging
+			await tempConversation.delete();
 		}
 	}
 	//#endregion

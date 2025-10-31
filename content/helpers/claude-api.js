@@ -80,18 +80,23 @@ class ClaudeConversation {
 		await this.waitForCompletion();
 
 		// Now fetch the actual assistant message
-		let messages = await this.getMessages(false, true);
-		let assistantMessage = messages.find(msg => msg.sender === 'assistant');
+		let assistantMessage;
+		let attempts = 0;
+		let messages;
+		const maxAttempts = 6;
 
-		// Retry once if not found
-		if (!assistantMessage) {
-			console.log('Assistant message not found, waiting 10 seconds and retrying...');
-			await new Promise(r => setTimeout(r, 10000));
+		while (!assistantMessage && attempts < maxAttempts) {
+			if (attempts > 0) {
+				console.log(`Assistant message not found, waiting 5 seconds and retrying (attempt ${attempts}/${maxAttempts})...`);
+				await new Promise(r => setTimeout(r, 5000));
+			}
 			messages = await this.getMessages(false, true);
 			assistantMessage = messages.find(msg => msg.sender === 'assistant');
+			attempts++;
 		}
 
 		if (!assistantMessage) {
+			console.error('Messages after retry:', messages);
 			throw new Error('Completion finished but no assistant message found after retry');
 		}
 
