@@ -58,7 +58,10 @@ If this is a writing or creative discussion, include sections for characters, pl
 		const rawTextContainer = document.createElement('div');
 		rawTextContainer.className = 'mb-4 space-y-2 border border-border-300 rounded p-3';
 
-		const rawTextSlider = createClaudeSlider('Preserve X% of recent messages:', 50);
+		const rawTextSlider = createClaudeSlider('Preserve X% of recent messages verbatim:', 50, {
+			leftLabel: 'Summarize all',
+			rightLabel: 'Summarize none'
+		});
 		rawTextSlider.input.id = 'rawTextPercentage';
 		rawTextContainer.appendChild(rawTextSlider.container);
 

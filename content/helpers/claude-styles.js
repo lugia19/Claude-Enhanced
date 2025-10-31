@@ -522,7 +522,9 @@ function createClaudeSlider(label, defaultValue = 100, options = {}) {
 		max = 100,
 		step = 25,
 		showLabels = true,
-		suffix = '%'
+		suffix = '%',
+		leftLabel = null,
+		rightLabel = null
 	} = options;
 
 	const container = document.createElement('div');
@@ -535,6 +537,18 @@ function createClaudeSlider(label, defaultValue = 100, options = {}) {
 		labelElement.className = CLAUDE_CLASSES.LABEL;
 		labelElement.textContent = label;
 		container.appendChild(labelElement);
+	}
+
+	// Left/Right labels row (if provided)
+	if (leftLabel || rightLabel) {
+		const labelRow = document.createElement('div');
+		labelRow.style.marginBottom = '-1rem';
+		labelRow.className = 'flex justify-between text-sm text-text-500 pb-1';
+		labelRow.innerHTML = `
+		<span>${leftLabel || ''}</span>
+		<span>${rightLabel || ''}</span>
+	`;
+		container.appendChild(labelRow);
 	}
 
 	// Slider wrapper
