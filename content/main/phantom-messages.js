@@ -7,11 +7,19 @@ const PHANTOM_MARKER = '====PHANTOM_MESSAGE====';
 
 // ==== STORAGE FUNCTIONS (async, use IndexedDB via messages) ====
 async function storePhantomMessages(conversationId, messages) {
+	console.log(`[Phantom Messages] Storing ${messages.length} messages for conversation ${conversationId} in IndexedDB`);
 	return new Promise((resolve) => {
 		const handler = (event) => {
 			if (event.data.type === 'PHANTOM_MESSAGES_STORED' &&
 				event.data.conversationId === conversationId) {
 				window.removeEventListener('message', handler);
+				console.log(`[Phantom Messages] Stored messages for conversation ${conversationId} successfully`);
+
+				window.postMessage({
+					type: 'PHANTOM_MESSAGES_STORED_CONFIRMED',
+					conversationId
+				}, '*');
+
 				resolve();
 			}
 		};

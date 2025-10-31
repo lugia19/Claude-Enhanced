@@ -290,6 +290,26 @@ If this is a writing or creative discussion, include sections for characters, pl
 		return Array.from(seen.values()).reverse();
 	}
 
+	async function storePhantomMessagesAndWait(conversationId, messages) {
+		return new Promise((resolve) => {
+			const handler = (event) => {
+				if (event.data.type === 'PHANTOM_MESSAGES_STORED_CONFIRMED' &&
+					event.data.conversationId === conversationId) {
+					window.removeEventListener('message', handler);
+					resolve();
+				}
+			};
+
+			window.addEventListener('message', handler);
+
+			window.postMessage({
+				type: 'STORE_PHANTOM_MESSAGES',
+				conversationId,
+				phantomMessages: messages
+			}, '*');
+		});
+	}
+
 	async function createFork(orgId, messages, chatName, projectUuid, styleData) {
 		if (!chatName || chatName.trim() === '') chatName = "Untitled";
 		const newName = `Fork of ${chatName}`;
@@ -297,12 +317,7 @@ If this is a writing or creative discussion, include sections for characters, pl
 
 		const conversation = new ClaudeConversation(orgId);
 		const newUuid = await conversation.create(newName, model, projectUuid);
-
-		window.postMessage({
-			type: 'STORE_PHANTOM_MESSAGES',
-			conversationId: newUuid,
-			phantomMessages: messages
-		}, '*');
+		await storePhantomMessagesAndWait(newUuid, messages);
 
 		const chatlogText = messages.map(msg => formatMessageContent(msg)).join('\n\n');
 

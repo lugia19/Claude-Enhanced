@@ -22,6 +22,7 @@
 				"content/helpers/claude-styles.js",
 				"content/helpers/claude-api.js",
 				"content/helpers/search-utils.js",
+				"content/helpers/phantom-storage.js",
 				"content/helpers/stt-providers.js",
 				"content/helpers/tts-providers.js",
 				"content/isolated/global-search.js",

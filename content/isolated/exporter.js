@@ -210,7 +210,7 @@
 					originalUuid: file.uuid
 				});
 			} catch (error) {
-				console.error(`Failed to download ${file.name}:`, error);
+				console.log(`Failed to download ${file.name}:`, error);
 				const userFile = await promptForFile(file.name);
 				if (userFile) {
 					downloadedFiles.push({
@@ -443,6 +443,26 @@
 		return parts.join('\n\n');
 	}
 
+	async function storePhantomMessagesAndWait(conversationId, messages) {
+		return new Promise((resolve) => {
+			const handler = (event) => {
+				if (event.data.type === 'PHANTOM_MESSAGES_STORED_CONFIRMED' &&
+					event.data.conversationId === conversationId) {
+					window.removeEventListener('message', handler);
+					resolve();
+				}
+			};
+
+			window.addEventListener('message', handler);
+			
+			window.postMessage({
+				type: 'STORE_PHANTOM_MESSAGES',
+				conversationId,
+				phantomMessages: messages
+			}, '*');
+		});
+	}
+
 	async function createNewConversation(name, chat_messages, model) {
 		const orgId = getOrgId();
 
@@ -478,11 +498,7 @@
 
 		// Convert and store phantom messages
 		const phantomMessages = convertToPhantomMessages(chat_messages);
-		window.postMessage({
-			type: 'STORE_PHANTOM_MESSAGES',
-			conversationId: newConvoId,
-			phantomMessages: phantomMessages
-		}, '*');
+		await storePhantomMessagesAndWait(newConvoId, phantomMessages);
 
 		// Navigate to new conversation
 		window.location.href = `/chat/${newConvoId}`;
@@ -621,11 +637,7 @@
 		try {
 			// Convert and store phantom messages
 			const phantomMessages = convertToPhantomMessages(parsedData.chat_messages);
-			window.postMessage({
-				type: 'STORE_PHANTOM_MESSAGES',
-				conversationId: conversationId,
-				phantomMessages: phantomMessages
-			}, '*');
+			await storePhantomMessagesAndWait(conversationId, phantomMessages);
 
 			// Reload to show changes
 			window.location.reload();
