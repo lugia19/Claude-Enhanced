@@ -8,17 +8,16 @@ Available on:
 - The desktop client - Via [Claude-WebExtension-Launcher](https://github.com/lugia19/Claude-WebExtension-Launcher)
 
 # Features
+## Forking+Compacting
+<img width="616" height="887" alt="image" src="https://github.com/user-attachments/assets/dba9c261-5f09-4900-837b-28a2e039cfe2" />
+
+Allows you to start a new chat by forking an existing one. The new chat will include all the content of the old one up to that point (or a summary of the content up to that point) and optionally any attachments.
 
 ## Global Text Search
 <img width="1165" height="209" alt="image" src="https://github.com/user-attachments/assets/82e11513-156e-4864-b472-9e70cc5348e4" />
 <img width="1156" height="553" alt="image" src="https://github.com/user-attachments/assets/edd0fd6d-6174-417c-bb1f-fafb0abad61b" />
 
 Allows you to search for text in all chats on your account. Will automatically open the chat-specific search with your query once you select a conversation.
-
-## Forking
-<img width="614" height="696" alt="image" src="https://github.com/user-attachments/assets/45a5f08e-baef-41f1-8d8c-7b89f5f30eb1" />
-
-Allows you to start a new chat by forking an existing one. The new chat will include all the content of the old one up to that point (or a summary of the content up to that point) and optionally any attachments.
 
 ## Chat Search
 <img width="710" height="298" alt="image" src="https://github.com/user-attachments/assets/fb240eca-68ac-4236-81b1-b6fbbdcd28a4" />
@@ -54,7 +53,7 @@ Lets you hop between your messages quickly, without scrolling.
 
 
 ## Exporting and importing
-<img width="543" height="575" alt="image" src="https://github.com/user-attachments/assets/90b01918-e0c9-4551-a266-94a544f0509b" />
+<img width="549" height="642" alt="image" src="https://github.com/user-attachments/assets/fe770c3a-d306-4a84-bc1d-b04fe3bc1469" />
 
 You can export a chat to various formats. Txt, JSON, etc.
 
